@@ -1,8 +1,0 @@
-
-
-Since Mac OS Mavericks (10.9), Apple has included their own version of the FTDI VCP driver in the kernel. 
-
-With an FTDI based device plugged in,  you can find the VCP driver in the /dev directory as tty.usbserial-FTxxxxxx 
-
-You still have the option of using the latest dext installer with Mac OS 15:
-https://ftdichip.com/wp-content/uploads/2022/06/FTDIUSBSerialDextInstaller_1_5_0.dmg
