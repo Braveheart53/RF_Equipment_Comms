@@ -1,0 +1,4 @@
+More tools and updates regarding Android UART communication is available from the driver manufacturer:
+
+http://www.ftdichip.com/Android.htm
+

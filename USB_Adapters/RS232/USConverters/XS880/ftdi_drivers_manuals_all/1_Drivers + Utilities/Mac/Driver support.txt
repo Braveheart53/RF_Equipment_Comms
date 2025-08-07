@@ -1,0 +1,5 @@
+
+
+For driver details and support pleae go to:
+
+https://ftdichip.com/drivers/vcp-drivers/
