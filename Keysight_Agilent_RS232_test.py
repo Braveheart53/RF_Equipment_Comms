@@ -52,7 +52,7 @@ This application provides automated testing capabilities for Agilent and
 Keysight instruments
 with visual status indicators showing pass/fail results for each test.
 """
-
+# %% Import General Modules
 import sys
 import time
 import logging
@@ -60,7 +60,7 @@ from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime
 
-# Import QtPy components
+# %%% Import QtPy components
 try:
     from qtpy.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QHBoxLayout, QGridLayout, QPushButton, QLabel,
@@ -72,7 +72,7 @@ except ImportError:
     print("Error: QtPy not installed. Install with: pip install qtpy pyside6")
     sys.exit(1)
 
-# Import PyVISA
+# %%% Import PyVISA
 try:
     import pyvisa
     from pyvisa.errors import VisaIOError, InvalidBinaryFormat
@@ -80,7 +80,7 @@ except ImportError:
     print("Error: PyVISA not installed. Install with: pip install pyvisa")
     sys.exit(1)
 
-
+# %% Class and Function Space
 @dataclass
 class TestResult:
     """Data class to store test results."""
@@ -604,7 +604,7 @@ class TestButton(QPushButton):
                 }
             """
 
-
+#
 class InstrumentTestGUI(QMainWindow):
     """
     Main GUI window for the instrument testing application.
@@ -1060,7 +1060,7 @@ class InstrumentTestGUI(QMainWindow):
         else:
             event.accept()
 
-
+# %% Main
 def main():
     """Main application entry point."""
     app = QApplication(sys.argv)
