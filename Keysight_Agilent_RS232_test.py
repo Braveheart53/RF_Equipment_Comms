@@ -53,19 +53,19 @@ Keysight instruments
 with visual status indicators showing pass/fail results for each test.
 """
 # %% Import General Modules
-import sys
-import time
-import logging
-from typing import Dict, List, Tuple, Optional, Any
-from dataclasses import dataclass
-from datetime import datetime
 
 # %%% Import QtPy components
 try:
+    import sys
+    import time
+    import logging
+    from typing import Dict, List, Tuple, Optional, Any
+    from dataclasses import dataclass
+    from datetime import datetime
     from qtpy.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                               QHBoxLayout, QGridLayout, QPushButton, QLabel,
-                               QTextEdit, QComboBox, QProgressBar, QGroupBox,
-                               QMessageBox, QFrame, QScrollArea, QTabWidget)
+                                QHBoxLayout, QGridLayout, QPushButton, QLabel,
+                                QTextEdit, QComboBox, QProgressBar, QGroupBox,
+                                QMessageBox, QFrame, QScrollArea, QTabWidget)
     from qtpy.QtCore import QThread, Signal, QTimer, Qt
     from qtpy.QtGui import QFont, QPalette, QColor
 except ImportError:
@@ -81,6 +81,8 @@ except ImportError:
     sys.exit(1)
 
 # %% Class and Function Space
+
+
 @dataclass
 class TestResult:
     """Data class to store test results."""
@@ -125,7 +127,7 @@ class InstrumentTester(QThread):
 
             # Connect to instrument
             self.instrument = self.rm.open_resource(self.resource_address)
-            self.instrument.timeout = 5000  # 5 second timeout
+            self.instrument.timeout = 10000  # 5 second timeout
 
             total_tests = len(self.tests_to_run)
 
@@ -229,7 +231,7 @@ class InstrumentTester(QThread):
 
             # Check if response contains expected Agilent/Keysight identifiers
             is_agilent_keysight = any(brand.lower() in idn_response.lower()
-                                    for brand in ["agilent", "keysight", "hewlett-packard", "hp"])
+                                      for brand in ["agilent", "keysight", "hewlett-packard", "hp"])
 
             message = f"ID: {idn_response}"
             if not is_agilent_keysight:
@@ -489,7 +491,8 @@ class InstrumentTester(QThread):
             total_commands = 0
 
             # Test mandatory SCPI commands
-            mandatory_commands = ["*IDN?", "*RST", "*CLS", "*ESR?", "*STB?", "*OPC?"]
+            mandatory_commands = ["*IDN?", "*RST",
+                                  "*CLS", "*ESR?", "*STB?", "*OPC?"]
 
             for cmd in mandatory_commands:
                 total_commands += 1
@@ -605,6 +608,8 @@ class TestButton(QPushButton):
             """
 
 #
+
+
 class InstrumentTestGUI(QMainWindow):
     """
     Main GUI window for the instrument testing application.
@@ -659,7 +664,8 @@ class InstrumentTestGUI(QMainWindow):
 
         # Title
         title = QLabel("Instrument Test Suite")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50;")
+        title.setStyleSheet(
+            "font-size: 18px; font-weight: bold; color: #2c3e50;")
         layout.addWidget(title)
 
         layout.addStretch()
@@ -735,7 +741,8 @@ class InstrumentTestGUI(QMainWindow):
         connection_tests = ["Connection Test", "Identification"]
         for i, test in enumerate(connection_tests):
             btn = TestButton(test)
-            btn.clicked.connect(lambda checked, t=test: self.run_single_test(t))
+            btn.clicked.connect(
+                lambda checked, t=test: self.run_single_test(t))
             self.test_buttons[test] = btn
             conn_layout.addWidget(btn, i // 2, i % 2)
 
@@ -745,10 +752,12 @@ class InstrumentTestGUI(QMainWindow):
         status_group = QGroupBox("Status Tests")
         status_layout = QGridLayout(status_group)
 
-        status_tests = ["Self Test", "Error Status", "Status Registers", "Operation Complete"]
+        status_tests = ["Self Test", "Error Status",
+                        "Status Registers", "Operation Complete"]
         for i, test in enumerate(status_tests):
             btn = TestButton(test)
-            btn.clicked.connect(lambda checked, t=test: self.run_single_test(t))
+            btn.clicked.connect(
+                lambda checked, t=test: self.run_single_test(t))
             self.test_buttons[test] = btn
             status_layout.addWidget(btn, i // 2, i % 2)
 
@@ -761,7 +770,8 @@ class InstrumentTestGUI(QMainWindow):
         func_tests = ["Reset Command", "SCPI Compliance"]
         for i, test in enumerate(func_tests):
             btn = TestButton(test)
-            btn.clicked.connect(lambda checked, t=test: self.run_single_test(t))
+            btn.clicked.connect(
+                lambda checked, t=test: self.run_single_test(t))
             self.test_buttons[test] = btn
             func_layout.addWidget(btn, i // 2, i % 2)
 
@@ -774,7 +784,8 @@ class InstrumentTestGUI(QMainWindow):
         perf_tests = ["Response Time", "Communication Stability"]
         for i, test in enumerate(perf_tests):
             btn = TestButton(test)
-            btn.clicked.connect(lambda checked, t=test: self.run_single_test(t))
+            btn.clicked.connect(
+                lambda checked, t=test: self.run_single_test(t))
             self.test_buttons[test] = btn
             perf_layout.addWidget(btn, i // 2, i % 2)
 
@@ -795,11 +806,13 @@ class InstrumentTestGUI(QMainWindow):
         summary_layout = QHBoxLayout()
 
         self.passed_label = QLabel("Passed: 0")
-        self.passed_label.setStyleSheet("color: green; font-weight: bold; font-size: 14px;")
+        self.passed_label.setStyleSheet(
+            "color: green; font-weight: bold; font-size: 14px;")
         summary_layout.addWidget(self.passed_label)
 
         self.failed_label = QLabel("Failed: 0")
-        self.failed_label.setStyleSheet("color: red; font-weight: bold; font-size: 14px;")
+        self.failed_label.setStyleSheet(
+            "color: red; font-weight: bold; font-size: 14px;")
         summary_layout.addWidget(self.failed_label)
 
         self.total_label = QLabel("Total: 0")
@@ -868,13 +881,15 @@ class InstrumentTestGUI(QMainWindow):
             self.address_combo.addItems(resources)
 
             if resources:
-                self.log_message(f"Found {len(resources)} instruments: {', '.join(resources)}")
+                self.log_message(
+                    f"Found {len(resources)} instruments: {', '.join(resources)}")
             else:
                 self.log_message("No instruments found")
 
         except Exception as e:
             self.log_message(f"Error refreshing instruments: {str(e)}")
-            QMessageBox.warning(self, "Warning", f"Failed to refresh instruments:\n{str(e)}")
+            QMessageBox.warning(
+                self, "Warning", f"Failed to refresh instruments:\n{str(e)}")
 
     def run_single_test(self, test_name: str):
         """Run a single test."""
@@ -884,7 +899,8 @@ class InstrumentTestGUI(QMainWindow):
 
         address = self.address_combo.currentText().strip()
         if not address:
-            QMessageBox.warning(self, "Warning", "Please enter a VISA address!")
+            QMessageBox.warning(
+                self, "Warning", "Please enter a VISA address!")
             return
 
         self.test_buttons[test_name].set_status("running")
@@ -901,7 +917,8 @@ class InstrumentTestGUI(QMainWindow):
         """Run all available tests."""
         address = self.address_combo.currentText().strip()
         if not address:
-            QMessageBox.warning(self, "Warning", "Please enter a VISA address!")
+            QMessageBox.warning(
+                self, "Warning", "Please enter a VISA address!")
             return
 
         if self.tester and self.tester.isRunning():
@@ -965,7 +982,8 @@ class InstrumentTestGUI(QMainWindow):
 
         # Log result
         status = "PASSED" if result.passed else "FAILED"
-        self.log_message(f"Test {result.test_name}: {status} - {result.message} ({result.execution_time:.3f}s)")
+        self.log_message(
+            f"Test {result.test_name}: {status} - {result.message} ({result.execution_time:.3f}s)")
 
     def on_progress_updated(self, progress: int):
         """Handle progress update signal."""
@@ -983,7 +1001,8 @@ class InstrumentTestGUI(QMainWindow):
         total = len(self.test_results)
         failed = total - passed
 
-        self.log_message(f"All tests completed. Passed: {passed}, Failed: {failed}, Total: {total}")
+        self.log_message(
+            f"All tests completed. Passed: {passed}, Failed: {failed}, Total: {total}")
 
     def update_results_display(self):
         """Update the results display tab."""
@@ -1049,8 +1068,8 @@ class InstrumentTestGUI(QMainWindow):
         """Handle application close event."""
         if self.tester and self.tester.isRunning():
             reply = QMessageBox.question(self, "Confirm Exit",
-                                       "Tests are running. Stop and exit?",
-                                       QMessageBox.Yes | QMessageBox.No)
+                                         "Tests are running. Stop and exit?",
+                                         QMessageBox.Yes | QMessageBox.No)
             if reply == QMessageBox.Yes:
                 self.tester.terminate()
                 self.tester.wait()
@@ -1061,6 +1080,8 @@ class InstrumentTestGUI(QMainWindow):
             event.accept()
 
 # %% Main
+
+
 def main():
     """Main application entry point."""
     app = QApplication(sys.argv)
