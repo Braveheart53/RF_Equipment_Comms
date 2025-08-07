@@ -1,8 +1,0 @@
-
-Mac OS X10.15 and macOS 11/12	
-Release date: 2022-06-13
-
-This is a Beta driver release and the installer should be run from the Applications folder on your machine
-
-For details and driver support please go to:
-https://ftdichip.com/drivers/vcp-drivers/
