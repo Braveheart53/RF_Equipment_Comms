@@ -62,7 +62,7 @@ import numpy as np
 #         thread without killing Spyder kernel. Removed 30 s fetch test
 #         from Diagnostics (the processEvents spin loop was starving
 #         Spyder's heartbeat). Probe Traces button now synchronous.
-APP_VERSION = "0.7.3"
+APP_VERSION = "0.7.4"
 
 # ---------------------------------------------------------------------------
 # Python version handling
@@ -438,27 +438,24 @@ class FSPInstrument:
         return active
 
     def force_screen(self, screen: int) -> None:
-        """Force SCPI to talk to a specific FSP screen (1=A, 2=B).
+        """Force SCPI to address a specific FSP screen (1=A, 2=B).
 
-        Sends DISP:WIND<n>:SEL, marks screen discovery as done, and updates
-        active_screen so subsequent fetch_trace() calls use the right
-        TRAC<n>? syntax. Resets the cached trace-fetch template since the
-        previous one may have been keyed to a different screen.
+        On FSP, the SENSe<1|2>: numeric suffix routes per-query to a
+        specific measurement window — this is independent of which window
+        is the "active measurement window" (DISP:WIND:SEL state). So
+        forcing a screen is just a matter of recording which SENSe prefix
+        to use; subsequent FREQ:* / SWE:* / TRAC? queries are built with
+        the right suffix in _read_screen_freq, sweep_settings, and
+        fetch_trace.
+
+        Resets the cached trace-fetch template since the previous one may
+        have been keyed to a different screen.
         """
         if screen not in (1, 2):
             raise ValueError(f"screen must be 1 or 2, got {screen}")
-        self._log(f"force_screen({screen}): sending DISP:WIND{screen}:SEL")
-        try:
-            self.inst.write(f"DISP:WIND{screen}:SEL")
-        except Exception as exc:
-            self._log(f"  DISP:WIND{screen}:SEL write failed: {exc}")
-        try:
-            time.sleep(0.1)
-            errs = self._drain_error_queue()
-            if errs:
-                self._log(f"  drained errors after select: {errs}")
-        except Exception:
-            pass
+        self._log(f"force_screen({screen}): SCPI will now use "
+                  f"{self._scpi_screen_prefix(screen) or '(no prefix = SENS1)'} "
+                  f"for FREQ/SWE queries")
         self.active_screen = screen
         self._screen_discovered = True
         self._trace_fetch_cmd_template = None  # re-discover for new screen
@@ -470,17 +467,34 @@ class FSPInstrument:
         self.active_screen = 1
         self._trace_fetch_cmd_template = None
 
-    def _read_screen_freq(self) -> Dict[str, float]:
-        """Read FREQ:STAR/STOP/CENT/SPAN from whichever screen is currently
-        SCPI-active. Returns NaN for any individual query that errors.
+    def _scpi_screen_prefix(self, screen: Optional[int] = None) -> str:
+        """Build the SENSe<n>: prefix for screen-routed queries.
+
+        FSP routes FREQ/SWE queries via the SENSe<1|2> numeric suffix:
+        Screen A = SENS1, Screen B = SENS2. Without the suffix, queries
+        always hit Screen A regardless of DISP:WIND:SEL state.
+
+        Pass screen=1, 2, or None (uses self.active_screen).
         """
-        try:    f_start_raw = float(self.query("FREQ:STAR?"))
+        n = self.active_screen if screen is None else screen
+        return "" if n == 1 else f"SENS{n}:"
+
+    def _read_screen_freq(self, screen: Optional[int] = None) -> Dict[str, float]:
+        """Read FREQ:STAR/STOP/CENT/SPAN for a given FSP screen.
+
+        Uses the SENSe<n> prefix to route the query; this works regardless
+        of which screen is currently the "active measurement window" (the
+        DISP:WIND:SEL state). Returns NaN for any individual query that
+        errors.
+        """
+        p = self._scpi_screen_prefix(screen)
+        try:    f_start_raw = float(self.query(f"{p}FREQ:STAR?"))
         except Exception: f_start_raw = float("nan")
-        try:    f_stop_raw  = float(self.query("FREQ:STOP?"))
+        try:    f_stop_raw  = float(self.query(f"{p}FREQ:STOP?"))
         except Exception: f_stop_raw  = float("nan")
-        try:    f_center    = float(self.query("FREQ:CENT?"))
+        try:    f_center    = float(self.query(f"{p}FREQ:CENT?"))
         except Exception: f_center    = float("nan")
-        try:    f_span      = float(self.query("FREQ:SPAN?"))
+        try:    f_span      = float(self.query(f"{p}FREQ:SPAN?"))
         except Exception: f_span      = float("nan")
         return dict(f_start_raw=f_start_raw, f_stop_raw=f_stop_raw,
                     f_center=f_center, f_span=f_span)
@@ -501,32 +515,24 @@ class FSPInstrument:
         if self._screen_discovered:
             return
         self._screen_discovered = True   # set first to prevent recursion
-        self._log("--- screen discovery: probing both FSP screens ---")
-        # Screen A — make it active and read.
-        try:
-            self.inst.write("DISP:WIND1:SEL")
-        except Exception as exc:
-            self._log(f"DISP:WIND1:SEL failed: {exc}")
-        try:
-            self._drain_error_queue()
-        except Exception:
-            pass
-        a = self._read_screen_freq()
-        self._log(f"  Screen A: center={a['f_center']}, span={a['f_span']}, "
+        self._log("--- screen discovery: probing both FSP screens via SENSe suffix ---")
+        # Probe each screen using the SENSe<n>: prefix — this routes the
+        # query to the right screen WITHOUT changing DISP:WIND:SEL state.
+        # Screen A = no prefix (or SENS1:), Screen B = SENS2:.
+        a = self._read_screen_freq(screen=1)
+        self._log(f"  Screen A (SENS1): center={a['f_center']}, span={a['f_span']}, "
                   f"start={a['f_start_raw']}, stop={a['f_stop_raw']}")
-        # Screen B — try to make it active. If FSP doesn't have a Screen B
-        # configured, this is harmless (or queues an error we drain).
-        try:
-            self.inst.write("DISP:WIND2:SEL")
-        except Exception as exc:
-            self._log(f"DISP:WIND2:SEL failed: {exc}")
         try:
             self._drain_error_queue()
         except Exception:
             pass
-        b = self._read_screen_freq()
-        self._log(f"  Screen B: center={b['f_center']}, span={b['f_span']}, "
+        b = self._read_screen_freq(screen=2)
+        self._log(f"  Screen B (SENS2): center={b['f_center']}, span={b['f_span']}, "
                   f"start={b['f_start_raw']}, stop={b['f_stop_raw']}")
+        try:
+            self._drain_error_queue()
+        except Exception:
+            pass
         # Decide. Prefer the screen with the higher (finite, positive)
         # center frequency. Treat 0/NaN center as "empty/default".
         def score(d):
@@ -537,20 +543,11 @@ class FSPInstrument:
         score_a, score_b = score(a), score(b)
         if score_b > score_a:
             self.active_screen = 2
-            # DISP:WIND2:SEL is already set above
             self._log(f"  => Screen B wins (center {b['f_center']} > "
                       f"{a['f_center']}); active_screen = 2")
         else:
             self.active_screen = 1
-            try:
-                self.inst.write("DISP:WIND1:SEL")
-            except Exception:
-                pass
             self._log(f"  => Screen A wins; active_screen = 1")
-        try:
-            self._drain_error_queue()
-        except Exception:
-            pass
 
     def sweep_settings(self) -> Dict[str, float]:
         """Read sweep settings from the FSP.
@@ -598,10 +595,12 @@ class FSPInstrument:
             # Neither source is good — last resort, use raw values and warn.
             f_start, f_stop = f_start_raw, f_stop_raw
             freq_source = "STAR/STOP (CENT/SPAN unavailable)"
-        n_pts = int(float(self.query("SWE:POIN?")))
-        sweep_time = float(self.query("SWE:TIME?"))
+        # Use the SENSe<n>: prefix so SWE:* hits the right screen.
+        p = self._scpi_screen_prefix()
+        n_pts = int(float(self.query(f"{p}SWE:POIN?")))
+        sweep_time = float(self.query(f"{p}SWE:TIME?"))
         try:
-            sweep_count = int(float(self.query("SWE:COUN?")))
+            sweep_count = int(float(self.query(f"{p}SWE:COUN?")))
         except Exception:
             sweep_count = 1
         if sweep_count < 1:
