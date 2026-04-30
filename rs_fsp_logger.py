@@ -62,7 +62,7 @@ import numpy as np
 #         thread without killing Spyder kernel. Removed 30 s fetch test
 #         from Diagnostics (the processEvents spin loop was starving
 #         Spyder's heartbeat). Probe Traces button now synchronous.
-APP_VERSION = "0.7.0"
+APP_VERSION = "0.7.1"
 
 # ---------------------------------------------------------------------------
 # Python version handling
@@ -203,17 +203,37 @@ class FSPInstrument:
         # Set the flag FIRST so re-entry from inside these calls (via the
         # query/write helpers) doesn't recurse forever.
         self._configured = True
-        for cmd in ("*CLS", "FORM ASC", "FORM:DEXP:DSEP POIN"):
+        # NOTE: 'INST SAN' (select Spectrum Analyzer personality) is critical
+        # on FSP-38 boxes where SCPI is otherwise routed to a different
+        # instrument personality (Receiver / Analog Demod / VSA), which causes
+        # FREQ:* queries to return values from the wrong screen and TRAC?
+        # to be rejected with -100. We try the most common spelling first;
+        # if it errors, we'll see it in the drained queue but proceed.
+        for cmd in ("*CLS", "INST:SEL SAN", "FORM ASC", "FORM:DEXP:DSEP POIN"):
             try:
                 self.inst.write(cmd)
             except Exception as exc:
                 self._log(f"setup write {cmd!r} failed: {exc}")
+        # Give the FSP a beat to switch personalities before we start
+        # querying. A 200 ms wait is plenty in practice; we also drain any
+        # errors the personality switch might have produced.
+        try:
+            time.sleep(0.2)
+        except Exception:
+            pass
         try:
             stale = self._drain_error_queue()
             if stale:
                 self._log(f"drained startup errors: {stale}")
         except Exception:
             pass
+        # Log the active personality so the user can confirm the SCPI side
+        # is talking to the spectrum analyzer screen.
+        try:
+            personality = self.inst.query("INST?").strip()
+            self._log(f"INST? -> {personality!r} (SAN = Spectrum Analyzer)")
+        except Exception as exc:
+            self._log(f"INST? probe failed: {exc}")
 
     # ---- low level -----------------------------------------------------
     def _log(self, msg: str) -> None:
@@ -1277,6 +1297,20 @@ class MainWindow(QtWidgets.QMainWindow):
             mode_label = "continuous" if self.instrument.continuous_sweep else "single"
             lines.append(f"Sweep handling: {mode_label} ("
                          f"continuous_sweep={self.instrument.continuous_sweep})")
+
+            # Instrument personality — critical for diagnosing the
+            # "FREQ:* returns wrong values + TRAC? -100" failure mode, where
+            # SCPI is talking to a non-Spectrum-Analyzer personality.
+            lines.append("")
+            lines.append("Instrument personality (must be SAN for spectrum traces):")
+            for cmd in ("INST?", "INST:NSEL?", "INST:LIST?"):
+                try:
+                    ans = self.instrument.inst.query(cmd).strip()
+                    errs = self.instrument._drain_error_queue()
+                    suffix = f"  [errors: {errs}]" if errs else ""
+                    lines.append(f"  {cmd:14s} -> {ans!r}{suffix}")
+                except Exception as exc:
+                    lines.append(f"  {cmd:14s} -> EXC: {exc}")
 
         # Trace detection — lightweight MODE? probe (BLAN = hidden, anything
         # else = displayed). This is the same logic active_traces() uses.
