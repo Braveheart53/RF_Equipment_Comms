@@ -93,17 +93,98 @@ class FSPInstrument:
     Thin wrapper around a VISA session to an R&S FSP spectrum analyzer.
 
     All methods are synchronous and intended to be called from a worker thread.
+<<<<<<< HEAD
+
+    SCPI dialect notes (FSP, NOT FSW):
+      - Trace state query:   DISP:TRAC<n>:STAT?     (no :WINDow node on FSP)
+      - Trace data:          TRAC:DATA? TRACE<n>    (note the space)
+      - Single sweep sync:   INIT:CONT OFF; *CLS; INIT;*WAI   (canonical R&S pattern)
+      - Data format:         FORM ASC                (binary REAL,32 supported but
+                                                       ASCII is more robust over LAN)
+=======
+>>>>>>> 63358be94f04a214d7e34c454279c8bcaaf7ba76
     """
 
     MAX_TRACES = 3  # FSP supports up to 3 traces simultaneously
 
+<<<<<<< HEAD
+    def __init__(self, resource: str, timeout_ms: int = 15000,
+                 backend: str = "@py", debug: bool = False):
+=======
     def __init__(self, resource: str, timeout_ms: int = 15000):
+>>>>>>> 63358be94f04a214d7e34c454279c8bcaaf7ba76
         if not _HAS_PYVISA:
             raise FSPError(
                 "pyvisa is not installed. `pip install pyvisa pyvisa-py` "
                 "or use Demo Mode."
             )
         self.resource = resource
+<<<<<<< HEAD
+        self.debug = debug
+        self.rm = pyvisa.ResourceManager(backend)
+        self.inst = self.rm.open_resource(resource)
+        self.inst.timeout = timeout_ms
+        # Standard message terminators for R&S over TCPIP
+        try:
+            self.inst.read_termination = "\n"
+            self.inst.write_termination = "\n"
+        except Exception:
+            pass
+        # ASCII trace data, max digits, English number format. Flush errors.
+        try:
+            self.inst.write("*CLS")
+            self.inst.write("FORM ASC")
+            self.inst.write("FORM:DEXP:DSEP POIN")  # decimal point, not comma (locale)
+        except Exception:
+            pass
+        # Drain any prior errors so future SYST:ERR? checks are clean
+        self._drain_error_queue()
+
+    # ---- low level -----------------------------------------------------
+    def _log(self, msg: str) -> None:
+        if self.debug:
+            sys.stderr.write(f"[FSP] {msg}\n")
+
+    def query(self, cmd: str) -> str:
+        self._log(f"Q  {cmd}")
+        ans = self.inst.query(cmd).strip()
+        self._log(f" -> {ans[:80]}{'...' if len(ans) > 80 else ''}")
+        return ans
+
+    def write(self, cmd: str) -> None:
+        self._log(f"W  {cmd}")
+        self.inst.write(cmd)
+
+    def _drain_error_queue(self) -> List[str]:
+        """Read every SYST:ERR? entry until '0,"No error"'. Returns the messages."""
+        errors: List[str] = []
+        for _ in range(20):  # safety cap
+            try:
+                e = self.inst.query("SYST:ERR?").strip()
+            except Exception:
+                break
+            if not e:
+                break
+            # FSP returns '<code>,"<msg>"' — code 0 means no error.
+            code = e.split(",", 1)[0].strip().lstrip("+-")
+            try:
+                if int(code) == 0:
+                    break
+            except ValueError:
+                break
+            errors.append(e)
+        return errors
+
+    def close(self) -> None:
+        try:
+            self.inst.write("INIT:CONT ON")  # restore continuous
+        except Exception:
+            pass
+        try: self.inst.close()
+        except Exception: pass
+        try: self.rm.close()
+        except Exception: pass
+=======
         self.rm = pyvisa.ResourceManager("@py")
         self.inst = self.rm.open_resource(resource)
         self.inst.timeout = timeout_ms
@@ -135,12 +216,43 @@ class FSPInstrument:
             self.rm.close()
         except Exception:
             pass
+>>>>>>> 63358be94f04a214d7e34c454279c8bcaaf7ba76
 
     # ---- high level ----------------------------------------------------
     def idn(self) -> str:
         return self.query("*IDN?")
 
     def active_traces(self) -> List[int]:
+<<<<<<< HEAD
+        """
+        Return list of trace numbers currently displayed (1..3) on the FSP.
+
+        Uses the FSP-native short form `DISP:TRAC<n>:STAT?`. If that errors,
+        falls back to the FSW long form. Defensive parsing: accepts '1', '+1',
+        'ON', '1\\n', etc.
+        """
+        active: List[int] = []
+        for n in range(1, self.MAX_TRACES + 1):
+            ans = None
+            for cmd in (f"DISP:TRAC{n}:STAT?", f"DISP:WIND:TRAC{n}:STAT?"):
+                try:
+                    ans = self.query(cmd)
+                    # If the command was rejected, the error queue grows; check it.
+                    errs = self._drain_error_queue()
+                    if errs:
+                        self._log(f"errors after {cmd}: {errs}")
+                        ans = None
+                        continue
+                    break
+                except Exception as exc:
+                    self._log(f"{cmd} raised {exc}")
+                    continue
+            if ans is None:
+                self._log(f"could not query trace {n} state")
+                continue
+            token = ans.strip().upper().lstrip("+")
+            if token.startswith("1") or token.startswith("ON"):
+=======
         """Return list of trace numbers currently displayed (1..3)."""
         active: List[int] = []
         for n in range(1, self.MAX_TRACES + 1):
@@ -151,6 +263,7 @@ class FSPInstrument:
                 # Fall back to short form
                 ans = self.query(f"DISP:TRAC{n}:STAT?")
             if ans.strip().lstrip("+").startswith("1"):
+>>>>>>> 63358be94f04a214d7e34c454279c8bcaaf7ba76
                 active.append(n)
         return active
 
@@ -165,6 +278,10 @@ class FSPInstrument:
             sweep_count = 1
         if sweep_count < 1:
             sweep_count = 1
+<<<<<<< HEAD
+        return dict(f_start=f_start, f_stop=f_stop, n_pts=n_pts,
+                    sweep_time=sweep_time, sweep_count=sweep_count)
+=======
         return dict(
             f_start=f_start,
             f_stop=f_stop,
@@ -172,6 +289,7 @@ class FSPInstrument:
             sweep_time=sweep_time,
             sweep_count=sweep_count,
         )
+>>>>>>> 63358be94f04a214d7e34c454279c8bcaaf7ba76
 
     def frequency_axis(self, settings: Optional[Dict[str, float]] = None) -> np.ndarray:
         s = settings or self.sweep_settings()
@@ -181,6 +299,25 @@ class FSPInstrument:
         """Put the instrument in single-sweep mode and clear status."""
         self.write("INIT:CONT OFF")
         self.write("*CLS")
+<<<<<<< HEAD
+        self._drain_error_queue()
+
+    def trigger_and_wait(self, timeout_s: float) -> None:
+        """
+        Start a single sweep and block until it completes.
+
+        Uses INIT;*WAI which on FSP holds the SCPI parser until the sweep is
+        done — so the *OPC? (or any subsequent query) only returns at sweep
+        end. Requires INIT:CONT OFF (set by arm_single).
+        """
+        saved = self.inst.timeout
+        # Generous timeout: 5 s base + 2x sweep total
+        eff_ms = max(saved, int(timeout_s * 1000) + 5000)
+        try:
+            self.inst.timeout = eff_ms
+            self.write("INIT;*WAI")
+            # *OPC? returns 1 only after *WAI completes; serves as a barrier.
+=======
 
     def trigger_and_wait(self, timeout_s: float) -> None:
         """Start a single sweep and block until *OPC? returns 1."""
@@ -190,14 +327,31 @@ class FSPInstrument:
             self.inst.timeout = max(saved, int(timeout_s * 1000) + 5000)
             self.write("INIT;*WAI")
             # Belt-and-braces: poll *OPC? as well in case *WAI returns early.
+>>>>>>> 63358be94f04a214d7e34c454279c8bcaaf7ba76
             self.query("*OPC?")
         finally:
             self.inst.timeout = saved
 
+<<<<<<< HEAD
+    def fetch_trace(self, trace_num: int, timeout_s: float = 30.0) -> np.ndarray:
+        """Read trace as ASCII floats. Bumps timeout for big point counts."""
+        saved = self.inst.timeout
+        try:
+            self.inst.timeout = max(saved, int(timeout_s * 1000))
+            raw = self.inst.query(f"TRAC:DATA? TRACE{trace_num}").strip()
+        finally:
+            self.inst.timeout = saved
+        # Comma-separated ASCII floats. np.fromstring is deprecated;
+        # use a chunked split which is fast and 3.12-safe.
+        if not raw:
+            return np.empty(0, dtype=float)
+        return np.array(raw.split(","), dtype=float)
+=======
     def fetch_trace(self, trace_num: int) -> np.ndarray:
         raw = self.query(f"TRAC:DATA? TRACE{trace_num}")
         # Comma-separated ASCII floats
         return np.fromstring(raw, sep=",", dtype=float)
+>>>>>>> 63358be94f04a214d7e34c454279c8bcaaf7ba76
 
 
 # ===========================================================================
@@ -384,10 +538,27 @@ class AcquisitionWorker(QtCore.QObject):
             if self._stop:
                 break
 
+<<<<<<< HEAD
+            # Fetch all active traces. Use a generous timeout proportional
+            # to sweep time + point count.
+            n_pts = self._freq_axis.shape[0]
+            fetch_timeout = max(15.0, self._sweep_total + n_pts * 0.001 + 5.0)
+            traces: Dict[int, np.ndarray] = {}
+            for tn in self._active:
+                arr = self._fetch_one(tn, fetch_timeout)
+                if arr.shape[0] != n_pts:
+                    raise FSPError(
+                        f"Trace {tn} returned {arr.shape[0]} points, expected {n_pts}. "
+                        f"This usually means a SCPI sync issue \u2014 try increasing N "
+                        f"or check sweep settings."
+                    )
+                traces[tn] = arr
+=======
             # Fetch all active traces
             traces: Dict[int, np.ndarray] = {}
             for tn in self._active:
                 traces[tn] = self.inst.fetch_trace(tn)
+>>>>>>> 63358be94f04a214d7e34c454279c8bcaaf7ba76
 
             # Sanity: frequency axis should not have changed mid-run
             current_axis = self.inst.frequency_axis()
@@ -462,6 +633,63 @@ class AcquisitionWorker(QtCore.QObject):
         while not self._stop and _perf() < end:
             time.sleep(min(0.1, end - _perf()))
 
+<<<<<<< HEAD
+    def _fetch_one(self, trace_num: int, timeout_s: float) -> np.ndarray:
+        """Adapter that calls fetch_trace with a timeout if the instrument supports it."""
+        try:
+            return self.inst.fetch_trace(trace_num, timeout_s=timeout_s)  # type: ignore[arg-type]
+        except TypeError:
+            # Mock signature has no timeout_s kwarg
+            return self.inst.fetch_trace(trace_num)
+
+    def _trigger_with_progress(self, idx: int):
+        """
+        Trigger a single sweep on the instrument and emit smooth progress.
+
+        We run the *blocking* trigger_and_wait() on a tiny helper thread so
+        the worker thread is free to emit progress signals. This avoids the
+        previous *OPC/*ESR polling race that caused VISA timeouts on real FSPs.
+        """
+        import threading
+        total = max(0.05, self._sweep_total)
+        done = threading.Event()
+        err_box: List[BaseException] = []
+
+        def _trigger():
+            try:
+                # Generous deadline: 3x sweep time + 5 s slack
+                self.inst.trigger_and_wait(total * 3 + 5.0)
+            except BaseException as exc:
+                err_box.append(exc)
+            finally:
+                done.set()
+
+        th = threading.Thread(target=_trigger, daemon=True)
+        t0 = _perf()
+        th.start()
+
+        # Smoothly emit progress while the sweep runs. Cap at 99% until done.
+        max_wait = total * 5 + 10.0
+        while not done.is_set() and not self._stop:
+            elapsed = _perf() - t0
+            self.captureProgress.emit(idx, min(0.99, elapsed / total))
+            if elapsed > max_wait:
+                # Hard ceiling — don't hang forever
+                break
+            time.sleep(0.05)
+
+        # If the user pressed Stop, let the trigger thread finish naturally
+        # so the instrument isn't left mid-sweep with a dangling query.
+        th.join(timeout=max_wait)
+        if err_box:
+            raise err_box[0]
+        if not done.is_set():
+            raise FSPError(
+                f"Sweep did not complete within {max_wait:.1f} s. "
+                f"Check sweep time/count on the analyzer."
+            )
+        self.captureProgress.emit(idx, 1.0)
+=======
     def _trigger_with_progress(self, idx: int):
         """
         Tell the instrument to take a single sweep, then poll *OPC? —
@@ -512,6 +740,7 @@ class AcquisitionWorker(QtCore.QObject):
                 self.captureProgress.emit(idx, min(0.99, (_perf() - t0) / total))
                 time.sleep(0.05)
             self.captureProgress.emit(idx, 1.0)
+>>>>>>> 63358be94f04a214d7e34c454279c8bcaaf7ba76
 
 
 # ===========================================================================
@@ -593,6 +822,29 @@ class MainWindow(QtWidgets.QMainWindow):
         cl.addWidget(QtWidgets.QLabel("VISA Resource:"), 0, 0)
         self.resource_edit = QtWidgets.QLineEdit("TCPIP::192.168.1.10::INSTR")
         cl.addWidget(self.resource_edit, 0, 1, 1, 3)
+<<<<<<< HEAD
+        cl.addWidget(QtWidgets.QLabel("VISA backend:"), 0, 4)
+        self.backend_combo = QtWidgets.QComboBox()
+        # @py = pyvisa-py (pure Python); @ivi/blank = system VISA (NI / R&S)
+        self.backend_combo.addItems(["@py (pyvisa-py)", "@ivi (system VISA)"])
+        cl.addWidget(self.backend_combo, 0, 5)
+        self.demo_check = QtWidgets.QCheckBox("Demo Mode")
+        cl.addWidget(self.demo_check, 0, 6)
+        self.debug_check = QtWidgets.QCheckBox("Log SCPI to stderr")
+        cl.addWidget(self.debug_check, 1, 6)
+        self.connect_btn = QtWidgets.QPushButton("Connect")
+        cl.addWidget(self.connect_btn, 0, 7)
+        self.disconnect_btn = QtWidgets.QPushButton("Disconnect")
+        self.disconnect_btn.setEnabled(False)
+        cl.addWidget(self.disconnect_btn, 0, 8)
+        self.diag_btn = QtWidgets.QPushButton("Diagnostics…")
+        self.diag_btn.setEnabled(False)
+        cl.addWidget(self.diag_btn, 1, 8)
+        cl.addWidget(QtWidgets.QLabel("Instrument ID:"), 1, 0)
+        self.idn_label = QtWidgets.QLabel("(not connected)")
+        self.idn_label.setStyleSheet("color: #888;")
+        cl.addWidget(self.idn_label, 1, 1, 1, 5)
+=======
         self.demo_check = QtWidgets.QCheckBox("Demo Mode (no hardware)")
         cl.addWidget(self.demo_check, 0, 4)
         self.connect_btn = QtWidgets.QPushButton("Connect")
@@ -604,6 +856,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.idn_label = QtWidgets.QLabel("(not connected)")
         self.idn_label.setStyleSheet("color: #888;")
         cl.addWidget(self.idn_label, 1, 1, 1, 6)
+>>>>>>> 63358be94f04a214d7e34c454279c8bcaaf7ba76
         root.addWidget(conn_box)
 
         # Settings group
@@ -681,6 +934,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def _wire_signals(self):
         self.connect_btn.clicked.connect(self.on_connect)
         self.disconnect_btn.clicked.connect(self.on_disconnect)
+<<<<<<< HEAD
+        self.diag_btn.clicked.connect(self.on_diagnostics)
+=======
+>>>>>>> 63358be94f04a214d7e34c454279c8bcaaf7ba76
         self.browse_btn.clicked.connect(self.on_browse)
         self.now_btn.clicked.connect(
             lambda: self.start_dt.setDateTime(QDateTime.currentDateTime()))
@@ -690,6 +947,66 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # -------- Slots --------
     @Slot()
+<<<<<<< HEAD
+    def on_diagnostics(self):
+        """Probe the instrument and show what SCPI is actually returning."""
+        if self.instrument is None:
+            return
+        lines: List[str] = []
+        try:
+            lines.append(f"*IDN?         -> {self.instrument.idn()}")
+        except Exception as exc:
+            lines.append(f"*IDN?         -> ERROR: {exc}")
+
+        # Trace state — try BOTH command forms explicitly, show raw answers.
+        lines.append("")
+        lines.append("Trace state queries (raw responses):")
+        if isinstance(self.instrument, FSPInstrument):
+            for n in (1, 2, 3):
+                for cmd in (f"DISP:TRAC{n}:STAT?", f"DISP:WIND:TRAC{n}:STAT?"):
+                    try:
+                        ans = self.instrument.inst.query(cmd).strip()
+                        errs = self.instrument._drain_error_queue()
+                        suffix = f"  [errors: {errs}]" if errs else ""
+                        lines.append(f"  {cmd:30s} -> {ans!r}{suffix}")
+                    except Exception as exc:
+                        lines.append(f"  {cmd:30s} -> EXC: {exc}")
+        else:
+            lines.append(f"  active_traces() -> {self.instrument.active_traces()}")
+
+        # Sweep settings
+        lines.append("")
+        lines.append("Sweep settings:")
+        try:
+            s = self.instrument.sweep_settings()
+            for k, v in s.items():
+                lines.append(f"  {k:12s} = {v}")
+        except Exception as exc:
+            lines.append(f"  ERROR: {exc}")
+
+        # Active traces (parsed)
+        lines.append("")
+        try:
+            lines.append(f"Parsed active traces: {self.instrument.active_traces()}")
+        except Exception as exc:
+            lines.append(f"Parsed active traces: ERROR {exc}")
+
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("FSP Diagnostics")
+        dlg.resize(700, 500)
+        v = QtWidgets.QVBoxLayout(dlg)
+        text = QtWidgets.QPlainTextEdit("\n".join(lines))
+        text.setReadOnly(True)
+        text.setFont(QtGui.QFont("Monospace"))
+        v.addWidget(text)
+        btns = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok)
+        btns.accepted.connect(dlg.accept)
+        v.addWidget(btns)
+        dlg.exec_() if hasattr(dlg, "exec_") else dlg.exec()
+
+    @Slot()
+=======
+>>>>>>> 63358be94f04a214d7e34c454279c8bcaaf7ba76
     def on_browse(self):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self, "Choose output CSV", self.file_edit.text(),
@@ -706,7 +1023,16 @@ class MainWindow(QtWidgets.QMainWindow):
                 if not _HAS_PYVISA:
                     raise FSPError(
                         "pyvisa is not installed; install it or enable Demo Mode.")
+<<<<<<< HEAD
+                backend_token = self.backend_combo.currentText().split()[0]  # "@py" or "@ivi"
+                self.instrument = FSPInstrument(
+                    self.resource_edit.text().strip(),
+                    backend=backend_token,
+                    debug=self.debug_check.isChecked(),
+                )
+=======
                 self.instrument = FSPInstrument(self.resource_edit.text().strip())
+>>>>>>> 63358be94f04a214d7e34c454279c8bcaaf7ba76
             idn = self.instrument.idn()
             self.idn_label.setText(idn)
             self.idn_label.setStyleSheet("color: #2ecc71;")
@@ -714,10 +1040,18 @@ class MainWindow(QtWidgets.QMainWindow):
             self._refresh_instrument_state()
             self.connect_btn.setEnabled(False)
             self.disconnect_btn.setEnabled(True)
+<<<<<<< HEAD
+            self.diag_btn.setEnabled(True)
+=======
+>>>>>>> 63358be94f04a214d7e34c454279c8bcaaf7ba76
             self.start_manual_btn.setEnabled(True)
             self.start_scheduled_btn.setEnabled(True)
             self.demo_check.setEnabled(False)
             self.resource_edit.setEnabled(False)
+<<<<<<< HEAD
+            self.backend_combo.setEnabled(False)
+=======
+>>>>>>> 63358be94f04a214d7e34c454279c8bcaaf7ba76
             self.status_label.setText("Connected.")
         except Exception as exc:
             QtWidgets.QMessageBox.critical(self, "Connection failed", str(exc))
@@ -738,10 +1072,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self.idn_label.setStyleSheet("color: #888;")
         self.connect_btn.setEnabled(True)
         self.disconnect_btn.setEnabled(False)
+<<<<<<< HEAD
+        self.diag_btn.setEnabled(False)
+=======
+>>>>>>> 63358be94f04a214d7e34c454279c8bcaaf7ba76
         self.start_manual_btn.setEnabled(False)
         self.start_scheduled_btn.setEnabled(False)
         self.demo_check.setEnabled(True)
         self.resource_edit.setEnabled(True)
+<<<<<<< HEAD
+        self.backend_combo.setEnabled(True)
+=======
+>>>>>>> 63358be94f04a214d7e34c454279c8bcaaf7ba76
         for led in (self.led_t1, self.led_t2, self.led_t3):
             led.setOn(False)
         self.status_label.setText("Disconnected.")
