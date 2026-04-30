@@ -46,6 +46,17 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 # ---------------------------------------------------------------------------
+# Version
+# ---------------------------------------------------------------------------
+# 0.5.0 — first version that connected to a real FSP-38; INIT:IMM-based
+#         single-sweep arming. Trace detection via DISP:TRAC<n>:STAT? + MODE?.
+# 0.6.0 — Honors continuous sweep (no INIT:IMM), probe-based trace detection
+#         via TRAC:DATA?, error-queue draining around every fetch, defensive
+#         __init__ that won't hang the kernel on a flaky link, GUI version
+#         label, dialog robustness improvements.
+APP_VERSION = "0.6.0"
+
+# ---------------------------------------------------------------------------
 # Python version handling
 # ---------------------------------------------------------------------------
 PY_VERSION = sys.version_info
@@ -115,7 +126,8 @@ class FSPInstrument:
     MAX_TRACES = 3  # FSP supports up to 3 traces simultaneously
 
     def __init__(self, resource: str, timeout_ms: int = 30000,
-                 backend: str = "@py", debug: bool = False):
+                 backend: str = "@py", debug: bool = False,
+                 continuous_sweep: bool = True):
         if not _HAS_PYVISA:
             raise FSPError(
                 "pyvisa is not installed. `pip install pyvisa pyvisa-py` "
@@ -123,24 +135,72 @@ class FSPInstrument:
             )
         self.resource = resource
         self.debug = debug
+        # When True (default), the FSP is left in its existing continuous-
+        # sweep state — we don't issue INIT:CONT OFF or INIT:IMM. Instead we
+        # synchronize on *OPC? at sweep boundaries and read whatever the
+        # latest completed sweep produced.
+        self.continuous_sweep = continuous_sweep
+        # Cached number of trace points (set by sweep_settings); used by
+        # active_traces() to validate trace-data probes without parsing
+        # the entire payload.
+        self._cached_n_pts: Optional[int] = None
+
+        # CONNECT — keep this minimal. Anything that touches the SCPI parser
+        # here can hang the calling thread (and on Spyder's main thread, that
+        # kills the kernel via missed heartbeats). We open the resource,
+        # set terminators, and STOP. Housekeeping is done lazily on first
+        # use, and is wrapped in short timeouts so it can't take down the
+        # GUI even if the FSP is in a weird state.
         self.rm = pyvisa.ResourceManager(backend)
-        self.inst = self.rm.open_resource(resource)
-        self.inst.timeout = timeout_ms
+        try:
+            self.inst = self.rm.open_resource(resource)
+        except Exception:
+            try: self.rm.close()
+            except Exception: pass
+            raise
+        # Cap connect-time timeout to 5 s so a non-responsive instrument
+        # can't freeze us; caller can raise it later as needed.
+        try:
+            self.inst.timeout = min(int(timeout_ms), 5000)
+        except Exception:
+            pass
         # Standard message terminators for R&S over TCPIP
         try:
             self.inst.read_termination = "\n"
             self.inst.write_termination = "\n"
         except Exception:
             pass
-        # ASCII trace data, max digits, English number format. Flush errors.
+        # Restore the caller-requested timeout for normal operation.
         try:
-            self.inst.write("*CLS")
-            self.inst.write("FORM ASC")
-            self.inst.write("FORM:DEXP:DSEP POIN")  # decimal point, not comma (locale)
+            self.inst.timeout = timeout_ms
         except Exception:
             pass
-        # Drain any prior errors so future SYST:ERR? checks are clean
-        self._drain_error_queue()
+        # Track whether one-time setup writes (FORM ASC etc) have run.
+        self._configured = False
+
+    def _ensure_configured(self) -> None:
+        """Send one-time housekeeping writes the first time we actually use
+        the connection. Each write is independently guarded so a single
+        rejected command doesn't abort the whole setup.
+
+        Called lazily by query() before the first SCPI operation.
+        """
+        if self._configured:
+            return
+        # Set the flag FIRST so re-entry from inside these calls (via the
+        # query/write helpers) doesn't recurse forever.
+        self._configured = True
+        for cmd in ("*CLS", "FORM ASC", "FORM:DEXP:DSEP POIN"):
+            try:
+                self.inst.write(cmd)
+            except Exception as exc:
+                self._log(f"setup write {cmd!r} failed: {exc}")
+        try:
+            stale = self._drain_error_queue()
+            if stale:
+                self._log(f"drained startup errors: {stale}")
+        except Exception:
+            pass
 
     # ---- low level -----------------------------------------------------
     def _log(self, msg: str) -> None:
@@ -148,12 +208,18 @@ class FSPInstrument:
             sys.stderr.write(f"[FSP] {msg}\n")
 
     def query(self, cmd: str) -> str:
+        # Lazy housekeeping on first SCPI use. Skip when we ARE the
+        # housekeeping (otherwise we recurse forever).
+        if not self._configured and not cmd.upper().startswith("SYST:ERR"):
+            self._ensure_configured()
         self._log(f"Q  {cmd}")
         ans = self.inst.query(cmd).strip()
         self._log(f" -> {ans[:80]}{'...' if len(ans) > 80 else ''}")
         return ans
 
     def write(self, cmd: str) -> None:
+        if not self._configured:
+            self._ensure_configured()
         self._log(f"W  {cmd}")
         self.inst.write(cmd)
 
@@ -178,8 +244,10 @@ class FSPInstrument:
         return errors
 
     def close(self) -> None:
+        # Always restore continuous sweep on the way out (cheap, harmless
+        # even if it was already on).
         try:
-            self.inst.write("INIT:CONT ON")  # restore continuous
+            self.inst.write("INIT:CONT ON")
         except Exception:
             pass
         try: self.inst.close()
@@ -267,17 +335,25 @@ class FSPInstrument:
         """
         Return list of trace numbers currently *displayed* (1..3) on the FSP.
 
-        FSP gotcha: STAT? alone is not sufficient — on FSP-38 firmware, traces
-        in MAX HOLD or AVERAGE mode return STAT?=0 even though they are very
-        much visible on screen. We therefore combine DISP:TRAC<n>:MODE? with
-        DISP:TRAC<n>:STAT? and treat a trace as displayed iff MODE != BLANK
-        (preferred) or STAT? == 1 (fallback).
+        Detection strategy: we PROBE each trace by attempting a short
+        TRAC:DATA? read. The reasoning:
 
-        Reference: FSP Operating Manual Vol 2, DISPlay[:WINDow]:TRACe<n>
-        subtree (lines ~9486 + MODE WRITe|VIEW|AVERage|MAXHold|MINHold|BLANk).
+        - On FSP-38 firmware in continuous-sweep mode, both DISP:TRAC<n>:MODE?
+          and DISP:TRAC<n>:STAT? have proven unreliable: MODE? returns 'WRIT'
+          for every trace regardless of actual configuration, and STAT? only
+          flags the *currently selected* trace, not all displayed ones.
+        - TRAC:DATA?, however, has unambiguous semantics: it returns the
+          last completed sweep buffer for the named trace if and only if
+          that trace is allocated/displayed. A blanked trace produces an
+          immediate SCPI error (-100 "Command error") which we catch.
+
+        Side effect: the trace data is fetched but discarded here. That's
+        fine — it's the same data we'll need to re-fetch in fetch_trace()
+        moments later, and the FSP treats repeated TRAC:DATA? on the same
+        sweep as cheap.
         """
         # Drain any stale errors from prior failed commands so they don't
-        # get attributed to (and discard the result of) our first query.
+        # get attributed to (and discard the result of) our first probe.
         try:
             stale = self._drain_error_queue()
             if stale:
@@ -285,15 +361,54 @@ class FSPInstrument:
         except Exception:
             pass
 
-        active: List[int] = []
-        for n in range(1, self.MAX_TRACES + 1):
-            mode_tok, state_tok = self._query_trace_state(n)
-            self._log(f"trace {n}: MODE={mode_tok!r} STAT={state_tok!r}")
-            if mode_tok is None and state_tok is None:
-                self._log(f"could not query trace {n} state")
-                continue
-            if self._is_displayed(mode_tok, state_tok):
-                active.append(n)
+        # Determine expected trace length so we can sanity-check probes.
+        try:
+            n_pts_expected = int(self._cached_n_pts or float(self.query("SWE:POIN?")))
+            self._cached_n_pts = n_pts_expected
+        except Exception:
+            n_pts_expected = 0  # Unknown; accept any non-empty response.
+
+        # Use a short timeout per probe — a healthy trace responds in
+        # well under 1 sweep period; a blanked trace errors immediately.
+        saved = self.inst.timeout
+        try:
+            self.inst.timeout = max(2000, int(saved or 0))
+            try:
+                self.inst.write("FORM ASC")
+            except Exception:
+                pass
+            active: List[int] = []
+            for n in range(1, self.MAX_TRACES + 1):
+                cmd = f"TRAC:DATA? TRACE{n}"
+                self._log(f"Q  {cmd}  (probe)")
+                try:
+                    vals = self.inst.query_ascii_values(
+                        cmd, container=list, separator=",")
+                except Exception as exc:
+                    errs = self._drain_error_queue()
+                    self._log(f"trace {n} probe failed: {exc}; FSP errors: {errs}")
+                    continue
+                # Drain any errors silently (TRAC:DATA? on a blanked trace
+                # may return [] AND queue a -100 simultaneously).
+                errs = self._drain_error_queue()
+                count = len(vals) if vals is not None else 0
+                if errs:
+                    # Definitive negative — FSP told us this trace isn't
+                    # available. Don't trust the (likely empty) payload.
+                    self._log(f"trace {n} reported errors: {errs}")
+                    continue
+                # Accept if (a) we got the expected point count, OR
+                # (b) we got a non-trivial number of points when the
+                # expected count is unknown.
+                if (n_pts_expected and count == n_pts_expected) or \
+                   (not n_pts_expected and count > 1):
+                    self._log(f"trace {n}: {count} points => DISPLAYED")
+                    active.append(n)
+                else:
+                    self._log(f"trace {n}: {count} points (expected "
+                              f"{n_pts_expected}) => hidden")
+        finally:
+            self.inst.timeout = saved
         return active
 
     def sweep_settings(self) -> Dict[str, float]:
@@ -307,6 +422,9 @@ class FSPInstrument:
             sweep_count = 1
         if sweep_count < 1:
             sweep_count = 1
+        # Cache n_pts so active_traces() can validate probe lengths without
+        # an extra round-trip.
+        self._cached_n_pts = n_pts
         return dict(f_start=f_start, f_stop=f_stop, n_pts=n_pts,
                     sweep_time=sweep_time, sweep_count=sweep_count)
 
@@ -315,31 +433,60 @@ class FSPInstrument:
         return np.linspace(s["f_start"], s["f_stop"], int(s["n_pts"]))
 
     def arm_single(self) -> None:
-        """Put the instrument in single-sweep mode and clear status."""
+        """Prepare the instrument for the next acquisition.
+
+        In continuous-sweep mode (the default and what the user wants),
+        this is a no-op — we leave INIT:CONT alone, since the FSP is
+        already sweeping and toggling it would either error or interrupt.
+        Single-sweep mode is preserved as an option but not used.
+        """
+        if self.continuous_sweep:
+            # Just clear stale errors so subsequent SYST:ERR? checks are
+            # meaningful. No INIT:CONT OFF, no *CLS-induced state change.
+            self._drain_error_queue()
+            return
         self.write("INIT:CONT OFF")
         self.write("*CLS")
         self._drain_error_queue()
 
     def trigger_and_wait(self, timeout_s: float) -> None:
         """
-        Start a single sweep and block until it completes.
+        Synchronize with the next completed sweep and return.
 
-        Uses INIT:IMM;*WAI which on FSP holds the SCPI parser until the sweep
-        is done — so any subsequent query only returns at sweep end. We then
-        send *OPC? as an explicit barrier. Bare "INIT" is rejected by FSP
-        firmware with -200,"Function not available;INIT" — must use the long
-        form INIT:IMMediate (or its short form INIT:IMM).
+        Continuous-sweep mode (default): we do NOT send INIT:IMM (that
+        command is rejected by the FSP with -200 "Function not available"
+        when continuous sweep is already running and is unnecessary anyway
+        — the instrument is already sweeping). Instead we issue *OPC? which
+        on the FSP holds until all pending operations (i.e. the in-flight
+        sweep) complete, giving us a clean boundary at which to read trace
+        data. We deliberately do NOT use *WAI here because *WAI in cont
+        mode never returns (there's always another sweep pending).
 
-        Requires INIT:CONT OFF (set by arm_single).
+        Single-sweep mode (only if continuous_sweep=False): uses the
+        traditional INIT:IMM;*WAI then *OPC? barrier.
         """
         saved = self.inst.timeout
-        # Generous timeout: 5 s base + 2x sweep total
-        eff_ms = max(saved, int(timeout_s * 1000) + 5000)
+        # Generous timeout: 5 s base + 3x sweep total. *OPC? in cont mode
+        # may need to wait for the current sweep to finish.
+        eff_ms = max(saved, int(timeout_s * 1000 * 3) + 5000)
         try:
             self.inst.timeout = eff_ms
-            self.write("INIT:IMM;*WAI")
-            # *OPC? returns 1 only after *WAI completes; serves as a barrier.
-            self.query("*OPC?")
+            if self.continuous_sweep:
+                # Just wait for the current sweep to finish. We don't
+                # arm anything — the FSP's natural sweep cadence drives
+                # acquisition.
+                try:
+                    self.query("*OPC?")
+                except Exception as exc:
+                    # *OPC? timeout in cont mode is non-fatal: the trace
+                    # buffer still contains the last completed sweep. Log
+                    # and proceed.
+                    self._log(f"*OPC? in cont mode raised {exc}; proceeding")
+                # Drain any unrelated errors that may have queued.
+                self._drain_error_queue()
+            else:
+                self.write("INIT:IMM;*WAI")
+                self.query("*OPC?")
         finally:
             self.inst.timeout = saved
 
@@ -355,6 +502,14 @@ class FSPInstrument:
         """
         saved = self.inst.timeout
         eff_ms = max(int(saved or 0), int(timeout_s * 1000))
+        # Drain any stale errors BEFORE the read so a -410 "Query interrupted"
+        # from a previous failed command can't poison this fetch.
+        try:
+            stale = self._drain_error_queue()
+            if stale:
+                self._log(f"drained stale errors before fetch_trace: {stale}")
+        except Exception:
+            pass
         try:
             self.inst.timeout = eff_ms
             # Force ASCII format every fetch — cheap insurance in case the
@@ -365,35 +520,34 @@ class FSPInstrument:
             except Exception:
                 pass
             # FSP canonical form per Operating Manual Vol 2:
-            #   TRACe<1|2>[:DATA] TRACE1|TRACE2|TRACE3, <data>
-            # The numeric suffix on TRACe (which we omit) selects the
-            # measurement window; the TRACE<n> parameter selects which
-            # trace within the window. Note the SPACE between the '?' and
-            # 'TRACE<n>' is REQUIRED — it's a parameter, not part of the
-            # header.
+            #   TRAC:DATA? TRACE1|TRACE2|TRACE3
+            # In continuous-sweep mode this returns the most recently
+            # completed sweep buffer for the named trace.
             cmd = f"TRAC:DATA? TRACE{trace_num}"
             self._log(f"Q  {cmd}  (timeout={eff_ms} ms)")
-            # Prefer read_ascii_values: it understands the optional binary-block
-            # header and uses pyvisa's chunked reader, which is far less likely
-            # to hang waiting for a terminator that never comes.
+            # query_ascii_values: pyvisa handles termination + parsing.
+            # If this fails we do NOT issue a second query — doing so would
+            # produce -410 "Query interrupted" because the instrument may
+            # still be flushing the previous (failed) response. Instead we
+            # surface the failure to the caller, who decides whether to
+            # retry or skip.
             try:
                 values = self.inst.query_ascii_values(
                     cmd, container=np.array, separator=",")
                 arr = np.asarray(values, dtype=float)
             except Exception as exc:
-                # Fall back to plain query + manual parse.
-                self._log(f"query_ascii_values failed ({exc}); using raw query")
-                raw = self.inst.query(cmd).strip()
-                if not raw:
-                    return np.empty(0, dtype=float)
-                # If the FSP returned a binary block (#<n><len><data>) despite
-                # FORM ASC, surface a clear error rather than NaN-spam.
-                if raw.startswith("#"):
-                    raise FSPError(
-                        "FSP returned trace data in binary-block format. "
-                        "Send `FORM ASC` to the instrument and retry."
-                    )
-                arr = np.array([s for s in raw.split(",") if s.strip()], dtype=float)
+                # Capture FSP-side errors before re-raising so the caller
+                # (and the diagnostics dialog) can see the root cause.
+                errs = []
+                try:
+                    errs = self._drain_error_queue()
+                except Exception:
+                    pass
+                self._log(f"fetch_trace({trace_num}) failed: {exc}; FSP errors: {errs}")
+                raise FSPError(
+                    f"TRAC:DATA? TRACE{trace_num} failed: {exc}"
+                    + (f" | FSP errors: {errs}" if errs else "")
+                ) from exc
         finally:
             self.inst.timeout = saved
         return arr
@@ -819,7 +973,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("R&S FSP Trace Logger")
+        self.setWindowTitle(f"R&S FSP Trace Logger v{APP_VERSION}")
         self.resize(1100, 720)
 
         self.instrument = None  # FSPInstrument or MockFSPInstrument
@@ -836,6 +990,20 @@ class MainWindow(QtWidgets.QMainWindow):
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
         root = QtWidgets.QVBoxLayout(central)
+
+        # Header strip with app title + version
+        header = QtWidgets.QHBoxLayout()
+        title_lbl = QtWidgets.QLabel("<b>R&amp;S FSP Trace Logger</b>")
+        title_lbl.setStyleSheet("font-size: 14pt;")
+        header.addWidget(title_lbl)
+        header.addStretch(1)
+        version_lbl = QtWidgets.QLabel(f"v{APP_VERSION}")
+        version_lbl.setStyleSheet("color: #888; font-family: monospace;")
+        version_lbl.setToolTip(
+            "0.6.0: continuous-sweep aware, probe-based trace detection.\n"
+            "0.5.0: initial real-FSP version (single-sweep, MODE/STAT detection).")
+        header.addWidget(version_lbl)
+        root.addLayout(header)
 
         # Connection group
         conn_box = QtWidgets.QGroupBox("Connection")
@@ -913,6 +1081,16 @@ class MainWindow(QtWidgets.QMainWindow):
         stl.addWidget(self.led_t2, 0, 1)
         stl.addWidget(self.led_t3, 0, 2)
         stl.addWidget(self.led_rec, 0, 3)
+        # Probe button — manually re-detects which traces are displayed
+        # on the FSP and updates the LEDs. Issues TRAC:DATA? for each
+        # trace; non-blocking from the user's perspective (runs on a
+        # worker thread with a wall-clock cap).
+        self.probe_btn = QtWidgets.QPushButton("Probe Traces")
+        self.probe_btn.setEnabled(False)
+        self.probe_btn.setToolTip(
+            "Query the FSP to determine which traces are currently "
+            "displayed and update the LEDs.")
+        stl.addWidget(self.probe_btn, 0, 4)
 
         stl.addWidget(QtWidgets.QLabel("Capture progress:"), 1, 0)
         self.progress = QtWidgets.QProgressBar()
@@ -942,6 +1120,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.connect_btn.clicked.connect(self.on_connect)
         self.disconnect_btn.clicked.connect(self.on_disconnect)
         self.diag_btn.clicked.connect(self.on_diagnostics)
+        self.probe_btn.clicked.connect(self.on_probe_traces)
         self.browse_btn.clicked.connect(self.on_browse)
         self.now_btn.clicked.connect(
             lambda: self.start_dt.setDateTime(QDateTime.currentDateTime()))
@@ -952,44 +1131,93 @@ class MainWindow(QtWidgets.QMainWindow):
     # -------- Slots --------
     @Slot()
     def on_diagnostics(self):
-        """Probe the instrument and show what SCPI is actually returning."""
+        """Probe the instrument and show what SCPI is actually returning.
+
+        Wrapped in an outer try/finally that ALWAYS shows the dialog — even
+        if the probe code itself crashes — so the user always gets visible
+        feedback. Also disables the Diagnostics button for the duration to
+        prevent reentrant clicks (processEvents pumping queued clicks during
+        the long fetch test was triggering recursive on_diagnostics calls,
+        flooding stderr and never letting any single dialog actually open).
+        """
         if self.instrument is None:
             return
+        # Hard-disable the button so queued clicks can't recurse during
+        # processEvents in the fetch-test loop.
+        try:
+            self.diag_btn.setEnabled(False)
+        except Exception:
+            pass
         lines: List[str] = []
         try:
             lines.append(f"*IDN?         -> {self.instrument.idn()}")
         except Exception as exc:
             lines.append(f"*IDN?         -> ERROR: {exc}")
 
-        # Trace state — combine MODE? + STAT?. On FSP-38, traces in MAXHOLD
-        # or AVERAGE mode return STAT?=0 even while displayed, so neither
-        # query alone is sufficient. We treat a trace as displayed iff
-        # MODE != BLANK (preferred) or STAT? == 1 (fallback).
-        lines.append("")
-        lines.append("Trace state queries (raw responses):")
-        lines.append("  MODE? = WRIT|MAXH|AVER|MINH|VIEW  ->  displayed")
-        lines.append("  MODE? = BLAN                       ->  hidden")
-        lines.append("  STAT? = 1                          ->  displayed (fallback)")
+        # Sweep mode
         if isinstance(self.instrument, FSPInstrument):
-            for n in (1, 2, 3):
-                for cmd in (f"DISP:TRAC{n}:MODE?",
-                            f"DISP:WIND:TRAC{n}:MODE?",
-                            f"DISP:TRAC{n}:STAT?",
-                            f"DISP:WIND:TRAC{n}:STAT?"):
-                    try:
-                        ans = self.instrument.inst.query(cmd).strip()
-                        errs = self.instrument._drain_error_queue()
-                        suffix = f"  [errors: {errs}]" if errs else ""
-                        lines.append(f"  {cmd:30s} -> {ans!r}{suffix}")
-                    except Exception as exc:
-                        lines.append(f"  {cmd:30s} -> EXC: {exc}")
-                # Show parsed decision per trace
+            lines.append("")
+            mode_label = "continuous" if self.instrument.continuous_sweep else "single"
+            lines.append(f"Sweep handling: {mode_label} ("
+                         f"continuous_sweep={self.instrument.continuous_sweep})")
+
+        # Trace detection — we use TRAC:DATA? as a probe in continuous mode.
+        # A trace returning N floats is displayed; a trace returning errors
+        # or a wrong-length payload is blanked.
+        lines.append("")
+        lines.append("Trace probe (TRAC:DATA? TRACE<n> as detection signal):")
+        if isinstance(self.instrument, FSPInstrument):
+            inst = self.instrument
+            try:
+                n_pts_expected = int(inst._cached_n_pts
+                                     or float(inst.query("SWE:POIN?")))
+                inst._cached_n_pts = n_pts_expected
+            except Exception:
+                n_pts_expected = 0
+            saved = inst.inst.timeout
+            try:
+                inst.inst.timeout = max(2000, int(saved or 0))
                 try:
-                    mt, st = self.instrument._query_trace_state(n)
-                    decision = "DISPLAYED" if FSPInstrument._is_displayed(mt, st) else "hidden"
-                    lines.append(f"  -> trace {n}: MODE={mt!r} STAT={st!r}  =>  {decision}")
-                except Exception as exc:
-                    lines.append(f"  -> trace {n}: parse EXC: {exc}")
+                    inst.inst.write("FORM ASC")
+                except Exception:
+                    pass
+                for n in (1, 2, 3):
+                    cmd = f"TRAC:DATA? TRACE{n}"
+                    t0 = time.perf_counter()
+                    count = 0
+                    err_msg = ""
+                    try:
+                        vals = inst.inst.query_ascii_values(
+                            cmd, container=list, separator=",")
+                        count = len(vals) if vals is not None else 0
+                    except Exception as exc:
+                        err_msg = f" EXC={exc.__class__.__name__}"
+                    dt = time.perf_counter() - t0
+                    errs = inst._drain_error_queue()
+                    decision = (
+                        "DISPLAYED" if (n_pts_expected and count == n_pts_expected
+                                        or (not n_pts_expected and count > 1)) and not errs
+                        else "hidden"
+                    )
+                    err_suffix = f"  errs={errs}" if errs else ""
+                    lines.append(
+                        f"  TRAC:DATA? TRACE{n}: {count} pts in "
+                        f"{dt*1000:.0f} ms{err_msg}  =>  {decision}{err_suffix}"
+                    )
+            finally:
+                inst.inst.timeout = saved
+            # Also dump MODE/STAT for reference (legacy unreliable signals)
+            lines.append("")
+            lines.append("Reference (legacy, unreliable on FSP-38):")
+            for n in (1, 2, 3):
+                for cmd in (f"DISP:TRAC{n}:MODE?", f"DISP:TRAC{n}:STAT?"):
+                    try:
+                        ans = inst.inst.query(cmd).strip()
+                        errs = inst._drain_error_queue()
+                        suffix = f"  [errors: {errs}]" if errs else ""
+                        lines.append(f"  {cmd:25s} -> {ans!r}{suffix}")
+                    except Exception as exc:
+                        lines.append(f"  {cmd:25s} -> EXC: {exc}")
         else:
             lines.append(f"  active_traces() -> {self.instrument.active_traces()}")
 
@@ -1059,8 +1287,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 ts = result_holder.get("t_sweep", 0.0)
                 tf = result_holder.get("t_fetch", 0.0)
                 arr = result_holder.get("arr")
-                lines.append(f"  arming + INIT:IMM;*WAI (sweep_total ≈ {st:.3f} s)")
-                lines.append(f"  sweep finished in {ts:.3f} s")
+                mode_desc = ("continuous (no INIT:IMM)" if inst.continuous_sweep
+                             else "single (INIT:IMM;*WAI)")
+                lines.append(f"  sweep mode: {mode_desc}, sweep_total ≈ {st:.3f} s")
+                lines.append(f"  *OPC? barrier returned in {ts:.3f} s")
                 if arr is not None and getattr(arr, "size", 0):
                     lines.append(
                         f"  fetched {arr.shape[0]} points in {tf:.3f} s; "
@@ -1075,18 +1305,117 @@ class MainWindow(QtWidgets.QMainWindow):
             except Exception:
                 pass
 
-        dlg = QtWidgets.QDialog(self)
-        dlg.setWindowTitle("FSP Diagnostics")
-        dlg.resize(820, 620)
-        v = QtWidgets.QVBoxLayout(dlg)
-        text = QtWidgets.QPlainTextEdit("\n".join(lines))
-        text.setReadOnly(True)
-        text.setFont(QtGui.QFont("Monospace"))
-        v.addWidget(text)
-        btns = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok)
-        btns.accepted.connect(dlg.accept)
-        v.addWidget(btns)
-        dlg.exec_() if hasattr(dlg, "exec_") else dlg.exec()
+        # ALWAYS show a dialog — even if the probe above blew up.
+        try:
+            if not lines:
+                lines = ["Diagnostics produced no output."]
+            dlg = QtWidgets.QDialog(self)
+            dlg.setWindowTitle("FSP Diagnostics")
+            dlg.resize(820, 620)
+            dlg.setModal(True)
+            v = QtWidgets.QVBoxLayout(dlg)
+            text = QtWidgets.QPlainTextEdit("\n".join(lines))
+            text.setReadOnly(True)
+            text.setFont(QtGui.QFont("Monospace"))
+            text.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
+            v.addWidget(text)
+            btns = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok)
+            btns.accepted.connect(dlg.accept)
+            v.addWidget(btns)
+            # Force the dialog to the front so it can't get hidden behind
+            # the IDE / main window on Windows.
+            dlg.setWindowFlags(dlg.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
+            dlg.show()
+            dlg.raise_()
+            dlg.activateWindow()
+            (dlg.exec_() if hasattr(dlg, "exec_") else dlg.exec())
+        except Exception as exc:
+            # Last-ditch fallback: at least pop a message box.
+            try:
+                QtWidgets.QMessageBox.critical(
+                    self, "FSP Diagnostics (fallback)",
+                    "Diagnostics dialog failed to open.\n\n"
+                    f"Reason: {exc}\n\n"
+                    + "\n".join(lines[-30:]))
+            except Exception:
+                pass
+        finally:
+            try:
+                self.diag_btn.setEnabled(True)
+            except Exception:
+                pass
+
+    @Slot()
+    def on_probe_traces(self):
+        """Probe the FSP for currently displayed traces and update the LEDs.
+
+        Runs the probe (which issues TRAC:DATA? for each trace) on a worker
+        thread with a 15-second wall-clock cap so it can't hang the GUI even
+        if the FSP is unresponsive. The button is disabled while in flight
+        to prevent re-entrant clicks.
+        """
+        if self.instrument is None:
+            return
+        self.probe_btn.setEnabled(False)
+        original_status = self.status_label.text()
+        self.status_label.setText("Probing traces…")
+        # Force one immediate paint so the user sees the status change.
+        QtWidgets.QApplication.processEvents()
+
+        result_holder: Dict[str, object] = {}
+
+        def _do_probe():
+            try:
+                # Refresh sweep settings too — cheap and ensures n_pts is
+                # cached so the probe can validate trace lengths.
+                try:
+                    result_holder["sweep"] = self.instrument.sweep_settings()
+                except Exception as exc:
+                    result_holder["sweep_err"] = str(exc)
+                result_holder["active"] = self.instrument.active_traces()
+            except Exception as exc:
+                result_holder["error"] = f"{exc.__class__.__name__}: {exc}"
+
+        th = threading.Thread(target=_do_probe, daemon=True)
+        th.start()
+        deadline = time.perf_counter() + 15.0
+        while th.is_alive() and time.perf_counter() < deadline:
+            QtWidgets.QApplication.processEvents(
+                QtCore.QEventLoop.AllEvents, 100)
+            th.join(timeout=0.05)
+
+        try:
+            if th.is_alive():
+                self.status_label.setText(
+                    "Trace probe timed out (15 s). Check connection and "
+                    "try Diagnostics."
+                )
+                return
+            if "error" in result_holder:
+                QtWidgets.QMessageBox.warning(
+                    self, "Probe failed", str(result_holder["error"]))
+                self.status_label.setText(original_status)
+                return
+            active = result_holder.get("active", []) or []
+            self._active_traces = list(active)
+            self._update_trace_leds(self._active_traces)
+            sweep = result_holder.get("sweep")
+            if isinstance(sweep, dict):
+                self._sweep_settings = sweep
+                s = sweep
+                self.status_label.setText(
+                    f"Probe complete. Sweep: {s['f_start']/1e6:.3f}–"
+                    f"{s['f_stop']/1e6:.3f} MHz, {int(s['n_pts'])} pts, "
+                    f"sweep_time={s['sweep_time']*1000:.1f} ms. "
+                    f"Active traces: {self._active_traces or 'none'}."
+                )
+            else:
+                self.status_label.setText(
+                    f"Probe complete. Active traces: "
+                    f"{self._active_traces or 'none'}."
+                )
+        finally:
+            self.probe_btn.setEnabled(True)
 
     @Slot()
     def on_browse(self):
@@ -1098,6 +1427,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @Slot()
     def on_connect(self):
+        """Connect to the instrument with minimal SCPI traffic.
+
+        Important on Spyder: this runs on the main (GUI) thread, which is
+        also the thread Spyder's kernel uses for its heartbeat. A long
+        synchronous SCPI operation here can cause Spyder to declare the
+        kernel dead and kill it. We therefore do the bare minimum:
+          1. Open the VISA resource (fast, local).
+          2. Query *IDN? once (one short round-trip).
+          3. Query sweep settings (5 short round-trips).
+        We do NOT probe traces on connect — that requires reading 501
+        floats per trace and can take seconds. The user can press
+        Diagnostics or Start to trigger probing on demand.
+        """
         try:
             if self.demo_check.isChecked():
                 self.instrument = MockFSPInstrument()
@@ -1111,20 +1453,36 @@ class MainWindow(QtWidgets.QMainWindow):
                     backend=backend_token,
                     debug=self.debug_check.isChecked(),
                 )
+            # Step 1: identify the instrument. Just one short query.
             idn = self.instrument.idn()
             self.idn_label.setText(idn)
             self.idn_label.setStyleSheet("color: #2ecc71;")
-            # Refresh trace LEDs and sweep info immediately
-            self._refresh_instrument_state()
+            # Step 2: read sweep settings (cheap). Skip trace probing here.
+            try:
+                self._sweep_settings = self.instrument.sweep_settings()
+                s = self._sweep_settings
+                self.status_label.setText(
+                    f"Connected. Sweep: {s['f_start']/1e6:.3f}–"
+                    f"{s['f_stop']/1e6:.3f} MHz, {int(s['n_pts'])} pts, "
+                    f"sweep_time={s['sweep_time']*1000:.1f} ms. "
+                    f"(Trace LEDs will populate on Start or Diagnostics.)"
+                )
+            except Exception as exc:
+                self.status_label.setText(
+                    f"Connected, but sweep query failed: {exc}")
+            # Trace LEDs: leave dim until the user actively probes.
+            self._active_traces = []
+            self._update_trace_leds([])
+
             self.connect_btn.setEnabled(False)
             self.disconnect_btn.setEnabled(True)
             self.diag_btn.setEnabled(True)
+            self.probe_btn.setEnabled(True)
             self.start_manual_btn.setEnabled(True)
             self.start_scheduled_btn.setEnabled(True)
             self.demo_check.setEnabled(False)
             self.resource_edit.setEnabled(False)
             self.backend_combo.setEnabled(False)
-            self.status_label.setText("Connected.")
         except Exception as exc:
             QtWidgets.QMessageBox.critical(self, "Connection failed", str(exc))
 
@@ -1145,6 +1503,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.connect_btn.setEnabled(True)
         self.disconnect_btn.setEnabled(False)
         self.diag_btn.setEnabled(False)
+        self.probe_btn.setEnabled(False)
         self.start_manual_btn.setEnabled(False)
         self.start_scheduled_btn.setEnabled(False)
         self.demo_check.setEnabled(True)
@@ -1155,19 +1514,33 @@ class MainWindow(QtWidgets.QMainWindow):
         self.status_label.setText("Disconnected.")
 
     def _refresh_instrument_state(self):
+        # Sweep settings: cheap and essential. If this fails, we surface a
+        # warning but don't break the connection.
         try:
             self._sweep_settings = self.instrument.sweep_settings()
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                self, "Sweep query failed",
+                f"Could not read sweep settings: {exc}\n\n"
+                "You can still try Diagnostics or recording.")
+            self._sweep_settings = None
+        # Active traces: probe-based and slower. Non-fatal if it fails —
+        # the user can configure traces and retry, or just hit Diagnostics.
+        try:
             self._active_traces = self.instrument.active_traces()
         except Exception as exc:
-            QtWidgets.QMessageBox.warning(self, "Instrument query failed", str(exc))
-            return
+            self._active_traces = []
+            self.status_label.setText(
+                f"Trace detection failed: {exc} — try Diagnostics.")
         self._update_trace_leds(self._active_traces)
         s = self._sweep_settings
-        self.status_label.setText(
-            f"Sweep: {s['f_start']/1e6:.3f}–{s['f_stop']/1e6:.3f} MHz, "
-            f"{int(s['n_pts'])} pts, sweep_time={s['sweep_time']*1000:.1f} ms × "
-            f"count={int(s['sweep_count'])} (total {s['sweep_time']*s['sweep_count']*1000:.1f} ms)"
-        )
+        if s:
+            self.status_label.setText(
+                f"Sweep: {s['f_start']/1e6:.3f}–{s['f_stop']/1e6:.3f} MHz, "
+                f"{int(s['n_pts'])} pts, sweep_time={s['sweep_time']*1000:.1f} ms × "
+                f"count={int(s['sweep_count'])} (total {s['sweep_time']*s['sweep_count']*1000:.1f} ms),"
+                f" traces={self._active_traces}"
+            )
 
     def _update_trace_leds(self, active: List[int]):
         self.led_t1.setOn(1 in active)
