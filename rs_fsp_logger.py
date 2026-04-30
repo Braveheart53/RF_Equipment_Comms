@@ -62,7 +62,7 @@ import numpy as np
 #         thread without killing Spyder kernel. Removed 30 s fetch test
 #         from Diagnostics (the processEvents spin loop was starving
 #         Spyder's heartbeat). Probe Traces button now synchronous.
-APP_VERSION = "0.7.2"
+APP_VERSION = "0.7.3"
 
 # ---------------------------------------------------------------------------
 # Python version handling
@@ -436,6 +436,39 @@ class FSPInstrument:
         finally:
             self.inst.timeout = saved
         return active
+
+    def force_screen(self, screen: int) -> None:
+        """Force SCPI to talk to a specific FSP screen (1=A, 2=B).
+
+        Sends DISP:WIND<n>:SEL, marks screen discovery as done, and updates
+        active_screen so subsequent fetch_trace() calls use the right
+        TRAC<n>? syntax. Resets the cached trace-fetch template since the
+        previous one may have been keyed to a different screen.
+        """
+        if screen not in (1, 2):
+            raise ValueError(f"screen must be 1 or 2, got {screen}")
+        self._log(f"force_screen({screen}): sending DISP:WIND{screen}:SEL")
+        try:
+            self.inst.write(f"DISP:WIND{screen}:SEL")
+        except Exception as exc:
+            self._log(f"  DISP:WIND{screen}:SEL write failed: {exc}")
+        try:
+            time.sleep(0.1)
+            errs = self._drain_error_queue()
+            if errs:
+                self._log(f"  drained errors after select: {errs}")
+        except Exception:
+            pass
+        self.active_screen = screen
+        self._screen_discovered = True
+        self._trace_fetch_cmd_template = None  # re-discover for new screen
+
+    def reset_screen_discovery(self) -> None:
+        """Clear the cached active-screen choice so the next sweep_settings()
+        call re-runs auto-discovery."""
+        self._screen_discovered = False
+        self.active_screen = 1
+        self._trace_fetch_cmd_template = None
 
     def _read_screen_freq(self) -> Dict[str, float]:
         """Read FREQ:STAR/STOP/CENT/SPAN from whichever screen is currently
@@ -1276,6 +1309,41 @@ class MainWindow(QtWidgets.QMainWindow):
         self.idn_label = QtWidgets.QLabel("(not connected)")
         self.idn_label.setStyleSheet("color: #888;")
         cl.addWidget(self.idn_label, 1, 1, 1, 5)
+
+        # FSP screen selector. The FSP-38 has two measurement screens
+        # (Screen A = WIND1, Screen B = WIND2). SCPI defaults to Screen A;
+        # if the user's spectrum config is on Screen B, all FREQ:* / TRAC?
+        # queries against Screen A return defaults / -100 errors. The
+        # auto-discovery heuristic isn't always reliable (some firmware
+        # configurations report 0/2 MHz on both screens), so we expose a
+        # manual override here. "Auto" lets the code pick; A/B force.
+        cl.addWidget(QtWidgets.QLabel("Screen:"), 2, 0)
+        self.screen_auto_rb = QtWidgets.QRadioButton("Auto")
+        self.screen_a_rb = QtWidgets.QRadioButton("A")
+        self.screen_b_rb = QtWidgets.QRadioButton("B")
+        self.screen_auto_rb.setChecked(True)
+        self.screen_auto_rb.setToolTip(
+            "Auto-detect which FSP screen has the user's spectrum config "
+            "(by comparing center frequencies on each screen).")
+        self.screen_a_rb.setToolTip(
+            "Force SCPI to talk to FSP Screen A (WINDow1).")
+        self.screen_b_rb.setToolTip(
+            "Force SCPI to talk to FSP Screen B (WINDow2). Use this if "
+            "your spectrum trace is on the bottom half of a split screen "
+            "or if Auto picked the wrong screen.")
+        scr_group = QtWidgets.QButtonGroup(self)
+        scr_group.addButton(self.screen_auto_rb)
+        scr_group.addButton(self.screen_a_rb)
+        scr_group.addButton(self.screen_b_rb)
+        scr_row = QtWidgets.QHBoxLayout()
+        scr_row.addWidget(self.screen_auto_rb)
+        scr_row.addWidget(self.screen_a_rb)
+        scr_row.addWidget(self.screen_b_rb)
+        scr_row.addStretch(1)
+        scr_widget = QtWidgets.QWidget()
+        scr_widget.setLayout(scr_row)
+        cl.addWidget(scr_widget, 2, 1, 1, 5)
+
         root.addWidget(conn_box)
 
         # Settings group
@@ -1371,8 +1439,59 @@ class MainWindow(QtWidgets.QMainWindow):
         self.start_manual_btn.clicked.connect(lambda: self.on_start(scheduled=False))
         self.start_scheduled_btn.clicked.connect(lambda: self.on_start(scheduled=True))
         self.stop_btn.clicked.connect(self.on_stop)
+        # Screen selector: when the user picks Auto / A / B, push the
+        # choice to the instrument and refresh sweep settings.
+        self.screen_auto_rb.toggled.connect(self._on_screen_changed)
+        self.screen_a_rb.toggled.connect(self._on_screen_changed)
+        self.screen_b_rb.toggled.connect(self._on_screen_changed)
 
     # -------- Slots --------
+    @Slot()
+    def _on_screen_changed(self):
+        """Handle a click on the Screen radio group (Auto / A / B).
+
+        Pushes the choice to the FSPInstrument and re-runs sweep_settings
+        so the user immediately sees the resulting frequency readback.
+        Toggling fires the slot twice (off + on); we no-op the off side.
+        """
+        sender = self.sender()
+        if sender is None or not sender.isChecked():
+            return
+        if self.instrument is None or not isinstance(self.instrument, FSPInstrument):
+            return
+        try:
+            if self.screen_auto_rb.isChecked():
+                self.instrument.reset_screen_discovery()
+                self.statusBar().showMessage(
+                    "Screen: Auto — will re-detect on next query.", 4000)
+            elif self.screen_a_rb.isChecked():
+                self.instrument.force_screen(1)
+                self.statusBar().showMessage(
+                    "Screen: forced to A (WINDow1).", 4000)
+            elif self.screen_b_rb.isChecked():
+                self.instrument.force_screen(2)
+                self.statusBar().showMessage(
+                    "Screen: forced to B (WINDow2).", 4000)
+            # Refresh sweep readback so the user sees the new frequency.
+            try:
+                s = self.instrument.sweep_settings()
+                self._sweep_settings = s
+                fc = s.get("f_center")
+                fsp = s.get("f_span")
+                src = s.get("freq_source", "?")
+                if fc and fc == fc and fc > 0:
+                    self.statusBar().showMessage(
+                        f"Screen {self.instrument.active_screen}: "
+                        f"center={fc/1e6:.3f} MHz, span={fsp/1e6:.3f} MHz "
+                        f"({src})", 8000)
+            except Exception as exc:
+                self.statusBar().showMessage(
+                    f"Screen change OK but sweep readback failed: {exc}", 6000)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                self, "Screen change failed",
+                f"Could not switch FSP screen: {exc}")
+
     @Slot()
     def on_diagnostics(self):
         """Probe the instrument and show what SCPI is actually returning.
@@ -1410,7 +1529,10 @@ class MainWindow(QtWidgets.QMainWindow):
             # SCPI is talking to a non-Spectrum-Analyzer personality.
             lines.append("")
             lines.append("Instrument personality (must be SAN for spectrum traces):")
-            for cmd in ("INST?", "INST:NSEL?", "INST:LIST?"):
+            # NOTE: INST:LIST? is intentionally omitted — on FSP-38 firmware
+            # 4.50 it hangs until VI_ERROR_TMO and pollutes the error queue
+            # with -113 'Undefined header' for every subsequent query.
+            for cmd in ("INST?", "INST:NSEL?"):
                 try:
                     ans = self.instrument.inst.query(cmd).strip()
                     errs = self.instrument._drain_error_queue()
@@ -1418,6 +1540,10 @@ class MainWindow(QtWidgets.QMainWindow):
                     lines.append(f"  {cmd:14s} -> {ans!r}{suffix}")
                 except Exception as exc:
                     lines.append(f"  {cmd:14s} -> EXC: {exc}")
+
+            # Show which screen we're currently routing to.
+            lines.append(f"  active_screen = {self.instrument.active_screen} "
+                         f"(1=A/WIND1, 2=B/WIND2)")
 
         # Trace detection — lightweight MODE? probe (BLAN = hidden, anything
         # else = displayed). This is the same logic active_traces() uses.
