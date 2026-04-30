@@ -152,6 +152,11 @@ class FSPInstrument:
         # active_traces() to validate trace-data probes without parsing
         # the entire payload.
         self._cached_n_pts: Optional[int] = None
+        # Cached working trace-fetch syntax. Discovered on first successful
+        # fetch_trace() call and reused for the rest of the session to
+        # avoid re-trying broken syntaxes (which can take >30 s each on
+        # this firmware).
+        self._trace_fetch_cmd_template: Optional[str] = None
 
         # CONNECT — keep this minimal. Anything that touches the SCPI parser
         # here can hang the calling thread (and on Spyder's main thread, that
@@ -403,8 +408,53 @@ class FSPInstrument:
         return active
 
     def sweep_settings(self) -> Dict[str, float]:
-        f_start = float(self.query("FREQ:STAR?"))
-        f_stop = float(self.query("FREQ:STOP?"))
+        """Read sweep settings from the FSP.
+
+        On FSP-38 firmware 4.50, FREQ:STAR? / FREQ:STOP? have been observed
+        to return values that disagree with the front-panel display when
+        the instrument is centered around very high frequencies (e.g.
+        center 13.9 GHz, span 60 MHz returned STAR=0, STOP=2 MHz). To work
+        around that, we ALSO query FREQ:CENT? and FREQ:SPAN? and prefer
+        whichever pair of values yields a span > 0. If center/span gives a
+        plausible answer, we derive start/stop from them.
+        """
+        f_start_raw = float(self.query("FREQ:STAR?"))
+        f_stop_raw = float(self.query("FREQ:STOP?"))
+        try:
+            f_center = float(self.query("FREQ:CENT?"))
+        except Exception:
+            f_center = float("nan")
+        try:
+            f_span = float(self.query("FREQ:SPAN?"))
+        except Exception:
+            f_span = float("nan")
+        # Prefer center/span when both are finite and span is positive AND
+        # the start/stop pair is degenerate (span=0) or the two pairs
+        # disagree. The FSP-38 has been observed to return zero start/stop
+        # while center/span correctly reflect the screen.
+        derived_start = f_center - f_span / 2.0
+        derived_stop = f_center + f_span / 2.0
+        raw_span = f_stop_raw - f_start_raw
+        center_span_ok = (f_span > 0
+                          and f_span == f_span         # NaN check
+                          and f_center == f_center)
+        # Decision rule: trust start/stop only if their span > 0 AND it
+        # matches center/span (within 1 Hz). Otherwise fall back to center/span.
+        if (raw_span > 0
+                and (not center_span_ok
+                     or abs(raw_span - f_span) < 1.0)):
+            f_start, f_stop = f_start_raw, f_stop_raw
+            freq_source = "STAR/STOP"
+        elif center_span_ok:
+            f_start, f_stop = derived_start, derived_stop
+            freq_source = "CENT/SPAN (STAR/STOP unreliable)"
+            self._log(f"FREQ:STAR/STOP returned {f_start_raw}/{f_stop_raw} "
+                      f"(span={raw_span}); using CENT={f_center} SPAN={f_span} "
+                      f"=> start={f_start}, stop={f_stop}")
+        else:
+            # Neither source is good — last resort, use raw values and warn.
+            f_start, f_stop = f_start_raw, f_stop_raw
+            freq_source = "STAR/STOP (CENT/SPAN unavailable)"
         n_pts = int(float(self.query("SWE:POIN?")))
         sweep_time = float(self.query("SWE:TIME?"))
         try:
@@ -417,7 +467,10 @@ class FSPInstrument:
         # an extra round-trip.
         self._cached_n_pts = n_pts
         return dict(f_start=f_start, f_stop=f_stop, n_pts=n_pts,
-                    sweep_time=sweep_time, sweep_count=sweep_count)
+                    sweep_time=sweep_time, sweep_count=sweep_count,
+                    f_center=f_center, f_span=f_span,
+                    f_start_raw=f_start_raw, f_stop_raw=f_stop_raw,
+                    freq_source=freq_source)
 
     def frequency_axis(self, settings: Optional[Dict[str, float]] = None) -> np.ndarray:
         s = settings or self.sweep_settings()
@@ -510,44 +563,110 @@ class FSPInstrument:
                 self.inst.write("FORM ASC")
             except Exception:
                 pass
-            # FSP canonical form per Operating Manual Vol 2 §6.1.13.13:
-            #   TRACe<1|2>[:DATA] TRACE1|TRACE2|TRACE3
-            # The [:DATA] subnode is optional. On FSP-38 firmware 4.50 the
-            # explicit ':DATA' form is rejected with -100 'Command error'
-            # (and the read then times out for 30 s before VisaIOError),
-            # so we use the short canonical form 'TRAC? TRACE<n>' which is
-            # what the manual examples actually show:
-            #     "TRAC? TRACE1"
-            # In continuous-sweep mode this returns the most recently
-            # completed sweep buffer for the named trace.
-            cmd = f"TRAC? TRACE{trace_num}"
-            self._log(f"Q  {cmd}  (timeout={eff_ms} ms)")
-            # query_ascii_values: pyvisa handles termination + parsing.
-            # If this fails we do NOT issue a second query — doing so would
-            # produce -410 "Query interrupted" because the instrument may
-            # still be flushing the previous (failed) response. Instead we
-            # surface the failure to the caller, who decides whether to
-            # retry or skip.
-            try:
-                values = self.inst.query_ascii_values(
-                    cmd, container=np.array, separator=",")
-                arr = np.asarray(values, dtype=float)
-            except Exception as exc:
-                # Capture FSP-side errors before re-raising so the caller
-                # (and the diagnostics dialog) can see the root cause.
-                errs = []
-                try:
-                    errs = self._drain_error_queue()
-                except Exception:
-                    pass
-                self._log(f"fetch_trace({trace_num}) failed: {exc}; FSP errors: {errs}")
-                raise FSPError(
-                    f"TRAC? TRACE{trace_num} failed: {exc}"
-                    + (f" | FSP errors: {errs}" if errs else "")
-                ) from exc
+            # FSP trace-data fetch syntax — the manual gives several forms
+            # and FSP-38 firmware 4.50 has been observed to reject some of
+            # them with -100 'Command error'. We try a list of candidates
+            # in order, falling through to the next on failure. Once one
+            # succeeds we cache it on the instance so subsequent fetches
+            # skip straight to the working syntax (no retries on the hot
+            # path during recording).
+            #
+            # Candidates, ordered by manual-stated canonicality:
+            #   1. TRAC? TRACE<n>            — the form shown in the
+            #      Operating Manual Vol 2 §6.1.13.13 example.
+            #   2. TRAC:DATA? TRACE<n>       — explicit :DATA form.
+            #   3. TRAC1? TRACE<n>           — explicit window-1 suffix.
+            #   4. :TRAC? TRACE<n>           — leading colon (some R&S
+            #                                  firmware required this).
+            arr = self._fetch_trace_with_syntax_discovery(trace_num)
         finally:
             self.inst.timeout = saved
         return arr
+
+    def _fetch_trace_with_syntax_discovery(
+            self, trace_num: int) -> np.ndarray:
+        """Try multiple FSP trace-fetch syntaxes until one works; cache the
+        winner on the instance for subsequent calls.
+
+        Returns the trace as a numpy float array.
+        Raises FSPError if all candidates fail, with the FSP error queue
+        contents from each attempt.
+        """
+        # Build the candidate list. If we've already discovered a working
+        # syntax for this session, use it directly — avoids -100 errors
+        # piling up in the error queue on every recording capture.
+        if self._trace_fetch_cmd_template:
+            cmd = self._trace_fetch_cmd_template.format(n=trace_num)
+            self._log(f"Q  {cmd}  (cached working syntax)")
+            return np.asarray(
+                self.inst.query_ascii_values(
+                    cmd, container=np.array, separator=","),
+                dtype=float)
+        candidates = [
+            "TRAC? TRACE{n}",
+            "TRAC:DATA? TRACE{n}",
+            "TRAC1? TRACE{n}",
+            ":TRAC? TRACE{n}",
+        ]
+        all_errors: List[str] = []
+        # During discovery we use a short per-attempt timeout (5 s) so a
+        # broken syntax that hangs can't burn 30 s before falling through.
+        # The caller (fetch_trace) will already have set a longer timeout
+        # for the successful query — but we override it here for discovery
+        # only, and restore it before the successful return.
+        outer_timeout = self.inst.timeout
+        try:
+            self.inst.timeout = 5000
+            for tmpl in candidates:
+                cmd = tmpl.format(n=trace_num)
+                self._log(f"Q  {cmd}  (syntax discovery, 5 s cap)")
+                # Drain any errors from the previous candidate so they don't
+                # contaminate this one's error queue.
+                try:
+                    self._drain_error_queue()
+                except Exception:
+                    pass
+                try:
+                    vals = self.inst.query_ascii_values(
+                        cmd, container=np.array, separator=",")
+                except Exception as exc:
+                    errs = []
+                    try:
+                        errs = self._drain_error_queue()
+                    except Exception:
+                        pass
+                    self._log(f"  failed: {exc}; FSP errors: {errs}")
+                    all_errors.append(
+                        f"{tmpl!r}: {exc.__class__.__name__}: {exc}"
+                        + (f" | {errs}" if errs else ""))
+                    continue
+                # Even if no exception, the FSP may have queued -100. Drain
+                # and inspect.
+                try:
+                    errs = self._drain_error_queue()
+                except Exception:
+                    errs = []
+                arr = np.asarray(vals, dtype=float)
+                if errs:
+                    self._log(f"  returned {arr.size} pts BUT FSP errors: {errs}")
+                    all_errors.append(
+                        f"{tmpl!r}: returned {arr.size} pts but FSP errors {errs}")
+                    continue
+                if arr.size == 0:
+                    self._log("  returned 0 points (empty)")
+                    all_errors.append(f"{tmpl!r}: returned 0 points")
+                    continue
+                # Success! Cache this template for the rest of the session.
+                self._trace_fetch_cmd_template = tmpl
+                self._log(f"  SUCCESS: {arr.size} points; caching syntax "
+                          f"{tmpl!r} for session")
+                return arr
+        finally:
+            self.inst.timeout = outer_timeout
+        # All candidates failed. Raise with the full error log.
+        raise FSPError(
+            f"All trace-fetch syntaxes failed for trace {trace_num}.\n"
+            + "\n".join(f"  - {e}" for e in all_errors))
 
 
 # ===========================================================================
