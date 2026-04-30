@@ -35,6 +35,7 @@ import csv
 import math
 import os
 import sys
+import threading
 import time
 import random
 import traceback
@@ -96,9 +97,15 @@ class FSPInstrument:
 
     SCPI dialect notes (FSP, NOT FSW):
       - Trace state query:   DISP:TRAC<n>:STAT?     (no :WINDow node on FSP)
-      - Trace data:          TRAC<n>:DATA?          (FSP form: trace number
-                                                     is part of the header,
-                                                     not a parameter)
+      - Trace data:          TRAC:DATA? TRACE<n>    (FSP/FSE canonical form
+                                                     per the FSP Operating
+                                                     Manual Vol 2, line
+                                                     17382: TRACe<1|2>[:DATA]
+                                                     TRACE1|TRACE2|TRACE3,...
+                                                     The optional <1|2> on
+                                                     TRACe selects the
+                                                     measurement WINDOW, not
+                                                     the trace.)
       - Single sweep sync:   INIT:CONT OFF; *CLS; INIT:IMM;*WAI; *OPC?
                              (FSP rejects bare INIT — must be INIT:IMMediate)
       - Data format:         FORM ASC                (binary REAL,32 supported but
@@ -184,38 +191,108 @@ class FSPInstrument:
     def idn(self) -> str:
         return self.query("*IDN?")
 
+    def _query_trace_state(self, n: int) -> Tuple[Optional[str], Optional[str]]:
+        """Return (mode_token, state_token) for trace n. Either may be None.
+
+        mode_token is the upper-cased response to DISP:TRAC<n>:MODE? (e.g.
+        'WRIT', 'MAXH', 'AVER', 'VIEW', 'BLAN'). state_token is '0' or '1'
+        from DISP:TRAC<n>:STAT? (or 'ON'/'OFF').
+        """
+        mode_tok: Optional[str] = None
+        for cmd in (f"DISP:TRAC{n}:MODE?", f"DISP:WIND:TRAC{n}:MODE?"):
+            try:
+                ans = (self.query(cmd) or "").strip().upper().lstrip("+")
+            except Exception as exc:
+                self._log(f"{cmd} raised {exc}")
+                continue
+            if ans:
+                # Drain any errors silently — we already got a response.
+                self._drain_error_queue()
+                mode_tok = ans
+                break
+            # Empty response: check if this command was rejected.
+            errs = self._drain_error_queue()
+            if errs and any("MODE" in e.upper() or "TRAC" in e.upper() for e in errs):
+                self._log(f"{cmd} rejected: {errs}")
+                continue
+
+        state_tok: Optional[str] = None
+        for cmd in (f"DISP:TRAC{n}:STAT?", f"DISP:WIND:TRAC{n}:STAT?"):
+            try:
+                ans = (self.query(cmd) or "").strip().upper().lstrip("+")
+            except Exception as exc:
+                self._log(f"{cmd} raised {exc}")
+                continue
+            if ans in ("0", "1", "ON", "OFF"):
+                self._drain_error_queue()
+                state_tok = ans
+                break
+            errs = self._drain_error_queue()
+            if errs and any("STAT" in e.upper() or "TRAC" in e.upper() for e in errs):
+                self._log(f"{cmd} rejected: {errs}")
+                continue
+            if ans:
+                state_tok = ans
+                break
+        return mode_tok, state_tok
+
+    @staticmethod
+    def _is_displayed(mode_tok: Optional[str], state_tok: Optional[str]) -> bool:
+        """Decide whether a trace is currently shown on the FSP screen.
+
+        Logic (informed by FSP-38 testing):
+        - If MODE? is reported and is anything OTHER than BLANK, the trace is
+          displayed (handles MAXH/AVER/VIEW/MINH/WRIT cases — including
+          max-hold and average traces which return STAT?=0 on FSP firmware).
+        - Else if STAT? is 1/ON, treat as displayed (covers firmware versions
+          that don't expose MODE? but do expose STATe?).
+        - If MODE? is BLANK, the trace is hidden regardless of STAT?.
+        """
+        if mode_tok:
+            # 'BLAN' is the FSP short form for 'BLANK'.
+            if mode_tok.startswith("BLAN"):
+                return False
+            # Any recognised non-blank mode token => displayed.
+            for tok in ("WRIT", "VIEW", "AVER", "MAXH", "MINH"):
+                if mode_tok.startswith(tok):
+                    return True
+            # Unknown mode token but non-empty: fall through to STAT check.
+        if state_tok:
+            t = state_tok.lstrip("+")
+            if t.startswith("1") or t.startswith("ON"):
+                return True
+        return False
+
     def active_traces(self) -> List[int]:
         """
         Return list of trace numbers currently *displayed* (1..3) on the FSP.
 
-        On the FSP, a trace is shown on screen iff DISP:TRAC<n>:STATe? returns 1.
-        (Confirmed against an FSP-38: when traces 2/3 are blanked, STAT? = 0;
-        when their MODE is left as WRITE/MAXHOLD, MODE? still returns those
-        words even though the trace isn't drawn — so MODE? alone is unreliable.)
+        FSP gotcha: STAT? alone is not sufficient — on FSP-38 firmware, traces
+        in MAX HOLD or AVERAGE mode return STAT?=0 even though they are very
+        much visible on screen. We therefore combine DISP:TRAC<n>:MODE? with
+        DISP:TRAC<n>:STAT? and treat a trace as displayed iff MODE != BLANK
+        (preferred) or STAT? == 1 (fallback).
 
-        We try the short form first, then the windowed long form, draining
-        the error queue between attempts.
+        Reference: FSP Operating Manual Vol 2, DISPlay[:WINDow]:TRACe<n>
+        subtree (lines ~9486 + MODE WRITe|VIEW|AVERage|MAXHold|MINHold|BLANk).
         """
+        # Drain any stale errors from prior failed commands so they don't
+        # get attributed to (and discard the result of) our first query.
+        try:
+            stale = self._drain_error_queue()
+            if stale:
+                self._log(f"drained stale errors before active_traces: {stale}")
+        except Exception:
+            pass
+
         active: List[int] = []
         for n in range(1, self.MAX_TRACES + 1):
-            ans = None
-            for cmd in (f"DISP:TRAC{n}:STAT?", f"DISP:WIND:TRAC{n}:STAT?"):
-                try:
-                    ans = self.query(cmd)
-                except Exception as exc:
-                    self._log(f"{cmd} raised {exc}")
-                    continue
-                errs = self._drain_error_queue()
-                if errs:
-                    self._log(f"errors after {cmd}: {errs}")
-                    ans = None
-                    continue
-                break
-            if ans is None:
+            mode_tok, state_tok = self._query_trace_state(n)
+            self._log(f"trace {n}: MODE={mode_tok!r} STAT={state_tok!r}")
+            if mode_tok is None and state_tok is None:
                 self._log(f"could not query trace {n} state")
                 continue
-            token = ans.strip().upper().lstrip("+")
-            if token.startswith("1") or token.startswith("ON"):
+            if self._is_displayed(mode_tok, state_tok):
                 active.append(n)
         return active
 
@@ -287,10 +364,14 @@ class FSPInstrument:
                 self.inst.write("FORM ASC")
             except Exception:
                 pass
-            # FSP form: TRAC<n>:DATA?  (the trace number is part of the
-            # header, not a parameter). The legacy form `TRAC:DATA? TRACE<n>`
-            # produces -100,"Command error" on FSP firmware.
-            cmd = f"TRAC{trace_num}:DATA?"
+            # FSP canonical form per Operating Manual Vol 2:
+            #   TRACe<1|2>[:DATA] TRACE1|TRACE2|TRACE3, <data>
+            # The numeric suffix on TRACe (which we omit) selects the
+            # measurement window; the TRACE<n> parameter selects which
+            # trace within the window. Note the SPACE between the '?' and
+            # 'TRACE<n>' is REQUIRED — it's a parameter, not part of the
+            # header.
+            cmd = f"TRAC:DATA? TRACE{trace_num}"
             self._log(f"Q  {cmd}  (timeout={eff_ms} ms)")
             # Prefer read_ascii_values: it understands the optional binary-block
             # header and uses pyvisa's chunked reader, which is far less likely
@@ -504,7 +585,7 @@ class AcquisitionWorker(QtCore.QObject):
 
             # Fetch all active traces. Use a generous timeout proportional
             # to sweep time + point count. Floor of 30 s handles slow LAN /
-            # narrow-RBW configurations where the very first TRAC<n>:DATA? after
+            # narrow-RBW configurations where the very first TRAC:DATA? after
             # the sweep can take noticeably longer than the sweep itself.
             n_pts = self._freq_axis.shape[0]
             fetch_timeout = max(30.0, 2.0 * self._sweep_total + n_pts * 0.002 + 10.0)
@@ -880,19 +961,21 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception as exc:
             lines.append(f"*IDN?         -> ERROR: {exc}")
 
-        # Trace state — STAT? is the canonical FSP query for whether a trace
-        # is currently drawn on screen. (MODE? returns the configured mode
-        # — WRITE/AVERAGE/MAXHOLD/etc. — even when the trace is blanked, so
-        # MODE? alone is unreliable and we don't rely on it here.)
+        # Trace state — combine MODE? + STAT?. On FSP-38, traces in MAXHOLD
+        # or AVERAGE mode return STAT?=0 even while displayed, so neither
+        # query alone is sufficient. We treat a trace as displayed iff
+        # MODE != BLANK (preferred) or STAT? == 1 (fallback).
         lines.append("")
         lines.append("Trace state queries (raw responses):")
-        lines.append("  STAT? = 1  ->  trace is shown on the FSP screen")
-        lines.append("  STAT? = 0  ->  trace is blanked")
+        lines.append("  MODE? = WRIT|MAXH|AVER|MINH|VIEW  ->  displayed")
+        lines.append("  MODE? = BLAN                       ->  hidden")
+        lines.append("  STAT? = 1                          ->  displayed (fallback)")
         if isinstance(self.instrument, FSPInstrument):
             for n in (1, 2, 3):
-                for cmd in (f"DISP:TRAC{n}:STAT?",
-                            f"DISP:WIND:TRAC{n}:STAT?",
-                            f"DISP:TRAC{n}:MODE?"):
+                for cmd in (f"DISP:TRAC{n}:MODE?",
+                            f"DISP:WIND:TRAC{n}:MODE?",
+                            f"DISP:TRAC{n}:STAT?",
+                            f"DISP:WIND:TRAC{n}:STAT?"):
                     try:
                         ans = self.instrument.inst.query(cmd).strip()
                         errs = self.instrument._drain_error_queue()
@@ -900,6 +983,13 @@ class MainWindow(QtWidgets.QMainWindow):
                         lines.append(f"  {cmd:30s} -> {ans!r}{suffix}")
                     except Exception as exc:
                         lines.append(f"  {cmd:30s} -> EXC: {exc}")
+                # Show parsed decision per trace
+                try:
+                    mt, st = self.instrument._query_trace_state(n)
+                    decision = "DISPLAYED" if FSPInstrument._is_displayed(mt, st) else "hidden"
+                    lines.append(f"  -> trace {n}: MODE={mt!r} STAT={st!r}  =>  {decision}")
+                except Exception as exc:
+                    lines.append(f"  -> trace {n}: parse EXC: {exc}")
         else:
             lines.append(f"  active_traces() -> {self.instrument.active_traces()}")
 
@@ -921,31 +1011,65 @@ class MainWindow(QtWidgets.QMainWindow):
             lines.append(f"Parsed active traces: ERROR {exc}")
 
         # End-to-end data-path test: arm + sweep + fetch trace 1, time it.
+        # Runs in a worker thread with a hard wall-clock cap so a stuck
+        # VISA read can't freeze the GUI. The user sees an animated
+        # "Running…" line in the dialog while it works.
         lines.append("")
-        lines.append("Trace fetch test (TRAC1:DATA?):")
+        lines.append("Trace fetch test (TRAC:DATA? TRACE1):")
         if isinstance(self.instrument, FSPInstrument):
+            inst = self.instrument
+            result_holder: Dict[str, object] = {}
+
+            def _do_fetch_test():
+                try:
+                    s = inst.sweep_settings()
+                    sweep_total = float(s["sweep_time"]) * float(s.get("sweep_count", 1) or 1)
+                    result_holder["sweep_total"] = sweep_total
+                    inst.arm_single()
+                    t0 = time.perf_counter()
+                    inst.trigger_and_wait(sweep_total)
+                    result_holder["t_sweep"] = time.perf_counter() - t0
+                    t1 = time.perf_counter()
+                    arr = inst.fetch_trace(
+                        1, timeout_s=max(15.0, 2.0 * sweep_total + 5.0))
+                    result_holder["t_fetch"] = time.perf_counter() - t1
+                    result_holder["arr"] = arr
+                except Exception as exc:
+                    result_holder["error"] = f"{exc.__class__.__name__}: {exc}"
+
+            th = threading.Thread(target=_do_fetch_test, daemon=True)
+            th.start()
+            # Hard wall-clock cap: 30 seconds is plenty for anything sane.
+            # While we wait, pump the Qt event loop so the GUI stays alive.
+            deadline = time.perf_counter() + 30.0
+            while th.is_alive() and time.perf_counter() < deadline:
+                QtWidgets.QApplication.processEvents(
+                    QtCore.QEventLoop.AllEvents, 100)
+                th.join(timeout=0.05)
+            if th.is_alive():
+                lines.append("  TIMEOUT: data-path test did not finish in 30 s.")
+                lines.append("  The VISA read is stuck — check ASCII format,")
+                lines.append("  read termination, and that the FSP is responding.")
+                # Don't try to join — the thread will eventually die when
+                # the underlying VISA call times out.
+            elif "error" in result_holder:
+                lines.append(f"  ERROR: {result_holder['error']}")
+            else:
+                st = result_holder.get("sweep_total", 0.0)
+                ts = result_holder.get("t_sweep", 0.0)
+                tf = result_holder.get("t_fetch", 0.0)
+                arr = result_holder.get("arr")
+                lines.append(f"  arming + INIT:IMM;*WAI (sweep_total ≈ {st:.3f} s)")
+                lines.append(f"  sweep finished in {ts:.3f} s")
+                if arr is not None and getattr(arr, "size", 0):
+                    lines.append(
+                        f"  fetched {arr.shape[0]} points in {tf:.3f} s; "
+                        f"first={arr[0]:.2f} dBm, last={arr[-1]:.2f} dBm"
+                    )
+                else:
+                    lines.append("  fetched 0 points (unexpected)")
             try:
-                s = self.instrument.sweep_settings()
-                sweep_total = s["sweep_time"] * s.get("sweep_count", 1)
-                lines.append(f"  arming + INIT:IMM;*WAI (sweep_total ≈ {sweep_total:.3f} s)…")
-                self.instrument.arm_single()
-                t0 = time.perf_counter()
-                self.instrument.trigger_and_wait(sweep_total)
-                t_sweep = time.perf_counter() - t0
-                lines.append(f"  sweep finished in {t_sweep:.3f} s")
-                t1 = time.perf_counter()
-                arr = self.instrument.fetch_trace(
-                    1, timeout_s=max(30.0, 2.0 * sweep_total + 10.0))
-                t_fetch = time.perf_counter() - t1
-                lines.append(
-                    f"  fetched {arr.shape[0]} points in {t_fetch:.3f} s; "
-                    f"first={arr[0]:.2f} dBm, last={arr[-1]:.2f} dBm"
-                    if arr.size else "  fetched 0 points (unexpected)"
-                )
-            except Exception as exc:
-                lines.append(f"  ERROR: {exc.__class__.__name__}: {exc}")
-            try:
-                errs = self.instrument._drain_error_queue()
+                errs = inst._drain_error_queue()
                 if errs:
                     lines.append(f"  post-fetch errors: {errs}")
             except Exception:
