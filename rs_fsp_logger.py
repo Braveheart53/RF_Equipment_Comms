@@ -62,7 +62,7 @@ import numpy as np
 #         thread without killing Spyder kernel. Removed 30 s fetch test
 #         from Diagnostics (the processEvents spin loop was starving
 #         Spyder's heartbeat). Probe Traces button now synchronous.
-APP_VERSION = "0.7.1"
+APP_VERSION = "0.7.2"
 
 # ---------------------------------------------------------------------------
 # Python version handling
@@ -157,6 +157,16 @@ class FSPInstrument:
         # avoid re-trying broken syntaxes (which can take >30 s each on
         # this firmware).
         self._trace_fetch_cmd_template: Optional[str] = None
+        # FSP supports two measurement screens (Screen A = WINDow1,
+        # Screen B = WINDow2). The user's spectrum config can live on
+        # either one. SCPI defaults to Screen A; if Screen A is at boot
+        # defaults (0-2 MHz, etc.) and Screen B holds the real config,
+        # FREQ:* queries return useless values and TRAC? gets -100
+        # 'execution error' on the inactive screen. We auto-detect which
+        # screen has the real config in sweep_settings() and cache it here.
+        # 1 = Screen A (default), 2 = Screen B.
+        self.active_screen: int = 1
+        self._screen_discovered: bool = False
 
         # CONNECT — keep this minimal. Anything that touches the SCPI parser
         # here can hang the calling thread (and on Spyder's main thread, that
@@ -427,27 +437,107 @@ class FSPInstrument:
             self.inst.timeout = saved
         return active
 
+    def _read_screen_freq(self) -> Dict[str, float]:
+        """Read FREQ:STAR/STOP/CENT/SPAN from whichever screen is currently
+        SCPI-active. Returns NaN for any individual query that errors.
+        """
+        try:    f_start_raw = float(self.query("FREQ:STAR?"))
+        except Exception: f_start_raw = float("nan")
+        try:    f_stop_raw  = float(self.query("FREQ:STOP?"))
+        except Exception: f_stop_raw  = float("nan")
+        try:    f_center    = float(self.query("FREQ:CENT?"))
+        except Exception: f_center    = float("nan")
+        try:    f_span      = float(self.query("FREQ:SPAN?"))
+        except Exception: f_span      = float("nan")
+        return dict(f_start_raw=f_start_raw, f_stop_raw=f_stop_raw,
+                    f_center=f_center, f_span=f_span)
+
+    def _discover_active_screen(self) -> None:
+        """Identify which FSP screen (A=WIND1 or B=WIND2) holds the user's
+        spectrum config, and select it as the SCPI-active screen.
+
+        Heuristic: query frequencies on each screen; the screen with a
+        higher center frequency wins (the FSP boots Screen A at 0-2 MHz
+        defaults; if the user is on Screen B at 13.9 GHz, Screen B's
+        center will be vastly higher). If both look default, leave
+        Screen A active.
+
+        Sets self.active_screen to 1 or 2, and (if 2) sends DISP:WIND2:SEL
+        so that subsequent unsuffixed FREQ/SWE queries route to Screen B.
+        """
+        if self._screen_discovered:
+            return
+        self._screen_discovered = True   # set first to prevent recursion
+        self._log("--- screen discovery: probing both FSP screens ---")
+        # Screen A — make it active and read.
+        try:
+            self.inst.write("DISP:WIND1:SEL")
+        except Exception as exc:
+            self._log(f"DISP:WIND1:SEL failed: {exc}")
+        try:
+            self._drain_error_queue()
+        except Exception:
+            pass
+        a = self._read_screen_freq()
+        self._log(f"  Screen A: center={a['f_center']}, span={a['f_span']}, "
+                  f"start={a['f_start_raw']}, stop={a['f_stop_raw']}")
+        # Screen B — try to make it active. If FSP doesn't have a Screen B
+        # configured, this is harmless (or queues an error we drain).
+        try:
+            self.inst.write("DISP:WIND2:SEL")
+        except Exception as exc:
+            self._log(f"DISP:WIND2:SEL failed: {exc}")
+        try:
+            self._drain_error_queue()
+        except Exception:
+            pass
+        b = self._read_screen_freq()
+        self._log(f"  Screen B: center={b['f_center']}, span={b['f_span']}, "
+                  f"start={b['f_start_raw']}, stop={b['f_stop_raw']}")
+        # Decide. Prefer the screen with the higher (finite, positive)
+        # center frequency. Treat 0/NaN center as "empty/default".
+        def score(d):
+            c = d['f_center']
+            if c != c or c <= 0:
+                return -1.0
+            return c
+        score_a, score_b = score(a), score(b)
+        if score_b > score_a:
+            self.active_screen = 2
+            # DISP:WIND2:SEL is already set above
+            self._log(f"  => Screen B wins (center {b['f_center']} > "
+                      f"{a['f_center']}); active_screen = 2")
+        else:
+            self.active_screen = 1
+            try:
+                self.inst.write("DISP:WIND1:SEL")
+            except Exception:
+                pass
+            self._log(f"  => Screen A wins; active_screen = 1")
+        try:
+            self._drain_error_queue()
+        except Exception:
+            pass
+
     def sweep_settings(self) -> Dict[str, float]:
         """Read sweep settings from the FSP.
 
         On FSP-38 firmware 4.50, FREQ:STAR? / FREQ:STOP? have been observed
         to return values that disagree with the front-panel display when
-        the instrument is centered around very high frequencies (e.g.
-        center 13.9 GHz, span 60 MHz returned STAR=0, STOP=2 MHz). To work
-        around that, we ALSO query FREQ:CENT? and FREQ:SPAN? and prefer
-        whichever pair of values yields a span > 0. If center/span gives a
-        plausible answer, we derive start/stop from them.
+        the user's spectrum config is on Screen B but SCPI defaults to
+        Screen A. We auto-detect which screen has the real config (in
+        _discover_active_screen) and route subsequent queries there.
+
+        We ALSO query FREQ:CENT? and FREQ:SPAN? as a cross-check, and
+        prefer whichever pair yields a positive span.
         """
-        f_start_raw = float(self.query("FREQ:STAR?"))
-        f_stop_raw = float(self.query("FREQ:STOP?"))
-        try:
-            f_center = float(self.query("FREQ:CENT?"))
-        except Exception:
-            f_center = float("nan")
-        try:
-            f_span = float(self.query("FREQ:SPAN?"))
-        except Exception:
-            f_span = float("nan")
+        # First call only: identify which screen the user is using.
+        self._discover_active_screen()
+        f = self._read_screen_freq()
+        f_start_raw = f['f_start_raw']
+        f_stop_raw  = f['f_stop_raw']
+        f_center    = f['f_center']
+        f_span      = f['f_span']
         # Prefer center/span when both are finite and span is positive AND
         # the start/stop pair is degenerate (span=0) or the two pairs
         # disagree. The FSP-38 has been observed to return zero start/stop
@@ -490,7 +580,8 @@ class FSPInstrument:
                     sweep_time=sweep_time, sweep_count=sweep_count,
                     f_center=f_center, f_span=f_span,
                     f_start_raw=f_start_raw, f_stop_raw=f_stop_raw,
-                    freq_source=freq_source)
+                    freq_source=freq_source,
+                    active_screen=self.active_screen)
 
     def frequency_axis(self, settings: Optional[Dict[str, float]] = None) -> np.ndarray:
         s = settings or self.sweep_settings()
@@ -622,12 +713,28 @@ class FSPInstrument:
                 self.inst.query_ascii_values(
                     cmd, container=np.array, separator=","),
                 dtype=float)
-        candidates = [
-            "TRAC? TRACE{n}",
-            "TRAC:DATA? TRACE{n}",
-            "TRAC1? TRACE{n}",
-            ":TRAC? TRACE{n}",
-        ]
+        # Build candidates. If screen discovery determined Screen B is
+        # active, prioritize TRAC2:* (Screen B trace). Otherwise prioritize
+        # TRAC1:* / TRAC. We always include all forms as fallbacks because
+        # firmware variants accept different spellings.
+        if getattr(self, "active_screen", 1) == 2:
+            candidates = [
+                "TRAC2? TRACE{n}",
+                "TRAC2:DATA? TRACE{n}",
+                "TRAC? TRACE{n}",
+                "TRAC:DATA? TRACE{n}",
+                "TRAC1? TRACE{n}",
+                ":TRAC2? TRACE{n}",
+            ]
+        else:
+            candidates = [
+                "TRAC? TRACE{n}",
+                "TRAC:DATA? TRACE{n}",
+                "TRAC1? TRACE{n}",
+                "TRAC1:DATA? TRACE{n}",
+                ":TRAC? TRACE{n}",
+                "TRAC2? TRACE{n}",
+            ]
         all_errors: List[str] = []
         # During discovery we use a short per-attempt timeout (5 s) so a
         # broken syntax that hangs can't burn 30 s before falling through.
