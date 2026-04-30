@@ -96,15 +96,18 @@ class FSPInstrument:
 
     SCPI dialect notes (FSP, NOT FSW):
       - Trace state query:   DISP:TRAC<n>:STAT?     (no :WINDow node on FSP)
-      - Trace data:          TRAC:DATA? TRACE<n>    (note the space)
-      - Single sweep sync:   INIT:CONT OFF; *CLS; INIT;*WAI   (canonical R&S pattern)
+      - Trace data:          TRAC<n>:DATA?          (FSP form: trace number
+                                                     is part of the header,
+                                                     not a parameter)
+      - Single sweep sync:   INIT:CONT OFF; *CLS; INIT:IMM;*WAI; *OPC?
+                             (FSP rejects bare INIT — must be INIT:IMMediate)
       - Data format:         FORM ASC                (binary REAL,32 supported but
                                                        ASCII is more robust over LAN)
     """
 
     MAX_TRACES = 3  # FSP supports up to 3 traces simultaneously
 
-    def __init__(self, resource: str, timeout_ms: int = 15000,
+    def __init__(self, resource: str, timeout_ms: int = 30000,
                  backend: str = "@py", debug: bool = False):
         if not _HAS_PYVISA:
             raise FSPError(
@@ -181,47 +184,33 @@ class FSPInstrument:
     def idn(self) -> str:
         return self.query("*IDN?")
 
-    # Trace-mode tokens that mean the trace IS being drawn on screen.
-    # Anything else (BLAN/BLANK or unknown) means hidden.
-    _DISPLAYED_MODES = ("WRIT", "WRITE", "AVER", "AVERAGE",
-                        "MAXH", "MAXHOLD", "MINH", "MINHOLD", "VIEW")
-
     def active_traces(self) -> List[int]:
         """
         Return list of trace numbers currently *displayed* (1..3) on the FSP.
 
-        "Displayed" means the trace is visible on the screen, regardless of
-        whether the user has selected/highlighted it. This is queried via
-        DISP:TRAC<n>:MODE? which returns one of WRIT(E), AVER(AGE), MAXH(OLD),
-        MINH(OLD), VIEW, or BLAN(K). A trace is displayed iff mode != BLANK.
+        On the FSP, a trace is shown on screen iff DISP:TRAC<n>:STATe? returns 1.
+        (Confirmed against an FSP-38: when traces 2/3 are blanked, STAT? = 0;
+        when their MODE is left as WRITE/MAXHOLD, MODE? still returns those
+        words even though the trace isn't drawn — so MODE? alone is unreliable.)
 
-        Falls back to the older DISP:TRAC<n>:STAT? form only if MODE? errors
-        on the connected instrument.
+        We try the short form first, then the windowed long form, draining
+        the error queue between attempts.
         """
         active: List[int] = []
         for n in range(1, self.MAX_TRACES + 1):
-            mode = self._query_trace_mode(n)
-            if mode is not None:
-                token = mode.strip().upper().lstrip("+").strip('"').strip("'")
-                # Strip any trailing whitespace/newlines and take first word.
-                token = token.split()[0] if token else ""
-                if token and not token.startswith("BLAN") and token != "OFF":
-                    active.append(n)
-                continue
-            # ---- fallback path: legacy STAT? query ---------------------
             ans = None
             for cmd in (f"DISP:TRAC{n}:STAT?", f"DISP:WIND:TRAC{n}:STAT?"):
                 try:
                     ans = self.query(cmd)
-                    errs = self._drain_error_queue()
-                    if errs:
-                        self._log(f"errors after {cmd}: {errs}")
-                        ans = None
-                        continue
-                    break
                 except Exception as exc:
                     self._log(f"{cmd} raised {exc}")
                     continue
+                errs = self._drain_error_queue()
+                if errs:
+                    self._log(f"errors after {cmd}: {errs}")
+                    ans = None
+                    continue
+                break
             if ans is None:
                 self._log(f"could not query trace {n} state")
                 continue
@@ -229,21 +218,6 @@ class FSPInstrument:
             if token.startswith("1") or token.startswith("ON"):
                 active.append(n)
         return active
-
-    def _query_trace_mode(self, n: int) -> Optional[str]:
-        """Return raw response of DISP:TRAC<n>:MODE? or None if unsupported."""
-        for cmd in (f"DISP:TRAC{n}:MODE?", f"DISP:WIND:TRAC{n}:MODE?"):
-            try:
-                ans = self.query(cmd)
-            except Exception as exc:
-                self._log(f"{cmd} raised {exc}")
-                continue
-            errs = self._drain_error_queue()
-            if errs:
-                self._log(f"errors after {cmd}: {errs}")
-                continue
-            return ans
-        return None
 
     def sweep_settings(self) -> Dict[str, float]:
         f_start = float(self.query("FREQ:STAR?"))
@@ -273,34 +247,75 @@ class FSPInstrument:
         """
         Start a single sweep and block until it completes.
 
-        Uses INIT;*WAI which on FSP holds the SCPI parser until the sweep is
-        done — so the *OPC? (or any subsequent query) only returns at sweep
-        end. Requires INIT:CONT OFF (set by arm_single).
+        Uses INIT:IMM;*WAI which on FSP holds the SCPI parser until the sweep
+        is done — so any subsequent query only returns at sweep end. We then
+        send *OPC? as an explicit barrier. Bare "INIT" is rejected by FSP
+        firmware with -200,"Function not available;INIT" — must use the long
+        form INIT:IMMediate (or its short form INIT:IMM).
+
+        Requires INIT:CONT OFF (set by arm_single).
         """
         saved = self.inst.timeout
         # Generous timeout: 5 s base + 2x sweep total
         eff_ms = max(saved, int(timeout_s * 1000) + 5000)
         try:
             self.inst.timeout = eff_ms
-            self.write("INIT;*WAI")
+            self.write("INIT:IMM;*WAI")
             # *OPC? returns 1 only after *WAI completes; serves as a barrier.
             self.query("*OPC?")
         finally:
             self.inst.timeout = saved
 
     def fetch_trace(self, trace_num: int, timeout_s: float = 30.0) -> np.ndarray:
-        """Read trace as ASCII floats. Bumps timeout for big point counts."""
+        """
+        Read trace as ASCII floats. Robust against:
+        - slow LAN responses (generous timeout, optional retry)
+        - locale issues (forces FORM ASC and decimal-point separator)
+        - terminator weirdness (uses read_ascii_values when available so
+          pyvisa handles termination + parsing internally)
+        - the FSP being mid-sweep (caller should call trigger_and_wait first,
+          but we defensively re-issue *WAI before the read).
+        """
         saved = self.inst.timeout
+        eff_ms = max(int(saved or 0), int(timeout_s * 1000))
         try:
-            self.inst.timeout = max(saved, int(timeout_s * 1000))
-            raw = self.inst.query(f"TRAC:DATA? TRACE{trace_num}").strip()
+            self.inst.timeout = eff_ms
+            # Force ASCII format every fetch — cheap insurance in case the
+            # user (or a previous program) left it in REAL,32 binary mode,
+            # which would make our ASCII parsing fail silently / time out.
+            try:
+                self.inst.write("FORM ASC")
+            except Exception:
+                pass
+            # FSP form: TRAC<n>:DATA?  (the trace number is part of the
+            # header, not a parameter). The legacy form `TRAC:DATA? TRACE<n>`
+            # produces -100,"Command error" on FSP firmware.
+            cmd = f"TRAC{trace_num}:DATA?"
+            self._log(f"Q  {cmd}  (timeout={eff_ms} ms)")
+            # Prefer read_ascii_values: it understands the optional binary-block
+            # header and uses pyvisa's chunked reader, which is far less likely
+            # to hang waiting for a terminator that never comes.
+            try:
+                values = self.inst.query_ascii_values(
+                    cmd, container=np.array, separator=",")
+                arr = np.asarray(values, dtype=float)
+            except Exception as exc:
+                # Fall back to plain query + manual parse.
+                self._log(f"query_ascii_values failed ({exc}); using raw query")
+                raw = self.inst.query(cmd).strip()
+                if not raw:
+                    return np.empty(0, dtype=float)
+                # If the FSP returned a binary block (#<n><len><data>) despite
+                # FORM ASC, surface a clear error rather than NaN-spam.
+                if raw.startswith("#"):
+                    raise FSPError(
+                        "FSP returned trace data in binary-block format. "
+                        "Send `FORM ASC` to the instrument and retry."
+                    )
+                arr = np.array([s for s in raw.split(",") if s.strip()], dtype=float)
         finally:
             self.inst.timeout = saved
-        # Comma-separated ASCII floats. np.fromstring is deprecated;
-        # use a chunked split which is fast and 3.12-safe.
-        if not raw:
-            return np.empty(0, dtype=float)
-        return np.array(raw.split(","), dtype=float)
+        return arr
 
 
 # ===========================================================================
@@ -488,12 +503,14 @@ class AcquisitionWorker(QtCore.QObject):
                 break
 
             # Fetch all active traces. Use a generous timeout proportional
-            # to sweep time + point count.
+            # to sweep time + point count. Floor of 30 s handles slow LAN /
+            # narrow-RBW configurations where the very first TRAC<n>:DATA? after
+            # the sweep can take noticeably longer than the sweep itself.
             n_pts = self._freq_axis.shape[0]
-            fetch_timeout = max(15.0, self._sweep_total + n_pts * 0.001 + 5.0)
+            fetch_timeout = max(30.0, 2.0 * self._sweep_total + n_pts * 0.002 + 10.0)
             traces: Dict[int, np.ndarray] = {}
             for tn in self._active:
-                arr = self._fetch_one(tn, fetch_timeout)
+                arr = self._fetch_one_with_retry(tn, fetch_timeout)
                 if arr.shape[0] != n_pts:
                     raise FSPError(
                         f"Trace {tn} returned {arr.shape[0]} points, expected {n_pts}. "
@@ -582,6 +599,40 @@ class AcquisitionWorker(QtCore.QObject):
         except TypeError:
             # Mock signature has no timeout_s kwarg
             return self.inst.fetch_trace(trace_num)
+
+    def _fetch_one_with_retry(self, trace_num: int, timeout_s: float) -> np.ndarray:
+        """
+        Fetch a single trace with a single retry on timeout / VISA error.
+
+        On timeout we:
+          1. Drain the FSP error queue (clears any pending state).
+          2. Re-arm + re-trigger a single sweep so we know the trace is fresh.
+          3. Retry the read with a doubled timeout.
+        """
+        try:
+            return self._fetch_one(trace_num, timeout_s)
+        except Exception as exc:
+            msg = str(exc)
+            # Only retry on timeout-flavored errors; let other failures bubble.
+            if "VI_ERROR_TMO" not in msg and "timeout" not in msg.lower():
+                raise
+            # Try to recover — drain errors, re-trigger, retry once.
+            try:
+                if hasattr(self.inst, "_drain_error_queue"):
+                    self.inst._drain_error_queue()  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            try:
+                if hasattr(self.inst, "arm_single"):
+                    self.inst.arm_single()
+                if hasattr(self.inst, "trigger_and_wait"):
+                    self.inst.trigger_and_wait(self._sweep_total)
+            except Exception:
+                pass
+            self.statusMessage.emit(
+                f"Trace {trace_num} fetch timed out \u2014 retrying with longer timeout…"
+            )
+            return self._fetch_one(trace_num, timeout_s * 2.0)
 
     def _trigger_with_progress(self, idx: int):
         """
@@ -829,19 +880,19 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception as exc:
             lines.append(f"*IDN?         -> ERROR: {exc}")
 
-        # Trace state — try ALL relevant command forms, show raw answers.
-        # MODE? is the canonical query (BLAN = hidden, anything else = displayed).
-        # STAT? is shown for comparison (it returns whether trace is the
-        # currently *selected* one, not whether it's drawn on screen).
+        # Trace state — STAT? is the canonical FSP query for whether a trace
+        # is currently drawn on screen. (MODE? returns the configured mode
+        # — WRITE/AVERAGE/MAXHOLD/etc. — even when the trace is blanked, so
+        # MODE? alone is unreliable and we don't rely on it here.)
         lines.append("")
-        lines.append("Trace queries (raw responses):")
-        lines.append("  MODE? -> WRIT/AVER/MAXH/MINH/VIEW = displayed,  BLAN = hidden")
+        lines.append("Trace state queries (raw responses):")
+        lines.append("  STAT? = 1  ->  trace is shown on the FSP screen")
+        lines.append("  STAT? = 0  ->  trace is blanked")
         if isinstance(self.instrument, FSPInstrument):
             for n in (1, 2, 3):
-                for cmd in (f"DISP:TRAC{n}:MODE?",
-                            f"DISP:WIND:TRAC{n}:MODE?",
-                            f"DISP:TRAC{n}:STAT?",
-                            f"DISP:WIND:TRAC{n}:STAT?"):
+                for cmd in (f"DISP:TRAC{n}:STAT?",
+                            f"DISP:WIND:TRAC{n}:STAT?",
+                            f"DISP:TRAC{n}:MODE?"):
                     try:
                         ans = self.instrument.inst.query(cmd).strip()
                         errs = self.instrument._drain_error_queue()
@@ -869,9 +920,40 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception as exc:
             lines.append(f"Parsed active traces: ERROR {exc}")
 
+        # End-to-end data-path test: arm + sweep + fetch trace 1, time it.
+        lines.append("")
+        lines.append("Trace fetch test (TRAC1:DATA?):")
+        if isinstance(self.instrument, FSPInstrument):
+            try:
+                s = self.instrument.sweep_settings()
+                sweep_total = s["sweep_time"] * s.get("sweep_count", 1)
+                lines.append(f"  arming + INIT:IMM;*WAI (sweep_total ≈ {sweep_total:.3f} s)…")
+                self.instrument.arm_single()
+                t0 = time.perf_counter()
+                self.instrument.trigger_and_wait(sweep_total)
+                t_sweep = time.perf_counter() - t0
+                lines.append(f"  sweep finished in {t_sweep:.3f} s")
+                t1 = time.perf_counter()
+                arr = self.instrument.fetch_trace(
+                    1, timeout_s=max(30.0, 2.0 * sweep_total + 10.0))
+                t_fetch = time.perf_counter() - t1
+                lines.append(
+                    f"  fetched {arr.shape[0]} points in {t_fetch:.3f} s; "
+                    f"first={arr[0]:.2f} dBm, last={arr[-1]:.2f} dBm"
+                    if arr.size else "  fetched 0 points (unexpected)"
+                )
+            except Exception as exc:
+                lines.append(f"  ERROR: {exc.__class__.__name__}: {exc}")
+            try:
+                errs = self.instrument._drain_error_queue()
+                if errs:
+                    lines.append(f"  post-fetch errors: {errs}")
+            except Exception:
+                pass
+
         dlg = QtWidgets.QDialog(self)
         dlg.setWindowTitle("FSP Diagnostics")
-        dlg.resize(700, 500)
+        dlg.resize(820, 620)
         v = QtWidgets.QVBoxLayout(dlg)
         text = QtWidgets.QPlainTextEdit("\n".join(lines))
         text.setReadOnly(True)
