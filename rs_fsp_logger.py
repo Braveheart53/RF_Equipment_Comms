@@ -181,21 +181,38 @@ class FSPInstrument:
     def idn(self) -> str:
         return self.query("*IDN?")
 
+    # Trace-mode tokens that mean the trace IS being drawn on screen.
+    # Anything else (BLAN/BLANK or unknown) means hidden.
+    _DISPLAYED_MODES = ("WRIT", "WRITE", "AVER", "AVERAGE",
+                        "MAXH", "MAXHOLD", "MINH", "MINHOLD", "VIEW")
+
     def active_traces(self) -> List[int]:
         """
-        Return list of trace numbers currently displayed (1..3) on the FSP.
+        Return list of trace numbers currently *displayed* (1..3) on the FSP.
 
-        Uses the FSP-native short form `DISP:TRAC<n>:STAT?`. If that errors,
-        falls back to the FSW long form. Defensive parsing: accepts '1', '+1',
-        'ON', '1\\n', etc.
+        "Displayed" means the trace is visible on the screen, regardless of
+        whether the user has selected/highlighted it. This is queried via
+        DISP:TRAC<n>:MODE? which returns one of WRIT(E), AVER(AGE), MAXH(OLD),
+        MINH(OLD), VIEW, or BLAN(K). A trace is displayed iff mode != BLANK.
+
+        Falls back to the older DISP:TRAC<n>:STAT? form only if MODE? errors
+        on the connected instrument.
         """
         active: List[int] = []
         for n in range(1, self.MAX_TRACES + 1):
+            mode = self._query_trace_mode(n)
+            if mode is not None:
+                token = mode.strip().upper().lstrip("+").strip('"').strip("'")
+                # Strip any trailing whitespace/newlines and take first word.
+                token = token.split()[0] if token else ""
+                if token and not token.startswith("BLAN") and token != "OFF":
+                    active.append(n)
+                continue
+            # ---- fallback path: legacy STAT? query ---------------------
             ans = None
             for cmd in (f"DISP:TRAC{n}:STAT?", f"DISP:WIND:TRAC{n}:STAT?"):
                 try:
                     ans = self.query(cmd)
-                    # If the command was rejected, the error queue grows; check it.
                     errs = self._drain_error_queue()
                     if errs:
                         self._log(f"errors after {cmd}: {errs}")
@@ -212,6 +229,21 @@ class FSPInstrument:
             if token.startswith("1") or token.startswith("ON"):
                 active.append(n)
         return active
+
+    def _query_trace_mode(self, n: int) -> Optional[str]:
+        """Return raw response of DISP:TRAC<n>:MODE? or None if unsupported."""
+        for cmd in (f"DISP:TRAC{n}:MODE?", f"DISP:WIND:TRAC{n}:MODE?"):
+            try:
+                ans = self.query(cmd)
+            except Exception as exc:
+                self._log(f"{cmd} raised {exc}")
+                continue
+            errs = self._drain_error_queue()
+            if errs:
+                self._log(f"errors after {cmd}: {errs}")
+                continue
+            return ans
+        return None
 
     def sweep_settings(self) -> Dict[str, float]:
         f_start = float(self.query("FREQ:STAR?"))
@@ -797,12 +829,19 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception as exc:
             lines.append(f"*IDN?         -> ERROR: {exc}")
 
-        # Trace state — try BOTH command forms explicitly, show raw answers.
+        # Trace state — try ALL relevant command forms, show raw answers.
+        # MODE? is the canonical query (BLAN = hidden, anything else = displayed).
+        # STAT? is shown for comparison (it returns whether trace is the
+        # currently *selected* one, not whether it's drawn on screen).
         lines.append("")
-        lines.append("Trace state queries (raw responses):")
+        lines.append("Trace queries (raw responses):")
+        lines.append("  MODE? -> WRIT/AVER/MAXH/MINH/VIEW = displayed,  BLAN = hidden")
         if isinstance(self.instrument, FSPInstrument):
             for n in (1, 2, 3):
-                for cmd in (f"DISP:TRAC{n}:STAT?", f"DISP:WIND:TRAC{n}:STAT?"):
+                for cmd in (f"DISP:TRAC{n}:MODE?",
+                            f"DISP:WIND:TRAC{n}:MODE?",
+                            f"DISP:TRAC{n}:STAT?",
+                            f"DISP:WIND:TRAC{n}:STAT?"):
                     try:
                         ans = self.instrument.inst.query(cmd).strip()
                         errs = self.instrument._drain_error_queue()
