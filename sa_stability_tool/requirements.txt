@@ -1,0 +1,34 @@
+# SA Long-Time-Measurement Stability & Phase-Noise Analysis Tool
+# Python 3.8 and 3.12 compatible dependency set.
+#
+# NOTE on PySide6/shiboken6 vs NumPy 2.x: shiboken6 6.6.3.x wheels were
+# built against NumPy 1.x's C-API. Importing PySide6 alongside NumPy 2.x
+# (as validated in this environment: NumPy 2.5.1) prints a harmless
+# "compiled using NumPy 1.x" RuntimeWarning to stderr on import but does
+# NOT affect correctness of any numeric result produced by this tool
+# (validated end-to-end with all analysis + GUI smoke tests passing). If
+# the warning is undesirable in your environment, pin numpy<2 -- but this
+# is optional, not required for correct operation.
+
+numpy<1.25; python_version < "3.9"
+numpy>=1.26,<3.0; python_version >= "3.9"
+
+scipy>=1.10,<2.0
+matplotlib>=3.7,<4.0
+allantools>=2024.1
+
+# PySide6 6.6.3.x is the last minor line with wheels published for both
+# Python 3.8 and 3.12 simultaneously (later 6.7+ lines drop 3.8 support).
+PySide6~=6.6.3
+
+# Veusz has no prebuilt wheel on PyPI for recent Python versions (sdist
+# only) and its setup.py requires numpy + a Qt "qmake" binary + PyQt6 (its
+# own Qt binding, independent of this tool's PySide6 GUI -- kept isolated
+# via subprocess, see veusz_export.py) to be present AT BUILD TIME. Before
+# installing veusz, ensure system Qt6 dev tools and PyQt6 are available:
+#   apt-get install -y qt6-base-dev            # provides qmake6
+#   ln -sf $(which qmake6) /usr/local/bin/qmake
+#   pip install --break-system-packages PyQt6 PyQt6-sip sip pyqt-builder
+#   pip install --break-system-packages --no-build-isolation veusz
+veusz>=4.0
+h5py>=3.0   # veusz .vszh5 documents are HDF5-backed
