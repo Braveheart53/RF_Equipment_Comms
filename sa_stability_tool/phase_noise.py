@@ -1,6 +1,47 @@
-"""
-SSB Phase Noise Analysis -- L(f) Derivation and Frequency-Domain Noise ID
-============================================================================
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 William W. Wallace <wwallace@nrao.edu>
+# %% ===========================================================================
+#    MODULE HEADER
+# =============================================================================
+"""SSB phase noise analysis - L(f) derivation and frequency-domain noise ID.
+
+===============================================================================
+ Title          : SSB Phase Noise Analysis
+ Filename       : phase_noise.py
+ Version        : 0.0.2  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Package        : SA Time Stability Tools 0.0.2 (GUI: Time_Stability_App.py)
+ Author         : William W. Wallace
+ Company        : NRAO/GBO
+ Email          : wwallace@nrao.edu
+ Created        : 0.0.1 baseline (authoring date not recorded)
+ Modified       : 2026-10-11
+ Language       : Python 3.8 - 3.13 (3.8 syntax kept on purpose)
+ Requires       : numpy, scipy (signal.welch)
+ Licence        : GPL-3.0-or-later (GNU General Public License v3.0 or later)
+ Copyright      : Copyright (C) 2026 William W. Wallace
+ Status         : Internal draft - validated on synthetic data only
+===============================================================================
+
+LICENCE
+-------
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+The full text is in the file LICENSE distributed with this program.
+
+DESCRIPTION
+-----------
 Computes single-sideband (SSB) phase noise L(f) [dBc/Hz] vs Fourier offset
 frequency f, either:
 
@@ -19,8 +60,10 @@ Table 1, the two domains must agree on noise type for a self-consistent
 analysis (a valuable cross-check available whenever both a spectrum-
 analyzer phase-noise mode AND long-time phase data exist for the same DUT).
 
-References (IEEE format)
--------------------------
+Python 3.8 / 3.12 compatible.
+
+REFERENCES (IEEE format)
+------------------------
 [1] W. J. Riley, "Handbook of Frequency Stability Analysis," NIST Special
     Publication 1065, Jul. 2008. [Online].
     Available: https://tf.nist.gov/general/pdf/2220.pdf
@@ -34,9 +77,19 @@ References (IEEE format)
 [4] E. Rubiola, "Phase Noise and Frequency Stability in Oscillators,"
     Cambridge Univ. Press, 2008, doi: 10.1017/CBO9780511812798.
 
-Python 3.8 / 3.12 compatible.
+REVISION HISTORY
+----------------
+0.0.1  (baseline)  As received (unversioned archive sa_stability_tool.7z).
+0.0.2  2026-10-11  Full header (version, author, licence, history), version
+                   dunders and Spyder # %% cells. Code unchanged (every
+                   function and class is AST-identical to 0.0.1); known
+                   defects are listed in CHANGELOG.md and fixed in 0.0.3.
+===============================================================================
 """
 
+# %% ===========================================================================
+#    IMPORTS
+# =============================================================================
 from __future__ import annotations
 
 import math
@@ -46,6 +99,17 @@ from typing import List, Optional, Tuple
 import numpy as np
 from scipy import signal
 
+__version__ = "0.0.2"                   # Semantic Versioning 2.0.0
+__author__ = "William W. Wallace"
+__email__ = "wwallace@nrao.edu"
+__company__ = "NRAO/GBO"
+__license__ = "GPL-3.0-or-later"        # SPDX identifier
+__copyright__ = "Copyright (C) 2026 William W. Wallace"
+
+
+# %% ===========================================================================
+#    FREQUENCY-DOMAIN NOISE TABLE
+# =============================================================================
 # S_phi(f) power-law exponent alpha_phi (S_phi(f) ~ f^alpha_phi) determines
 # the slope of L(f) IN dB PER DECADE of f. Since L(f)=10*log10(0.5*S_phi(f))
 # is already expressed in dB, its log10(f)-slope is 10*alpha_phi, not
@@ -68,6 +132,9 @@ FREQ_NOISE_TABLE = [
 ]
 
 
+# %% ===========================================================================
+#    RESULT DATA CLASSES
+# =============================================================================
 @dataclass
 class PhaseNoiseResult:
     freq_hz: "np.ndarray"      # Fourier offset frequency, Hz
@@ -86,6 +153,9 @@ class FreqNoiseClassification:
     noise_type: str
 
 
+# %% ===========================================================================
+#    SSB PHASE NOISE L(f)
+# =============================================================================
 def ssb_phase_noise_from_time_series(x_phase_s: "np.ndarray", tau0: float, f0_hz: float,
                                       window: str = "hann", nperseg: Optional[int] = None,
                                       detrend: str = "linear") -> PhaseNoiseResult:
@@ -123,6 +193,9 @@ def parse_direct_phase_noise_trace(freq_hz: "np.ndarray", l_f_dbc_hz: "np.ndarra
                              method="direct_sa_trace")
 
 
+# %% ===========================================================================
+#    FREQUENCY-DOMAIN NOISE CLASSIFICATION
+# =============================================================================
 def _log_bin_average(f: "np.ndarray", l_f: "np.ndarray", points_per_decade: int = 8
                       ) -> Tuple["np.ndarray", "np.ndarray"]:
     """Average L(f) (in linear power, then back to dB) within log-spaced
@@ -173,6 +246,9 @@ def classify_freq_domain_noise(result: PhaseNoiseResult, points_per_decade: int 
     return out
 
 
+# %% ===========================================================================
+#    L(f) <-> S_y(f) CONVERSION
+# =============================================================================
 def l_f_to_sy(l_f_dbc_hz: "np.ndarray", f_hz: "np.ndarray", f0_hz: float) -> "np.ndarray":
     """Convert SSB phase noise L(f) [dBc/Hz] to fractional-frequency PSD
     Sy(f) [1/Hz], per SP1065 Eq. (7)-(8):
@@ -184,3 +260,13 @@ def l_f_to_sy(l_f_dbc_hz: "np.ndarray", f_hz: "np.ndarray", f0_hz: float) -> "np
     """
     s_phi = 2.0 * 10.0 ** (np.asarray(l_f_dbc_hz, dtype=float) / 10.0)
     return (np.asarray(f_hz, dtype=float) ** 2 / f0_hz ** 2) * s_phi
+
+
+# %% ===========================================================================
+#    INTERACTIVE SCRATCH CELL (Spyder)
+# =============================================================================
+# import stability_core as sc
+# x = sc.generate_power_law_phase(65536, 0.01, alpha=0, seed=17)   # white FM
+# res = ssb_phase_noise_from_time_series(x, 0.01, 10e6)
+# for c in classify_freq_domain_noise(res)[:8]:
+#     print(f"{c.f_lo_hz:8.3f}-{c.f_hi_hz:8.3f} Hz  {c.slope_db_per_decade:+6.1f} dB/dec  {c.noise_type}")

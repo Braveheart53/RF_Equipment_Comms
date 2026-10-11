@@ -1,0 +1,68 @@
+# =============================================================================
+#  Mamba environment for the QuickSyn SCPI controller and logger
+# -----------------------------------------------------------------------------
+#  Filename : environment_quicksyn.yml
+#  Version  : 0.0.4 (Semantic Versioning 2.0.0)
+#  Author   : William W. Wallace <wwallace@nrao.edu>, NRAO/GBO
+#  Licence  : GPL-3.0-or-later (see LICENSE)
+#  Target   : Python 3.12
+#
+#  Create and activate:
+#      mamba env create -f environment_quicksyn.yml
+#      mamba activate quicksyn
+#      python quicksyn_scpi_gui_v0_0_4.py
+#
+#  Update in place after editing this file:
+#      mamba env update -f environment_quicksyn.yml --prune
+#
+#  Notes
+#  -----
+#  * python is pinned to the 3.12 series, which is what the scripts target.
+#  * veusz installs cleanly from conda-forge. Do NOT try to pip install it:
+#    the source distribution needs qmake and the Qt build tools.
+#  * qt.py is the small binding-abstraction shim; PySide6 is the backend.
+#    Install exactly one Qt binding to keep qt.py's detection unambiguous.
+#  * cupy is commented out because it pulls a CUDA runtime. Uncomment the
+#    variant matching your driver only if you want GPU reductions in the
+#    companion export script; the controller itself never uses the GPU.
+#  * pyserial provides the USB virtual COM port transport.
+#  * h5py writes the Veusz HDF5 document (.vszh5) directly; Veusz itself
+#    is only needed to render PDF/PNG from it or to open it for editing.
+#  * qt.py and veusz were confirmed present on conda-forge on 2026-10-09
+#    (qt.py 2.0.3 noarch, veusz 4.2.1); both satisfy the pins below.
+#  * Every dependency listed is under a licence compatible with
+#    GPL-3.0-or-later (see README section 14).
+# =============================================================================
+name: quicksyn
+
+channels:
+  - conda-forge
+
+dependencies:
+  # --- interpreter ---------------------------------------------------------
+  - python=3.12
+
+  # --- instrument I/O ------------------------------------------------------
+  - pyserial>=3.5
+
+  # --- GUI -----------------------------------------------------------------
+  - pyside6>=6.6
+  - qt.py>=1.3
+  - pyqtgraph>=0.13          # live strip chart; optional but recommended
+
+  # --- numerics and reduction ---------------------------------------------
+  - numpy>=1.26
+  - scipy>=1.11              # not required by the scripts; handy alongside
+  - h5py>=3.0                # writes the .vszh5 (Veusz HDF5 document)
+  - veusz>=3.6               # renders PDF/PNG from the .vszh5 (optional)
+
+  # --- diagnostics ---------------------------------------------------------
+  - psutil>=5.9              # process RSS readout on the Monitor tab
+
+  # --- development ---------------------------------------------------------
+  - spyder>=5.5              # the scripts use "# %%" cell markers
+  - pytest>=8.0
+
+  # --- optional GPU reductions (uncomment ONE to match your CUDA driver) ---
+  # - cupy>=13.0
+  # - cuda-version=12.4

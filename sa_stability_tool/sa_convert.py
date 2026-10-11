@@ -1,6 +1,47 @@
-"""
-Spectrum/Signal Analyzer File Converter
-============================================================================
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 William W. Wallace <wwallace@nrao.edu>
+# %% ===========================================================================
+#    MODULE HEADER
+# =============================================================================
+"""Spectrum/signal analyzer export converter to the canonical CSV.
+
+===============================================================================
+ Title          : Spectrum/Signal Analyzer File Converter
+ Filename       : sa_convert.py
+ Version        : 0.0.2  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Package        : SA Time Stability Tools 0.0.2 (GUI: Time_Stability_App.py)
+ Author         : William W. Wallace
+ Company        : NRAO/GBO
+ Email          : wwallace@nrao.edu
+ Created        : 0.0.1 baseline (authoring date not recorded)
+ Modified       : 2026-10-11
+ Language       : Python 3.8 - 3.13 (3.8 syntax kept on purpose)
+ Requires       : numpy
+ Licence        : GPL-3.0-or-later (GNU General Public License v3.0 or later)
+ Copyright      : Copyright (C) 2026 William W. Wallace
+ Status         : Internal draft - validated on synthetic data only
+===============================================================================
+
+LICENCE
+-------
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+The full text is in the file LICENSE distributed with this program.
+
+DESCRIPTION
+-----------
 Converts vendor spectrum-analyzer export files (Keysight, Rohde & Schwarz)
 into the canonical two-column CSV format consumed by stability_core.py:
 
@@ -33,8 +74,10 @@ Supported inputs
   ';'-delimited, with a metadata header block terminated by a
   "Values" or blank-line marker, then "x;y" pairs.
 
-References (IEEE format)
--------------------------
+Python 3.8 / 3.12 compatible.
+
+REFERENCES (IEEE format)
+------------------------
 [1] Keysight Technologies, "PXA/MXA Signal Analyzer Phase Noise
     Measurement Application User's Guide," Keysight Technologies.
 [2] Rohde & Schwarz, "R&S FSWP Phase Noise Analyzer and VCO Tester User
@@ -43,9 +86,19 @@ References (IEEE format)
     Special Publication 1065, Jul. 2008.
     Available: https://tf.nist.gov/general/pdf/2220.pdf
 
-Python 3.8 / 3.12 compatible.
+REVISION HISTORY
+----------------
+0.0.1  (baseline)  As received (unversioned archive sa_stability_tool.7z).
+0.0.2  2026-10-11  Full header (version, author, licence, history), version
+                   dunders and Spyder # %% cells. Code unchanged (every
+                   function and class is AST-identical to 0.0.1); known
+                   defects are listed in CHANGELOG.md and fixed in 0.0.3.
+===============================================================================
 """
 
+# %% ===========================================================================
+#    IMPORTS
+# =============================================================================
 from __future__ import annotations
 
 import csv
@@ -55,7 +108,17 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
+__version__ = "0.0.2"                   # Semantic Versioning 2.0.0
+__author__ = "William W. Wallace"
+__email__ = "wwallace@nrao.edu"
+__company__ = "NRAO/GBO"
+__license__ = "GPL-3.0-or-later"        # SPDX identifier
+__copyright__ = "Copyright (C) 2026 William W. Wallace"
 
+
+# %% ===========================================================================
+#    TEXT PARSING HELPERS
+# =============================================================================
 def _sniff_delimiter(sample: str) -> str:
     for delim in (",", ";", "\t"):
         if sample.count(delim) >= 2:
@@ -102,6 +165,9 @@ def _looks_like_number(tok: str) -> bool:
         return False
 
 
+# %% ===========================================================================
+#    GENERIC PARSER AND TIME-SERIES / TRACE CLASSIFIER
+# =============================================================================
 def generic_csv_to_canonical(path: str) -> Tuple["np.ndarray", "np.ndarray", str]:
     """Fallback parser for any 2-column CSV/TSV/semicolon-delimited file.
     Auto-detects whether column 0 represents monotonically increasing
@@ -144,6 +210,9 @@ def _classify_column0(col0: "np.ndarray") -> str:
     return "time_series"
 
 
+# %% ===========================================================================
+#    VENDOR PARSERS
+# =============================================================================
 def keysight_trace_csv_to_canonical(path: str) -> Tuple["np.ndarray", "np.ndarray", str]:
     """Parse a Keysight X-Series/PXA-style trace export. These exports
     typically place metadata in leading lines beginning with plain text
@@ -195,6 +264,9 @@ _VENDOR_PARSERS = {
 }
 
 
+# %% ===========================================================================
+#    CONVERSION TO THE CANONICAL CSV
+# =============================================================================
 def convert_to_canonical_csv(input_path: str, output_path: str, vendor: str = "generic",
                               value_column_name: str = "phase_s") -> str:
     """Convert a vendor SA export file to the canonical CSV format used by
@@ -220,6 +292,9 @@ def convert_to_canonical_csv(input_path: str, output_path: str, vendor: str = "g
     return kind
 
 
+# %% ===========================================================================
+#    BATCH MARKER / PEAK TIME SERIES
+# =============================================================================
 def batch_extract_marker_time_series(paths: List[str], vendor: str = "generic",
                                       marker_index: int = 0) -> Tuple["np.ndarray", "np.ndarray"]:
     """Build a long-time-measurement time series from a batch of individual
@@ -243,3 +318,11 @@ def batch_extract_marker_time_series(paths: List[str], vendor: str = "generic",
     values = np.array(values, dtype=float)
     idx_time = np.arange(len(values), dtype=float)
     return idx_time, values
+
+
+# %% ===========================================================================
+#    INTERACTIVE SCRATCH CELL (Spyder)
+# =============================================================================
+# kind = convert_to_canonical_csv("my_export.csv", "canonical.csv", vendor="generic")
+# print(kind)
+# t_idx, peaks = batch_extract_marker_time_series(["snap_000.csv", "snap_001.csv"])

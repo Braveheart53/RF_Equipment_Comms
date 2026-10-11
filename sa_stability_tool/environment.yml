@@ -1,0 +1,36 @@
+# Environment for SA Time Stability Tools 0.0.2 (Time_Stability_App.py)
+#
+#   mamba env create -f environment.yml
+#   mamba activate sa_stability
+#   python Time_Stability_App.py
+#
+# Version 0.0.2 (Semantic Versioning 2.0.0) - William W. Wallace, NRAO/GBO
+#
+# What each package is for:
+#   numpy, scipy      analysis (scipy.signal.welch for phase noise)
+#   matplotlib        the on-screen plots (QtAgg canvas)
+#   pyside6           the GUI
+#   h5py              writes the native Veusz HDF5 document (.vszh5);
+#                     Veusz is NOT needed for that
+#   allantools        reference implementation, validate_core.py only
+#   veusz             OPTIONAL: open the .vszh5 and render PDF/PNG from it.
+#                     It brings PyQt; the GUI never imports it (the render
+#                     runs in a child process), so PySide6 and PyQt do not
+#                     meet in one process. Delete the line if you use the
+#                     Veusz Windows installer instead (then set
+#                     TIME_STABILITY_VEUSZ to veusz.exe).
+#   spyder-kernels    OPTIONAL: run the scripts from Spyder in this env.
+
+name: sa_stability
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy>=1.26
+  - scipy>=1.10
+  - matplotlib>=3.7
+  - pyside6>=6.6
+  - h5py>=3.0
+  - allantools>=2024.1
+  - veusz>=3.6
+  # - spyder-kernels

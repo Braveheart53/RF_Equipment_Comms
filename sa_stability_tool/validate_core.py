@@ -1,18 +1,94 @@
-"""Validation script (dev-time only, not part of the delivered tool):
-cross-checks stability_core.py against allantools and against expected
-power-law noise slopes. Run with: python3.12 validate_core.py
-"""
-from __future__ import annotations
-import sys
-import numpy as np
-import allantools
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 William W. Wallace <wwallace@nrao.edu>
+# %% ===========================================================================
+#    MODULE HEADER
+# =============================================================================
+"""Validation of stability_core.py against allantools and known noise slopes.
 
-sys.path.insert(0, "/home/user/workspace/maser_analysis/sa_stability_tool")
-import stability_core as sc
+===============================================================================
+ Title          : Stability Core Validation
+ Filename       : validate_core.py
+ Version        : 0.0.2  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Package        : SA Time Stability Tools 0.0.2
+ Author         : William W. Wallace
+ Company        : NRAO/GBO
+ Email          : wwallace@nrao.edu
+ Created        : 0.0.1 baseline (authoring date not recorded)
+ Modified       : 2026-10-11
+ Language       : Python 3.8 - 3.13
+ Requires       : numpy, allantools (reference implementation)
+ Licence        : GPL-3.0-or-later (GNU General Public License v3.0 or later)
+ Copyright      : Copyright (C) 2026 William W. Wallace
+ Status         : Development validation script (not part of the GUI)
+===============================================================================
+
+LICENCE
+-------
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option)
+any later version. It is distributed WITHOUT ANY WARRANTY; see the GNU
+General Public License (file LICENSE) for details.
+
+DESCRIPTION
+-----------
+Dev-time validation, not part of the delivered tool. Cross-checks
+stability_core.py against the allantools library [1] and against the
+expected power-law noise slopes [2]:
+
+  TEST 1  OADEV / MDEV / OHDEV / TDEV vs allantools (white FM)
+  TEST 2  TDEV = tau / sqrt(3) * MDEV
+  TEST 3  non-overlapping ADEV consistent with OADEV
+  TEST 4  noise type recovered from the ADEV slope for five noise types
+  TEST 5  Thêo1 unbiased vs OADEV at tau_eff = 0.75 m tau0 (white FM)
+  TEST 6  ThêoH splice and tau coverage beyond N/2
+
+Run with:  python validate_core.py   (or cell by cell in Spyder)
+
+REFERENCES
+----------
+[1] "Allantools Documentation." https://allantools.readthedocs.io/
+[2] W. J. Riley, "Handbook of Frequency Stability Analysis," NIST Special
+    Publication 1065, Jul. 2008. https://tf.nist.gov/general/pdf/2220.pdf
+
+REVISION HISTORY
+----------------
+0.0.1  (baseline)  As received; imported from a fixed path
+                   /home/user/workspace/maser_analysis/sa_stability_tool.
+0.0.2  2026-10-11  Imports from its own folder; full header; Spyder cells.
+                   Tests unchanged.
+===============================================================================
+"""
+
+# %% ===========================================================================
+#    IMPORTS AND SET-UP
+# =============================================================================
+from __future__ import annotations
+
+import math
+import sys
+from pathlib import Path
+
+import allantools
+import numpy as np
+
+_HERE = Path(globals().get("__file__") or "validate_core.py").resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+import stability_core as sc  # noqa: E402
+
+__version__ = "0.0.2"                   # Semantic Versioning 2.0.0
+__author__ = "William W. Wallace"
+__license__ = "GPL-3.0-or-later"
 
 TAU0 = 1.0
 N = 20000
 
+# %% ===========================================================================
+#    TEST 1: OADEV / MDEV / OHDEV / TDEV AGAINST ALLANTOOLS
+# =============================================================================
 print("=" * 70)
 print("TEST 1: Cross-check OADEV/MDEV/OHDEV/TDEV against allantools")
 print("=" * 70)
@@ -44,6 +120,9 @@ for i, m in enumerate(m_values):
 print(f"\nMax relative error across all m, all estimators: {max_rel_err:.6f}%")
 print("PASS" if max_rel_err < 0.01 else "FAIL -- investigate formula mismatch")
 
+# %% ===========================================================================
+#    TEST 2: TDEV = tau / sqrt(3) * MDEV
+# =============================================================================
 print()
 print("=" * 70)
 print("TEST 2: TDEV formula check (TDEV = tau/sqrt(3) * MDEV)")
@@ -57,6 +136,9 @@ for i, m in enumerate(m_values):
 print(f"Max relative error TDEV vs allantools: {max_rel_err_tdev:.6f}%")
 print("PASS" if max_rel_err_tdev < 0.01 else "FAIL")
 
+# %% ===========================================================================
+#    TEST 3: NON-OVERLAPPING ADEV VS OADEV
+# =============================================================================
 print()
 print("=" * 70)
 print("TEST 3: Non-overlapping ADEV sanity check (should be noisier but")
@@ -68,6 +150,9 @@ for m in [4, 16, 64]:
     ratio = a_val / oa_val
     print(f"m={m:4d}  ADEV={a_val:.4e} (n={a_n:4d})  OADEV={oa_val:.4e} (n={oa_n:4d})  ratio={ratio:.3f}")
 
+# %% ===========================================================================
+#    TEST 4: NOISE TYPE FROM THE ADEV SLOPE
+# =============================================================================
 print()
 print("=" * 70)
 print("TEST 4: Noise-type slope classification vs known injected noise type")
@@ -80,7 +165,6 @@ for label, alpha in noise_cases:
     xn = sc.generate_power_law_phase(N, TAU0, alpha=alpha, seed=99)
     pts = sc.compute_all_deviations(xn, TAU0, m_values=[2, 4, 8, 16, 32, 64, 128], include_theo=False)
     # use a mid-range octave pair for the slope estimate (avoid edge/DC-injection artifacts)
-    import math
     log_t = [math.log10(p.tau) for p in pts]
     log_a = [math.log10(p.oadev) for p in pts]
     idx = 2  # tau = 8..16 octave, away from both ends
@@ -89,6 +173,9 @@ for label, alpha in noise_cases:
     print(f"{label:>18}: expected ADEV slope mu={expected:+.2f}, measured mu={slope:+.2f}  "
           f"({'OK' if abs(slope-expected) < 0.35 else 'CHECK'})")
 
+# %% ===========================================================================
+#    TEST 5: THEO1 UNBIASED VS OADEV AT TAU_EFF (WHITE FM)
+# =============================================================================
 print()
 print("=" * 70)
 print("TEST 5: Thêo1 unbiasedness vs OADEV at MATCHED effective tau=0.75*m*tau0")
@@ -104,6 +191,9 @@ for m in [20, 40, 80, 200]:
           f"THEO1(m)={th1_val:.4e}  ratio={ratio:.3f}  "
           f"({'OK (~1.0)' if 0.9 < ratio < 1.1 else 'CHECK'})")
 
+# %% ===========================================================================
+#    TEST 6: THEOH SPLICE AND TAU COVERAGE
+# =============================================================================
 print()
 print("=" * 70)
 print("TEST 6: ThêoH hybrid family -- continuity check at AVAR/ThêoBR splice,")

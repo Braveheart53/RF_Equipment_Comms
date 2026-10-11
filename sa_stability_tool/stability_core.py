@@ -1,6 +1,47 @@
-"""
-Time/Frequency Stability Core -- Long-Time-Measurement Analysis Engine
-============================================================================
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 William W. Wallace <wwallace@nrao.edu>
+# %% ===========================================================================
+#    MODULE HEADER
+# =============================================================================
+"""Time/frequency stability core - long-time-measurement analysis engine.
+
+===============================================================================
+ Title          : Time/Frequency Stability Core
+ Filename       : stability_core.py
+ Version        : 0.0.2  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Package        : SA Time Stability Tools 0.0.2 (GUI: Time_Stability_App.py)
+ Author         : William W. Wallace
+ Company        : NRAO/GBO
+ Email          : wwallace@nrao.edu
+ Created        : 0.0.1 baseline (authoring date not recorded)
+ Modified       : 2026-10-11
+ Language       : Python 3.8 - 3.13 (3.8 syntax kept on purpose)
+ Requires       : numpy
+ Licence        : GPL-3.0-or-later (GNU General Public License v3.0 or later)
+ Copyright      : Copyright (C) 2026 William W. Wallace
+ Status         : Internal draft - validated on synthetic data only
+===============================================================================
+
+LICENCE
+-------
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+The full text is in the file LICENSE distributed with this program.
+
+DESCRIPTION
+-----------
 Core numerical engine for computing time drift and frequency-stability
 statistics from a long-time-measurement phase/time-error series acquired on
 a spectrum analyzer (or any other time-interval / phase-comparison
@@ -22,11 +63,12 @@ All phase-domain formulas below were cross-checked against three
 independent sources (NIST SP1065, the open-source `allantools` reference
 implementation, and Wikipedia's Allan variance article) and numerically
 validated against `allantools` output on synthetic data (see
-`validate_against_allantools()` at the bottom of this file / the project
-test script) before being trusted for this deliverable.
+validate_core.py) before being trusted for this deliverable.
 
-References (IEEE format)
--------------------------
+Python 3.8 / 3.12 compatible. No syntax newer than 3.8 is used.
+
+REFERENCES (IEEE format)
+------------------------
 [1] G. Kamas and M. A. Lombardi, "Time and Frequency Users Manual,"
     NIST Special Publication 559 (Rev.), U.S. Dept. of Commerce, 1990.
     [Online]. Available: https://tf.nist.gov/general/pdf/461.pdf
@@ -50,10 +92,21 @@ References (IEEE format)
     Time Interval (PTTI) Meeting, 2004.
 [9] Stable32 Software Manual, Hamilton Technical Services, rev. 1.54.
     [Online]. Available: http://www.stable32.com/Manual154.pdf
+(References are as received in 0.0.1; they are verified in 0.0.3.)
 
-Python 3.8 / 3.12 compatible. No syntax newer than 3.8 is used.
+REVISION HISTORY
+----------------
+0.0.1  (baseline)  As received (unversioned archive sa_stability_tool.7z).
+0.0.2  2026-10-11  Full header (version, author, licence, history), version
+                   dunders and Spyder # %% cells. Code unchanged (every
+                   function and class is AST-identical to 0.0.1); known
+                   defects are listed in CHANGELOG.md and fixed in 0.0.3.
+===============================================================================
 """
 
+# %% ===========================================================================
+#    IMPORTS
+# =============================================================================
 from __future__ import annotations
 
 import csv
@@ -63,9 +116,17 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
-# --------------------------------------------------------------------------
-# Noise-type slope tables (NIST SP1065 Table 1 / IEEE 1139)
-# --------------------------------------------------------------------------
+__version__ = "0.0.2"                   # Semantic Versioning 2.0.0
+__author__ = "William W. Wallace"
+__email__ = "wwallace@nrao.edu"
+__company__ = "NRAO/GBO"
+__license__ = "GPL-3.0-or-later"        # SPDX identifier
+__copyright__ = "Copyright (C) 2026 William W. Wallace"
+
+
+# %% ===========================================================================
+#    NOISE-TYPE SLOPE TABLE (NIST SP1065 / IEEE 1139)
+# =============================================================================
 # mu is the log-log slope of ADEV (sigma_y) vs tau: sigma_y(tau) ~ tau^mu
 # alpha is the corresponding Sy(f) power-law exponent: Sy(f) ~ f^alpha
 # mu = -(alpha + 1) / 2   for -2 <= alpha... (relationship from SP1065 Table 1)
@@ -81,6 +142,9 @@ NOISE_TABLE = [
 ]
 
 
+# %% ===========================================================================
+#    RESULT DATA CLASSES
+# =============================================================================
 @dataclass
 class DriftFitResult:
     order: int                      # 1 = linear (freq offset+drift), 2 = quadratic (+aging)
@@ -114,10 +178,9 @@ class NoiseClassification:
     confidence: str          # "high" (both slopes agree) / "low" (ambiguous)
 
 
-# --------------------------------------------------------------------------
-# I/O
-# --------------------------------------------------------------------------
-
+# %% ===========================================================================
+#    I/O
+# =============================================================================
 def load_canonical_csv(path: str) -> Tuple["np.ndarray", "np.ndarray", str]:
     """Load the canonical CSV format used throughout this tool.
 
@@ -164,10 +227,9 @@ def load_canonical_csv(path: str) -> Tuple["np.ndarray", "np.ndarray", str]:
     return t, x, "phase"
 
 
-# --------------------------------------------------------------------------
-# Phase <-> frequency conversion
-# --------------------------------------------------------------------------
-
+# %% ===========================================================================
+#    PHASE <-> FREQUENCY CONVERSION
+# =============================================================================
 def phase_to_freq(x: "np.ndarray", tau0: float) -> "np.ndarray":
     """Fractional-frequency series y[k] from phase series x[k] (both length N;
     y has length N-1). y[k] = (x[k+1]-x[k]) / tau0."""
@@ -181,12 +243,9 @@ def freq_to_phase(y: "np.ndarray", tau0: float, x0: float = 0.0) -> "np.ndarray"
     return x
 
 
-# --------------------------------------------------------------------------
-# Drift fit / removal (SP1065 Sec. 4.2 -- systematics must be removed before
-# computing AVAR-family statistics, otherwise deterministic frequency drift
-# masquerades as Flicker-Walk / Random-Run noise at long tau)
-# --------------------------------------------------------------------------
-
+# %% ===========================================================================
+#    DRIFT FIT AND REMOVAL (SP1065 Sec. 4.2)
+# =============================================================================
 def fit_and_remove_drift(x: "np.ndarray", t: "np.ndarray", order: int = 2) -> DriftFitResult:
     """Fit and subtract a polynomial drift model from the phase series.
 
@@ -212,10 +271,9 @@ def fit_and_remove_drift(x: "np.ndarray", t: "np.ndarray", order: int = 2) -> Dr
                            drift_rate=drift_rate, r_squared=r2)
 
 
-# --------------------------------------------------------------------------
-# Averaging-factor (tau) grid
-# --------------------------------------------------------------------------
-
+# %% ===========================================================================
+#    AVERAGING-FACTOR (TAU) GRID
+# =============================================================================
 def octave_m_values(n_points: int, max_frac: float = 0.5) -> List[int]:
     """Return an octave-spaced (base-2) list of averaging factors m=1,2,4,8,...
     up to max_frac * n_points, the standard tau grid used by Stable32's
@@ -239,10 +297,9 @@ def decade_m_values(n_points: int, max_frac: float = 0.5, points_per_decade: int
     return sorted(int(m) for m in log_m if m >= 1)
 
 
-# --------------------------------------------------------------------------
-# Deviation estimators (all phase-domain, all cross-validated vs allantools)
-# --------------------------------------------------------------------------
-
+# %% ===========================================================================
+#    DEVIATION ESTIMATORS (PHASE FORM)
+# =============================================================================
 def adev_nonoverlapping(x: "np.ndarray", tau0: float, m: int) -> Tuple[float, int]:
     """Standard (non-overlapping) Allan deviation via non-overlapping
     frequency-cluster averages -- SP1065 Eq. (6)-(8), classical definition.
@@ -312,6 +369,9 @@ def ohdev(x: "np.ndarray", tau0: float, m: int) -> Tuple[float, int]:
     return math.sqrt(var), n_terms
 
 
+# %% ===========================================================================
+#    THEO1, THEOBR AND THEOH
+# =============================================================================
 def theo1(x: "np.ndarray", tau0: float, m: int) -> Tuple[float, int]:
     """Thêo1 statistic -- NIST SP1065 Eq. (30) / Howe & Tasset (2004) [Ref.
     tf.nist.gov/general/pdf/1894.pdf], m must be even, 10 <= m <= N-1.
@@ -462,10 +522,9 @@ def compute_theoh_family(x: "np.ndarray", tau0: float,
     return out
 
 
-# --------------------------------------------------------------------------
-# Full stability-analysis sweep
-# --------------------------------------------------------------------------
-
+# %% ===========================================================================
+#    FULL STABILITY-ANALYSIS SWEEP
+# =============================================================================
 def compute_all_deviations(x: "np.ndarray", tau0: float, m_values: Optional[List[int]] = None,
                             include_theo: bool = True) -> List[StabilityPoint]:
     """Compute the AVAR-family estimators (ADEV, OADEV, MDEV, TDEV, OHDEV)
@@ -493,10 +552,9 @@ def compute_all_deviations(x: "np.ndarray", tau0: float, m_values: Optional[List
     return out
 
 
-# --------------------------------------------------------------------------
-# Noise-type identification (SP1065 Table 1 / IEEE 1139 slope method)
-# --------------------------------------------------------------------------
-
+# %% ===========================================================================
+#    NOISE-TYPE IDENTIFICATION (SLOPE METHOD)
+# =============================================================================
 def _nearest_noise_type(mu: float) -> str:
     best_name, best_d = "Unclassified", float("inf")
     for name, _alpha, mu_a, _mu_m in NOISE_TABLE:
@@ -543,10 +601,9 @@ def classify_noise(points: List[StabilityPoint]) -> List[NoiseClassification]:
     return results
 
 
-# --------------------------------------------------------------------------
-# Synthetic power-law noise generator (for self-validation only)
-# --------------------------------------------------------------------------
-
+# %% ===========================================================================
+#    SYNTHETIC POWER-LAW NOISE (VALIDATION ONLY)
+# =============================================================================
 def generate_power_law_phase(n: int, tau0: float, alpha: int, amp: float = 1.0,
                               seed: int = 1234) -> "np.ndarray":
     """Generate a synthetic phase series x(t) whose fractional-frequency PSD
@@ -567,3 +624,15 @@ def generate_power_law_phase(n: int, tau0: float, alpha: int, amp: float = 1.0,
     y = amp * y / np.std(y)
     x = freq_to_phase(y, tau0)
     return x
+
+
+# %% ===========================================================================
+#    INTERACTIVE SCRATCH CELL (Spyder)
+# =============================================================================
+# Quick look at the estimators from the console (Spyder: run this cell).
+#
+# x = generate_power_law_phase(8192, 1.0, alpha=0, seed=7)       # white FM
+# for p in compute_all_deviations(x, 1.0):
+#     print(f"tau={p.tau:8.0f}  OADEV={p.oadev:.3e}  MDEV={p.mdev:.3e}")
+# for c in classify_noise(compute_all_deviations(x, 1.0)):
+#     print(c.tau, c.noise_type, c.confidence)
