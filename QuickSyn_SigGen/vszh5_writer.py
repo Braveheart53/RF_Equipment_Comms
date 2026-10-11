@@ -11,7 +11,7 @@
 ===============================================================================
  Title          : Veusz HDF5 Document Writer
  Filename       : vszh5_writer.py
- Version        : 0.0.5  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Version        : 0.0.4  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
  Author         : William W. Wallace
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
@@ -104,8 +104,7 @@ DIFFERENCES FROM isp_speed_monitor.py 1.3.0
 * local_utc_offsets(): per-sample UTC offset, so a local-time axis stays
   correct across a daylight-saving change.
 * render_pages(): the --listen method, every page to PNG plus one multipage
-  PDF, Windows-safe paths (bound outside exec), waits for a done marker, and
-  falls back to the veusz package when the program fails.
+  PDF, Windows-safe paths (repr), and an in-process fallback.
 
 REFERENCES
 ----------
@@ -122,17 +121,6 @@ REVISION HISTORY
 0.0.4  2026-10-11  First version, released with QuickSyn package 0.0.4
                    (version follows the package). Extracted from
                    isp_speed_monitor.py 1.3.0 and extended as listed above.
-0.0.5  2026-10-11  render_pages(): Windows paths fixed (the PNG path sat
-                   inside an exec() string, so C:\\Users... was unescaped twice;
-                   it is now bound on its own line); method "auto" falls back
-                   to the veusz package when the Veusz program found fails to
-                   render (e.g. a distribution package built for another
-                   Python) and reports both errors otherwise. A program that
-                   exits before reading its script (broken pipe) or cannot
-                   be started is now reported as a failed render rather than
-                   raising BrokenPipeError/OSError, so the fallback runs. The
-                   stdout pipe is closed (ResourceWarning) and Veusz is never
-                   left running after an error.
 ===============================================================================
 """
 
@@ -158,7 +146,7 @@ try:
 except ImportError:  # pragma: no cover - reported when a writer is created
     h5py = None
 
-__version__ = "0.0.5"                 # Semantic Versioning 2.0.0
+__version__ = "0.0.4"                 # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO/GBO"
@@ -472,12 +460,8 @@ def _render_script(src: Path, pdf: Path | None, png_stem: Path | None,
         lines.append(f"Export({str(pdf)!r}, page=list(range(len(names))))")
     if png_stem is not None:
         upto = "len(names)" if png_pages == "all" else "min(1, len(names))"
-        # The path is bound on its own line, where repr() gives a valid
-        # literal; the exec() string carries no path, so a Windows back-slash
-        # is never unescaped a second time (C:\\Users would become \\U...).
-        lines.append(f"vszh5_png_stem = {str(png_stem)!r}")
         lines.append(
-            f"exec(\"for i in range({upto}): Export(vszh5_png_stem + '_p%02d_%s.png' "
+            f"exec(\"for i in range({upto}): Export({str(png_stem)!r} + '_p%02d_%s.png' "
             f"% (i, names[i]), page=[i], dpi={int(dpi)})\")")
     lines += ["print('VSZH5_DONE')", "Quit()", ""]
     return "\n".join(lines)
@@ -504,9 +488,8 @@ def render_pages(vszh5: str | os.PathLike, outdir: str | os.PathLike | None = No
     veusz_exe:
         Veusz program to drive; found with find_veusz_exe() when empty.
     method:
-        "auto" (the program if found, falling back to the Python package if
-        the program fails or is absent), "program" (the Veusz executable
-        only) or "inprocess" (the Python package only).
+        "auto" (program if found, else the Python package), "program"
+        (the Veusz executable only) or "inprocess" (the Python package only).
 
     Returns
     -------
@@ -539,18 +522,7 @@ def render_pages(vszh5: str | os.PathLike, outdir: str | os.PathLike | None = No
         script = _render_script(src, pdf_path, png_stem, png_pages, dpi)
         ok, log = _run_listen(exe, script, env, timeout)
         if not ok:
-            program_error = (f"Veusz program {exe} did not finish the render "
-                             f"(check that `{os.path.basename(exe)} --version` runs; set "
-                             f"QUICKSYN_VEUSZ to a working Veusz): {log.strip()[-600:]}")
-            if method == "program":
-                raise RuntimeError(program_error)
-            # auto: a Veusz found on the PATH can be broken (e.g. a Linux
-            # distribution package built for another Python), so try the
-            # veusz Python package before giving up.
-            try:
-                _render_in_process(src, pdf_path, png_stem, png_pages, dpi)
-            except RuntimeError as exc:
-                raise RuntimeError(f"{program_error}\nIn-process fallback: {exc}") from exc
+            raise RuntimeError(f"Veusz ({exe}) did not finish the render: {log[-800:]}")
     else:
         _render_in_process(src, pdf_path, png_stem, png_pages, dpi)
     return sorted(p for p in out.iterdir() if p not in before and p.suffix in (".pdf", ".png"))
@@ -567,30 +539,17 @@ def _run_listen(exe: str, script: str, env: dict[str, str], timeout: float) -> t
     import threading
 
     with tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as err:
-        try:
-            proc = subprocess.Popen([exe, "--listen", "--quiet"], stdin=subprocess.PIPE,
-                                    stdout=subprocess.PIPE, stderr=err, text=True,
-                                    encoding="utf-8", errors="replace", env=env,
-                                    **_popen_kwargs())
-        except OSError as exc:      # missing, not executable, wrong architecture
-            return False, f"cannot start {exe}: {type(exc).__name__}: {exc}"
+        proc = subprocess.Popen([exe, "--listen", "--quiet"], stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE, stderr=err, text=True,
+                                encoding="utf-8", errors="replace", env=env,
+                                **_popen_kwargs())
         killer = threading.Timer(timeout, proc.kill)
         killer.start()
         lines: list[str] = []
         done = False
         try:
-            try:
-                proc.stdin.write(script)
-                proc.stdin.close()
-            except OSError:
-                # BrokenPipeError: the program exited before reading its
-                # script (typically it cannot start at all). Not fatal here:
-                # its stderr says why, and the missing VSZH5_DONE marker
-                # reports the failure to the caller, which may fall back.
-                try:
-                    proc.stdin.close()
-                except OSError:
-                    pass
+            proc.stdin.write(script)
+            proc.stdin.close()
             for line in proc.stdout:
                 lines.append(line)
                 if line.startswith("VSZH5_DONE"):
@@ -607,10 +566,6 @@ def _run_listen(exe: str, script: str, env: dict[str, str], timeout: float) -> t
                     proc.wait()
         finally:
             killer.cancel()
-            if proc.poll() is None:     # an exception above: never leave Veusz behind
-                proc.kill()
-                proc.wait()
-            proc.stdout.close()         # the pipe is ours to close (ResourceWarning)
         err.seek(0)
         return done, "".join(lines) + err.read()
 
