@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 William W. Wallace <wwallace@nrao.edu>
 """Headless smoke test: driver, simulator, logging, sampler and full GUI.
 
-Part of the QuickSyn SCPI controller package, version 0.0.6.
+Part of the QuickSyn SCPI controller package, version 0.0.7.
 Author: William W. Wallace <wwallace@nrao.edu>, NRAO/GBO.
 Licence: GPL-3.0-or-later (see ../LICENSE).
 
@@ -17,6 +17,13 @@ FM interlocks, range checks, the sampler and its rate budget, the ring
 buffer and spill files, writer-thread shutdown (a Python 3.12 regression),
 GUI construction and themes, a full GUI-driven logging session, and
 capability gating by model.
+
+Added in 0.0.7: the native Set Output Power command against the two worked
+examples in [R1, Table 2a] (12 dBm -> 030078, -3 dBm -> 03FFE2), the
+explicit-sign SCPI form (POW +12.0), POW? read-back and the auto SCPI ->
+native fallback, a unit without option 2 (mismatch warned), the -10/+13 dBm
+FSW-0020 limits, refusal on fixed-output models, Enter applying the
+frequency and power boxes, and the RF OUTPUT OFF button and toolbar action.
 """
 
 import os, sys, time, csv, gzip, pickle, json
@@ -28,7 +35,7 @@ sys.path.insert(0, str(PKG_ROOT))
 sys.dont_write_bytecode = True   # keep __pycache__ out of the package tree
 from pathlib import Path
 
-import quicksyn_scpi_gui_v0_0_6 as app
+import quicksyn_scpi_gui_v0_0_7 as app
 
 print(f"module v{app.__version__}  Qt={app.QT_ABSTRACTION}/{app.QT_BINDING}")
 print(f"pyserial={app.HAVE_PYSERIAL} pyqtgraph={app.HAVE_PYQTGRAPH} "
@@ -202,6 +209,69 @@ for bad, label in (
     raise AssertionError(f"range check missed: {label}")
 print("range checks ..................... OK  (8 out-of-range cases rejected)")
 
+# ------------------------------------------------------ output power (0.0.7)
+# Native Set Output Power: header 03 + tenths of a dBm as a 16-bit two's
+# complement word in ASCII hex. The first two pairs are the worked examples
+# in [R1, Table 2a]; the last two are the FSW-0020 option-2 limits.
+for dbm, want in ((12.0, "030078"), (-3.0, "03FFE2"), (13.0, "030082"), (-10.0, "03FF9C")):
+    got_cmd = app.native_power_command(dbm)
+    assert got_cmd == want, (dbm, got_cmd, want)
+dut.set_power(12.0)
+assert seen[-1].command == "POW +12.0", seen[-1].command     # explicit sign, [R1] Table 5
+dut.set_power(-3.0, command_set="native")
+assert seen[-1].command == "03FFE2", seen[-1].command
+assert dut.get_power() == -3.0, "simulator did not decode the native command"
+# native Get Power query 0D [R1, Table 4]: 4 ASCII-hex characters, dBm x10
+assert app.decode_native_power("0078") == 12.0 and app.decode_native_power("FFE2") == -3.0
+assert app.decode_native_power("ff9c\r") == -10.0
+assert dut.get_power_native() == -3.0 and seen[-1].command == "0D" and seen[-1].response == "FFE2"
+for raw_cmd, is_query in (("*IDN?", True), ("POW?", True), ("0D", True), ("01", True),
+                          ("030078", False), ("POW +5.0", False), ("OUTP:STAT OFF", False)):
+    assert app.expects_reply(raw_cmd) is is_query, raw_cmd
+# read-back: SCPI obeyed -> no fallback
+assert dut.set_power_checked(5.0) == (5.0, 5.0, "scpi")
+# firmware that ignores SCPI POW but obeys the native command -> auto falls back
+sim.scpi_power = False
+mark = len(seen)
+assert dut.set_power_checked(12.0) == (12.0, 12.0, "native")
+assert [t.command for t in seen[mark:]] == ["POW +12.0", "POW?", "030078", "POW?"], \
+    [t.command for t in seen[mark:]]
+sim.scpi_power = True
+# no option 2: both command sets accepted, level stays where it was
+sim.power_control = False
+c_, r_, u_ = dut.set_power_checked(-5.0)
+assert (c_, r_) == (-5.0, 12.0) and abs(r_ - c_) > app.POWER_READBACK_TOL_DB, (c_, r_, u_)
+sim.power_control = True
+# FSW-0020 option-2 range is -10 to +13 dBm [R4]: limits accepted, beyond refused
+for ok_level in (-10.0, 13.0):
+    dut.set_power(ok_level)
+for bad_level in (-10.1, 13.1):
+    try:
+        dut.set_power(bad_level)
+    except app.ParameterError:
+        continue
+    raise AssertionError(f"{bad_level} dBm accepted on an FSW-0020")
+# fixed-output models: POW and power sweeps refused by the driver
+for fixed_model in ("FSL-0020", "FSL-2740", "FSL-E020"):
+    dut.capability = app.MODEL_TABLE[fixed_model]
+    assert not dut.capability.has_power_control, fixed_model
+    for call in (lambda: dut.set_power(10.0),
+                 lambda: dut.setup_fast_power_sweep(1.0, 2.0, 10, 5e9, 1000, 1,
+                                                    app.TriggerMode.SOFTWARE,
+                                                    app.SweepDirection.UP)):
+        try:
+            call()
+        except app.ParameterError as exc:
+            assert "fixed output level" in str(exc), exc
+            continue
+        raise AssertionError(f"{fixed_model}: level change was not refused")
+dut.capability = app.MODEL_TABLE["FSW-0020"]
+assert app.MODEL_TABLE["FSW-0010"].has_power_control and dut.capability.has_power_control
+print("output power (0.0.7) ............. OK  native 030078/03FFE2/030082/03FF9C, "
+      "POW +12.0, auto->native fallback,")
+print("                                   no-option-2 mismatch seen, -10/+13 dBm limits, "
+      "fixed-output models refused")
+
 # -------------------------------------------------------- session + telemetry
 root = Path(tempfile.mkdtemp(prefix="quicksyn_smoke_"))
 session = app.SessionLogger(root, tag="FSW-0020_smoketest")
@@ -305,6 +375,104 @@ assert win.controller.driver.get_rf_output() is False, "panic RF-off failed"
 print("GUI round trip ................... OK  connect, set 12.5 GHz, "
       "5-point list, panic RF-off")
 
+# ---- 0.0.7: Enter applies, read-back, auto->native, RF OFF button/toolbar
+from Qt import QtTest  # noqa: E402
+gui_sent = []
+win.controller.transactionLogged.connect(lambda t_, src: gui_sent.append(t_.command))
+main_tab = win.tab_main
+win.tabs.setCurrentWidget(main_tab)
+
+
+def pump(seconds: float = 0.25) -> None:
+    """Run the Qt event loop for a short time (lets singleShot actions fire)."""
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        qapp.processEvents()
+        time.sleep(0.005)
+
+
+def type_and_enter(spin, text: str) -> None:
+    """Type a value into a spin box and press Return, as a user would."""
+    spin.setFocus()
+    spin.selectAll()
+    QtTest.QTest.keyClicks(spin, text)
+    QtTest.QTest.keyClick(spin, app.QtCore.Qt.Key.Key_Return)
+    pump()
+
+
+assert "-10.0 to +13.0 dBm" in main_tab.power_range_label.text(), main_tab.power_range_label.text()
+assert (main_tab.power_spin.minimum(), main_tab.power_spin.maximum()) == (-10.0, 13.0)
+gui_sent.clear()
+type_and_enter(main_tab.freq_spin, "7.25")
+assert len(gui_sent) >= 2 and gui_sent[0].startswith("FREQ ") and gui_sent[1] == "FREQ?", \
+    f"Enter in the frequency box sent {gui_sent}"
+assert "reports 7.250000000 GHz" in main_tab.freq_readback.text(), main_tab.freq_readback.text()
+gui_sent.clear()
+type_and_enter(main_tab.power_spin, "-5.0")
+assert gui_sent[:2] == ["POW -5.0", "POW?"], f"Enter in the power box sent {gui_sent}"
+assert "reports -5.0 dBm" in main_tab.power_readback.text(), main_tab.power_readback.text()
+# unit without option 2: red read-back, warning in status bar and console
+win.controller.transport.power_control = False
+main_tab.power_spin.setValue(3.0)
+main_tab.set_power_button.click(); pump()
+assert "did not change" in main_tab.power_readback.text(), main_tab.power_readback.text()
+assert "option 2" in win.statusBar().currentMessage(), win.statusBar().currentMessage()
+assert "NOTE" in win.console.view.toPlainText().splitlines()[-1], "no console note"
+win.controller.transport.power_control = True
+# firmware ignoring SCPI POW: auto falls back to native and switches the combo
+win.controller.transport.scpi_power = False
+gui_sent.clear()
+main_tab.power_spin.setValue(12.0)
+main_tab.set_power_button.click(); pump()
+assert gui_sent[:4] == ["POW +12.0", "POW?", "030078", "POW?"], gui_sent
+assert main_tab.power_cmd_combo.currentData() == "native"
+gui_sent.clear()
+main_tab.power_spin.setValue(-3.0)
+main_tab.set_power_button.click(); pump()
+assert gui_sent[:2] == ["03FFE2", "POW?"], gui_sent
+win.controller.transport.scpi_power = True
+main_tab.power_cmd_combo.setCurrentIndex(main_tab.power_cmd_combo.findData("auto"))
+# Read (0D): native Get Power as a cross-check on POW?
+gui_sent.clear()
+main_tab.read_power_native_button.click(); pump()
+assert gui_sent == ["0D"], gui_sent
+assert "0D) reports -3.0 dBm" in main_tab.power_readback.text(), main_tab.power_readback.text()
+# console Send line: Enter queries "?" and native query codes, writes the rest
+console = win.console
+for typed, want_reply in (("*IDN?", "Phase Matrix,FSW-0020"), ("0D", "FFE2"), ("030078", None),
+                          ("POW?", "12.0")):
+    gui_sent.clear()
+    console.send_edit.setText(typed)
+    QtTest.QTest.keyClick(console.send_edit, app.QtCore.Qt.Key.Key_Return)
+    pump()
+    assert gui_sent == [typed], (typed, gui_sent)
+    if want_reply is not None:
+        assert want_reply in win.statusBar().currentMessage(), win.statusBar().currentMessage()
+console.send_edit.setText("030082")
+console.query_button.click(); pump()     # forced query on a write: reported, not raised
+console.send_edit.setText("POW?"); console.query_button.click(); pump()
+assert "13.0" in win.statusBar().currentMessage(), win.statusBar().currentMessage()
+console.send_edit.setText("LIST:PVEC " + "9" * 60); console.write_button.click(); pump()
+assert "64" in win.statusBar().currentMessage(), win.statusBar().currentMessage()
+# RF OFF: the red button on the Main tab, then the toolbar from another tab
+win.controller.driver.set_rf_output(True)
+gui_sent.clear()
+main_tab.rf_off_button.click(); pump()
+assert gui_sent[:2] == ["OUTP:STAT OFF", "STAT?"], gui_sent
+assert not main_tab.rf_check.isChecked() and "confirmed" in win.statusBar().currentMessage()
+win.controller.driver.set_rf_output(True)
+win.tabs.setCurrentWidget(win.tab_monitor)
+gui_sent.clear()
+win.rf_off_action.trigger(); pump()
+assert gui_sent[:2] == ["OUTP:STAT OFF", "STAT?"], gui_sent
+assert win.controller.driver.get_rf_output() is False
+win.tabs.setCurrentWidget(main_tab)
+print("GUI power and RF OFF (0.0.7) ..... OK  Enter applies FREQ/POW, read-back shown, "
+      "no-option-2 warned,")
+print("                                   auto->native 030078/03FFE2, Read (0D), console Send "
+      "line (query/write/64-byte),")
+print("                                   RF OFF button and toolbar confirmed by STAT?")
+
 # ---- the headline requirement: a GUI-driven session logs what was generated
 gui_root = root / "gui"
 win.tab_monitor.logdir_edit.setText(str(gui_root))
@@ -403,8 +571,33 @@ win.controller.driver.capability = app.MODEL_TABLE["FSL-2740"]
 win.controller._apply_capability_limits(); qapp.processEvents()
 assert not win.tabs.isTabEnabled(mod_idx), "FSL-2740 modulation tab not hidden"
 assert win.tab_main.freq_spin.maximum() == 40.0
+sweep_tab = win.tab_sweep
+
+
+def power_sweeps_enabled() -> list[bool]:
+    """Enabled state of the two power-sweep entries in the sweep-type combo."""
+    combo = sweep_tab.mode_combo
+    return [combo.model().item(i).isEnabled() for i in range(combo.count())
+            if combo.itemData(i) in ("fast_power", "normal_power")]
+
+
+for fixed_model in ("FSL-2740", "FSL-0020"):
+    win.controller.driver.capability = app.MODEL_TABLE[fixed_model]
+    win.controller._apply_capability_limits(); qapp.processEvents()
+    assert not win.tab_main.power_spin.isEnabled(), fixed_model
+    assert not win.tab_main.set_power_button.isEnabled(), fixed_model
+    assert not win.tab_main.power_note.isHidden(), fixed_model
+    assert "fixed output level" in win.tab_main.power_note.text()
+    assert power_sweeps_enabled() == [False, False], fixed_model
+    assert win.tab_main.rf_off_button.isEnabled(), "RF OFF must stay available"
+win.controller.driver.capability = app.MODEL_TABLE["FSW-0020"]
+win.controller._apply_capability_limits(); qapp.processEvents()
+assert win.tab_main.power_spin.isEnabled() and win.tab_main.power_note.isHidden()
+assert power_sweeps_enabled() == [True, True]
 print("capability gating ................ OK  FSL-2740 hides Modulation, "
-      "clamps to 40 GHz")
+      "clamps to 40 GHz;")
+print("                                   FSL-2740/FSL-0020 disable power and power "
+      "sweeps, FSW-0020 re-enables")
 
 win.controller.disconnect_instrument(); win.close(); qapp.processEvents()
 print(f"\nALL CHECKS PASSED -> {d}")

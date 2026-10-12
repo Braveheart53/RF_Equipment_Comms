@@ -11,12 +11,12 @@
 ===============================================================================
  Title          : Veusz HDF5 Document Writer
  Filename       : vszh5_writer.py
- Version        : 0.0.6  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Version        : 0.0.7  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
  Author         : William W. Wallace
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
  Created        : 2026-10-11
- Modified       : 2026-10-11
+ Modified       : 2026-10-12
  Language       : Python 3.12
  Requires       : numpy, h5py   (Veusz only to open or render the result;
                   pypdf only for PDF bookmarks)
@@ -165,6 +165,8 @@ REVISION HISTORY
                    rewritten, but the export reported no plots).
                    Released with QuickSyn package 0.0.6 (0.0.5 was never
                    packaged; its changes ship here).
+0.0.7  2026-10-12  Released with QuickSyn package 0.0.7 (output-power fix in
+                   the GUI). No change to this module's code.
 ===============================================================================
 """
 
@@ -193,7 +195,7 @@ try:
 except ImportError:  # pragma: no cover - reported when a writer is created
     h5py = None
 
-__version__ = "0.0.6"                 # Semantic Versioning 2.0.0
+__version__ = "0.0.7"                 # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO/GBO"

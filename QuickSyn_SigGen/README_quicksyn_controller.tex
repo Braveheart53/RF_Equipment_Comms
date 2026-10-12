@@ -1,5 +1,5 @@
 % !TeX program = lualatex
-% README for the QuickSyn SCPI controller package 0.0.6, typeset with LuaLaTeX.
+% README for the QuickSyn SCPI controller package 0.0.7, typeset with LuaLaTeX.
 % Generated from README_quicksyn_controller.md by tools/build_readme_pdf.py
 % (pandoc); compile twice:  lualatex README_quicksyn_controller.tex
 % Options for packages loaded elsewhere
@@ -124,7 +124,7 @@
 \fancyhf{}
 \lhead{\small QuickSyn SCPI Controller and Telemetry Logger}
 \rhead{\small\thepage}
-\lfoot{\scriptsize README\_quicksyn\_controller, version 0.0.6, GPL-3.0-or-later}
+\lfoot{\scriptsize README\_quicksyn\_controller, version 0.0.7, GPL-3.0-or-later}
 \setlength{\headheight}{14pt}
 \sloppy
 \ifLuaTeX
@@ -147,7 +147,7 @@
 
 \title{QuickSyn SCPI Controller and Telemetry Logger}
 \author{William W. Wallace, NRAO/GBO}
-\date{Version 0.0.6}
+\date{Version 0.0.7}
 
 \begin{document}
 \maketitle
@@ -157,7 +157,7 @@
 \setcounter{tocdepth}{2}
 \tableofcontents
 }
-\textbf{Version 0.0.6} · Python 3.12 · Qt.py → PySide6 · 2026-10-11
+\textbf{Version 0.0.7} · Python 3.12 · Qt.py → PySide6 · 2026-10-12
 
 \begin{longtable}[]{@{}
   >{\raggedright\arraybackslash}p{(\columnwidth - 2\tabcolsep) * \real{0.5000}}
@@ -203,44 +203,46 @@ Purpose
 \endhead
 \bottomrule\noalign{}
 \endlastfoot
-\texttt{quicksyn\_scpi\_gui\_v0\_0\_6.py} & 0.0.6 & Controller, logger
+\texttt{quicksyn\_scpi\_gui\_v0\_0\_7.py} & 0.0.7 & Controller, logger
 and GUI with the live SCPI console (single file, Spyder
-\texttt{\#\ \%\%} cells) \\
-\texttt{quicksyn\_veusz\_export\_v0\_0\_6.py} & 0.0.6 & Reduction and
+\texttt{\#\ \%\%} cells); output-power fix and RF OUTPUT OFF (§3.3,
+§3.4) \\
+\texttt{quicksyn\_veusz\_export\_v0\_0\_7.py} & 0.0.7 & Reduction and
 statistics; \texttt{export\_veusz()} writes the session \texttt{.vszh5};
 renders PDF (with bookmarks) and PNG from it; writes and compiles the
 LuaLaTeX session report \\
-\texttt{vszh5\_writer.py} & 0.0.6 & \textbf{Veusz HDF5 writer}
+\texttt{vszh5\_writer.py} & 0.0.7 & \textbf{Veusz HDF5 writer}
 (\texttt{VeuszWriter}, \texttt{VszDoc}, \texttt{vz\_text}, \ldots) from
 \texttt{isp\_speed\_monitor.py}: h5py only, no Veusz needed to write;
 \texttt{render\_pages()} and \texttt{add\_pdf\_bookmarks()}; reusable in
 other programs \\
-\texttt{environment\_quicksyn.yml} & 0.0.6 & Mamba environment
+\texttt{environment\_quicksyn.yml} & 0.0.7 & Mamba environment
 definition \\
-\texttt{README\_quicksyn\_controller.md} & 0.0.6 & This file \\
-\texttt{README\_quicksyn\_controller.pdf} / \texttt{.tex} & 0.0.6 & This
+\texttt{README\_quicksyn\_controller.md} & 0.0.7 & This file \\
+\texttt{README\_quicksyn\_controller.pdf} / \texttt{.tex} & 0.0.7 & This
 file typeset with LuaLaTeX (bookmark hierarchy of the sections, outline
 pane opens); the \texttt{.tex} is the editable LaTeX source \\
 \texttt{LICENSE} & --- & Full GNU GPL version 3 text, unmodified \\
-\texttt{tests/check\_release\_metadata.py} & 0.0.6 & Headers, SemVer,
+\texttt{tests/check\_release\_metadata.py} & 0.0.7 & Headers, SemVer,
 SPDX, history entries, \texttt{LICENSE} hash, \texttt{-\/-version},
 About dialog, every file at one version \\
-\texttt{tests/check\_smoke.py} & 0.0.6 & Driver, simulator, logging,
+\texttt{tests/check\_smoke.py} & 0.0.7 & Driver, simulator, logging,
 sampler and full-GUI checks, including the controller's own
-\texttt{.vszh5} export \\
-\texttt{tests/check\_reduction.py} & 0.0.6 & Rate, jitter, ADEV and
+\texttt{.vszh5} export; output power (native and SCPI forms, read-back,
+fallback, model gating), Enter-to-apply, RF OFF, console Send line \\
+\texttt{tests/check\_reduction.py} & 0.0.7 & Rate, jitter, ADEV and
 moving-statistics maths \\
-\texttt{tests/check\_vszh5.py} & 0.0.6 & Writer and
+\texttt{tests/check\_vszh5.py} & 0.0.7 & Writer and
 \texttt{export\_veusz()}: layout, types, tags, escaping, DST, bit-exact
 data, pages; render plumbing (Windows paths, broken or unstartable
 Veusz, fallback); PDF page scale, bookmarks, re-render; LuaLaTeX report;
 real-Veusz load, re-save comparison and renders when Veusz is
 available \\
-\texttt{tests/check\_console.py} & 0.0.6 & The live SCPI console: line
+\texttt{tests/check\_console.py} & 0.0.7 & The live SCPI console: line
 format and alignment, thread safety, a simulated session against
 \texttt{transactions.csv}, a 200 000-exchange pause (memory and Resume
 time), filter, clear, save \\
-\texttt{tests/run\_all.py} & 0.0.6 & Runs the five checks in parallel
+\texttt{tests/run\_all.py} & 0.0.7 & Runs the five checks in parallel
 and prints a summary \\
 \texttt{upstream/veusz-4.2.1-vszh5-load-quit-pdfdpi.patch} & --- & Patch
 for Veusz itself (not needed by this package): \texttt{.vszh5} in
@@ -248,27 +250,29 @@ for Veusz itself (not needed by this package): \texttt{.vszh5} in
 PDF page scale (§6.5) \\
 \texttt{upstream/VEUSZ\_UPSTREAM\_ISSUE.md} & --- & Ready-to-file issue
 text for the Veusz project, with the test results \\
-\texttt{upstream/check\_veusz\_patch.py} & 0.0.6 & Reproduces the three
+\texttt{upstream/check\_veusz\_patch.py} & 0.0.7 & Reproduces the three
 Veusz limits and checks the patch, for any set of Veusz programs \\
-\texttt{tools/build\_readme\_pdf.py} & 0.0.6 & Rebuilds the README PDF
+\texttt{tools/build\_readme\_pdf.py} & 0.0.7 & Rebuilds the README PDF
 and \texttt{.tex} (pandoc + LuaLaTeX) \\
-\texttt{examples/simulated\_session\_20261012\_005651/} & 0.0.6 & Output
-of a 40 s \textbf{simulated} session (four commanded frequency and power
-steps, 10 Hz): \texttt{quicksyn\_session.vszh5}, the bookmarked
+\texttt{examples/simulated\_session\_20261012\_172921/} & 0.0.7 & Output
+of a 41 s \textbf{simulated} session recorded with 0.0.7 (four commanded
+frequency and power steps, each level read back with \texttt{POW?}, RF
+OFF at the end, 10 Hz): \texttt{quicksyn\_session.vszh5}, the bookmarked
 \texttt{quicksyn\_session.pdf}, the overview PNG,
 \texttt{quicksyn\_session\_report.tex} and \texttt{.pdf} (LuaLaTeX),
 \texttt{reduction\_summary.md}. No instrument was connected \\
 \end{longtable}
 
-0.0.5 was never released as an archive; everything listed for 0.0.5 in
-the history (§11) ships for the first time in this package.
+0.0.7 fixes the output level that could not be changed in 0.0.6 (§3.3)
+and adds an RF OUTPUT OFF button (§3.4). 0.0.5 was never released as an
+archive; its changes first shipped in 0.0.6 (§11).
 
 \begin{Shaded}
 \begin{Highlighting}[]
 \ExtensionTok{mamba}\NormalTok{ env create }\AttributeTok{{-}f}\NormalTok{ environment\_quicksyn.yml}
 \ExtensionTok{mamba}\NormalTok{ activate quicksyn}
-\ExtensionTok{python}\NormalTok{ quicksyn\_scpi\_gui\_v0\_0\_6.py            }\CommentTok{\# Help \textgreater{} About shows author, company, email, licence}
-\ExtensionTok{python}\NormalTok{ quicksyn\_scpi\_gui\_v0\_0\_6.py }\AttributeTok{{-}{-}version}  \CommentTok{\# prints the same identity block, no display needed}
+\ExtensionTok{python}\NormalTok{ quicksyn\_scpi\_gui\_v0\_0\_7.py            }\CommentTok{\# Help \textgreater{} About shows author, company, email, licence}
+\ExtensionTok{python}\NormalTok{ quicksyn\_scpi\_gui\_v0\_0\_7.py }\AttributeTok{{-}{-}version}  \CommentTok{\# prints the same identity block, no display needed}
 \ExtensionTok{python}\NormalTok{ tests/run\_all.py                       }\CommentTok{\# no instrument or display required}
 \end{Highlighting}
 \end{Shaded}
@@ -309,14 +313,83 @@ Minimum firmware for SCPI & 100 \\
 and Ethernet. It does \emph{not} change the USB virtual COM port, so
 leave the baud selector at 115200 for a USB connection.
 
+\hypertarget{transport-why-pyserial-and-what-pyvisa-would-add}{%
+\subsection{2.1 Transport: why pyserial, and what PyVISA would
+add}\label{transport-why-pyserial-and-what-pyvisa-would-add}}
+
+Once the NI driver is installed, the USB port ``is utilized as a
+standard COM port (serial port) on the host PC'' {[}1{]}. Talking to a
+COM port needs only a serial library, so the controller uses pyserial
+{[}32{]} directly. PyVISA {[}30{]} is a front end to a VISA library;
+with its pure-Python back end, pyvisa-py {[}31{]}, a serial resource
+(\texttt{ASRL3::INSTR}) is itself implemented on top of pyserial. On
+USB, PyVISA would therefore add a layer over the same pyserial calls,
+not a capability. VISA's other advantages --- IEEE 488.2 status
+reporting, \texttt{*OPC?}, service requests, an error queue --- need
+instrument support the QuickSyn does not have (§3: only \texttt{*IDN?},
+\texttt{*RST}, \texttt{*SAV}, \texttt{*RCL}), so none of them would
+apply.
+
+Driving the port directly also keeps the details this instrument needs
+in one place: the 64-byte pre-flight (§4), the input-buffer flush before
+each command, the minimum gap between commands, a reader that accepts
+CR, LF or CRLF (the reply terminator is undocumented), and port listing
+with descriptions for the \emph{Rescan ports} button
+(\texttt{serial.tools.list\_ports}).
+
+Where PyVISA \emph{would} help is the other interfaces {[}1{]}:
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 8\tabcolsep) * \real{0.2000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 8\tabcolsep) * \real{0.2000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 8\tabcolsep) * \real{0.2000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 8\tabcolsep) * \real{0.2000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 8\tabcolsep) * \real{0.2000}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Interface
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+What {[}1{]} specifies
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Direct route
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+VISA resource (PyVISA {[}30{]}, {[}31{]})
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+In 0.0.7
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+USB & ``standard COM port'', 115200 8N1, CR; NI driver first & pyserial
+& \texttt{ASRL3::INSTR} (pyvisa-py uses pyserial) & \textbf{yes} \\
+RS232 & cable kit to a PC COM port, 115200 8N1, CR & pyserial &
+\texttt{ASRL1::INSTR} & yes --- select that COM port \\
+Ethernet & adapter, DHCP, ``TCP/IP socket \ldots{} on port 10001'', CR &
+Python \texttt{socket} (standard library) &
+\texttt{TCPIP0::\textless{}ip\textgreater{}::10001::SOCKET} (no extra
+package) & no \\
+GPIB & adapter, ``address 5'', CR & a GPIB driver (NI-488.2 or
+linux-gpib) & \texttt{GPIB0::5::INSTR} (NI-VISA, or pyvisa-py with
+gpib-ctypes / linux-gpib) & no \\
+SPI & native commands only & --- & --- & no \\
+\end{longtable}
+
+The driver talks to its transport through four calls (\texttt{open},
+\texttt{close}, \texttt{write}, \texttt{query}), which the simulator
+already implements a second time, so an Ethernet transport
+(standard-library socket) and a PyVISA transport (any VISA resource
+string, GPIB included, imported only when chosen) would each be one
+class. Neither was asked for, so neither is in 0.0.7 (§13).
+
 \begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
 
 \hypertarget{scpi-coverage}{%
 \section{3. SCPI coverage}\label{scpi-coverage}}
 
-Every command in {[}1, Table 5{]} is implemented. ``Verified'' means the
-formatted byte string was asserted against the vendor's own worked
-example.
+Every command in {[}1, Table 5{]} is implemented, plus two native
+commands for the output level (§3.3). ``Verified'' means the formatted
+byte string was asserted against the vendor's own worked example.
 
 \begin{longtable}[]{@{}
   >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.2500}}
@@ -340,7 +413,15 @@ Verified
 \texttt{FREQ} / \texttt{FREQ?} & \texttt{set\_frequency} /
 \texttt{get\_frequency} & integer mlHz & ✔ \\
 \texttt{POW} / \texttt{POW?} & \texttt{set\_power} / \texttt{get\_power}
-& ±XX.X dBm, 0.1 dB granularity & ✔ \\
+& ±XX.X dBm, 0.1 dB granularity, sign always written
+(\texttt{POW\ +12.0}) & ✔ \\
+native \texttt{03xxxx} (Set Output Power) &
+\texttt{set\_power(command\_set="native")},
+\texttt{native\_power\_command} & tenths of a dBm, 16-bit two's
+complement, ASCII hex {[}1, Table 2a{]} & ✔ (both {[}1{]} examples) \\
+native \texttt{0D} (Get Power) & \texttt{get\_power\_native},
+\texttt{decode\_native\_power} & 4 ASCII-hex characters, dBm × 10 {[}1,
+Table 4{]} & --- (no worked example in {[}1{]}) \\
 \texttt{OUTP:STAT{[}?{]}} & \texttt{set\_rf\_output} /
 \texttt{get\_rf\_output} & \texttt{ON}/\texttt{OFF} & ✔ \\
 \texttt{OUTP:BLAN{[}?{]}} & \texttt{set\_blanking} /
@@ -437,10 +518,195 @@ After & Wait \\
 \item
   Frequency and power are range-checked against the detected model.
 \item
+  The level can be set only on models with a power-control option (FSW,
+  option 2); fixed-output models refuse \texttt{POW} and power sweeps
+  (§3.3).
+\item
   Every command is pre-flighted against the 64-byte buffer.
 \item
   The Modulation tab is hidden for models with no PULSE/AM/FM inputs.
 \end{itemize}
+
+\hypertarget{output-power-control}{%
+\subsection{3.3 Output power control}\label{output-power-control}}
+
+\textbf{Why the level could not be changed in 0.0.6.} Three faults in
+the application, one ambiguity in {[}1{]}, and one property of the
+hardware:
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+\#
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+0.0.6 behaviour
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+0.0.7
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+1 & Typing a level and pressing Enter sent nothing; only \emph{Set
+power} did (the same for frequency) & Enter in the frequency or power
+box applies it \\
+2 & \emph{Set power} printed ``commanded'' without asking the
+instrument, so a unit that ignored \texttt{POW} looked as if it had
+obeyed & Every change is read back (\texttt{POW?}, \texttt{FREQ?}); a
+mismatch is shown in red and in the status bar, session log and SCPI
+console \\
+3 & Fixed-output models (FSL Lite, FSL mmW) showed an editable box that
+snapped back, and the mmW models offered their min/max output
+\emph{specification} as if it were a control range & Power box and power
+sweeps disabled with the reason shown; the driver refuses
+\texttt{POW} \\
+4 & Only the SCPI form was available, written without a \texttt{+} sign
+for positive levels; {[}1, Table 5{]} gives \texttt{POW\ +/-\ XX.X} with
+only a negative example & Sign always written; \emph{Command} selector:
+Auto (SCPI, then the native command if \texttt{POW?} shows no change),
+SCPI only, Native only \\
+--- & Hardware: power control is option 2 on the FSW {[}4{]}, and
+{[}1{]} marks the native Set Output Power command ``*When option is
+present''. Without option 2 the output stays at the rated level whatever
+is sent & Cannot be fixed in software. *IDN? does not say whether option
+2 is fitted (§9 \#2), so it has to be found out on the unit (§13) \\
+\end{longtable}
+
+\textbf{Ranges.} From {[}4{]}; the entry box clamps to the detected
+model.
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 8\tabcolsep) * \real{0.2000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 8\tabcolsep) * \real{0.2000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 8\tabcolsep) * \real{0.2000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 8\tabcolsep) * \real{0.2000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 8\tabcolsep) * \real{0.2000}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Model
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Power control
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Range with option 2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Resolution (nominal)
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Without option 2
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+FSW-0010 & option 2 & −25 \ldots{} +15 dBm & 0.01 dB & +15 dBm fixed \\
+FSW-0020 & option 2 & \textbf{−10 \ldots{} +13 dBm} & 0.1 dB & +13 dBm
+fixed \\
+FSL-0010/0020/E020 (Lite) & none (option 8 only) & --- & --- & fixed:
++15 / +10 / +10 dBm min \\
+FSL-2740/5067/7682 (mmW) & none (options 3 and 8 only) & --- & --- &
+fixed: +18 / +17 / +11 dBm typ \\
+\end{longtable}
+
+Commands carry tenths of a dBm in both forms, so the entry is quantised
+to 0.1 dB on every model. Power accuracy is ±2.0 dB typical and ``may
+change at lower power levels'' {[}4{]}.
+
+\textbf{Native Set Output Power} {[}1, Table 2a{]}. For a level \(P\) in
+dBm,
+
+\[
+N = \operatorname{round}(10\,P), \qquad
+W = N \bmod 2^{16} =
+\begin{cases}
+N, & N \ge 0,\\
+2^{16} + N, & N < 0,
+\end{cases}
+\]
+
+and the command is the header \texttt{03} followed by \(W\) as four
+upper-case hexadecimal digits, sent as ASCII text and terminated with CR
+like every other command (``each hexadecimal character is one ASCII
+character'' {[}1{]}). \texttt{native\_power\_command()} reproduces both
+worked examples in {[}1{]}:
+
+\begin{longtable}[]{@{}lllll@{}}
+\toprule\noalign{}
+\(P\) (dBm) & \(N\) & \(W\) & Command & Source \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
++12 & 120 & 120 = \texttt{0078} & \texttt{030078} & {[}1, Table 2a{]}
+example 2 \\
+−3 & −30 & 65 506 = \texttt{FFE2} & \texttt{03FFE2} & {[}1, Table 2a{]}
+example 3 \\
++13 & 130 & 130 = \texttt{0082} & \texttt{030082} & FSW-0020 upper
+limit \\
+−10 & −100 & 65 436 = \texttt{FF9C} & \texttt{03FF9C} & FSW-0020 lower
+limit \\
+\end{longtable}
+
+The native \emph{Get Power} query \texttt{0D} {[}1, Table 4{]} returns
+four ASCII-hex characters, dBm × 10; \emph{Read (0D)} on the Main tab
+decodes it with the same two's-complement rule (an assumption: {[}1{]}
+gives no negative example for the query), as an independent check on
+\texttt{POW?}.
+
+\textbf{Read-back, and its limit.} In \emph{Auto}, \emph{Set power}
+sends \texttt{POW\ +12.0}, then \texttt{POW?}; if the reply differs from
+the request by more than 0.05 dB it sends \texttt{030078} and asks
+\texttt{POW?} again. If the native command worked, the selector switches
+to \emph{Native} for the rest of the session and says so. If neither
+did, the read-back turns red and the warning names option 2.
+\texttt{POW?} reports the level the firmware \emph{holds}; it is not a
+measurement. A unit without option 2 could store the requested value,
+report it, and still put out its rated level, so the read-back can catch
+firmware that ignores the command but not missing hardware. Only a power
+meter or spectrum analyser at the RF output settles that (§13).
+
+\textbf{Console Send line.} For bring-up, the SCPI console has a
+\emph{Send} line: any SCPI or native command, sent as typed through the
+same port, 64-byte check and log as everything else. Enter sends it as a
+query when it ends in \texttt{?} or is a native query code
+(\texttt{01\ 02\ 04\ 07\ 0D\ 10\ 47\ 48\ 49} {[}1, Table 4{]}),
+otherwise as a write; \emph{Write} and \emph{Query} force either. It
+bypasses the interlocks and range checks, and the tabs are not refreshed
+--- use \emph{Instrument ▸ Read all settings} afterwards.
+
+\hypertarget{rf-output-off}{%
+\subsection{3.4 RF OUTPUT OFF}\label{rf-output-off}}
+
+Three routes, all sending \texttt{OUTP:STAT\ OFF} and then
+\texttt{STAT?} to confirm:
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 2\tabcolsep) * \real{0.5000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 2\tabcolsep) * \real{0.5000}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Control
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Where
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Red \textbf{RF OUTPUT OFF} button & Main control tab, \emph{Output and
+reference} \\
+Red \textbf{RF OFF} button & \emph{Safety} toolbar, visible from every
+tab \\
+\emph{Instrument ▸ RF output off (panic)} & menu,
+\textbf{Ctrl+Shift+O} \\
+\end{longtable}
+
+The status bar says ``RF output OFF (confirmed by STAT?)'', or warns if
+\texttt{STAT?} still shows the output on. The controls stay enabled on
+every model. Off means muted, not disconnected: −65 dBm max on the FSW
+(``Power Mute''), a 60 dB minimum on/off ratio on the Lite models
+{[}4{]}.
 
 \begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
 
@@ -783,6 +1049,11 @@ The console is a live view, \textbf{not} the record ---
 \texttt{transactions.csv} (§5) remains the complete audit trail of every
 byte exchanged, and the \texttt{⋯} line says so.
 
+From 0.0.7 the console also has a \emph{Send} line for typing commands
+(§3.3), and warnings from the controller (a level that did not change,
+an RF OFF that \texttt{STAT?} does not confirm) appear in it as red
+\texttt{NOTE\ !} lines.
+
 \begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
 
 \hypertarget{veusz-documents-reduction-and-plots}{%
@@ -791,7 +1062,7 @@ plots}\label{veusz-documents-reduction-and-plots}}
 
 \begin{Shaded}
 \begin{Highlighting}[]
-\ExtensionTok{python}\NormalTok{ quicksyn\_veusz\_export\_v0\_0\_6.py }\OperatorTok{\textless{}}\NormalTok{session\_dir}\OperatorTok{\textgreater{}}
+\ExtensionTok{python}\NormalTok{ quicksyn\_veusz\_export\_v0\_0\_7.py }\OperatorTok{\textless{}}\NormalTok{session\_dir}\OperatorTok{\textgreater{}}
     \ExtensionTok{{-}{-}time{-}axis}\NormalTok{ A      local }\ErrorTok{(}\ExtensionTok{default}\KeywordTok{)}\ExtensionTok{,}\NormalTok{ utc or elapsed}
     \ExtensionTok{{-}{-}no{-}render}\NormalTok{        write the .vszh5 but skip the PDF/PNG render}
     \ExtensionTok{{-}{-}png{-}pages}\NormalTok{ P      first }\ErrorTok{(}\ExtensionTok{default,}\NormalTok{ the overview}\KeywordTok{)}\ExtensionTok{,}\NormalTok{ all or none}
@@ -1331,9 +1602,9 @@ Opt. 1 low end
 \end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
 Resolution
 \end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Power
+Output level
 \end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Opt. 2 control range
+Power control (opt. 2)
 \end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
 Mod. inputs
 \end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
@@ -1347,16 +1618,24 @@ FSW-0010 & 0.5--10 GHz & 0.1 GHz & 1 mHz & +15 dBm & −25 \ldots{} +15
 dBm (0.01 dB nom.) & yes & yes \\
 FSW-0020 & 0.5--20 GHz & 0.2 GHz & 1 mHz & +13 dBm & −10 \ldots{} +13
 dBm (0.1 dB nom.) & yes & yes \\
-FSL-0010 & 0.65--10 GHz & --- & 1 mHz & +15 dBm min & --- & no & no \\
-FSL-0020 & 0.65--20 GHz & --- & 1 mHz & +10 dBm min & --- & no & no \\
-FSL-E020 & 0.65--20 GHz & --- & 1 mHz & +10 dBm min & --- & no & no \\
-FSL-2740 & 27--40 GHz & --- & 1 Hz & +18 dBm typ & +17 \ldots{} +24 dBm
-& no & no \\
-FSL-5067 & 50--67 GHz & --- & 1 Hz & +17 dBm typ & +15 \ldots{} +22 dBm
-& no & no \\
-FSL-7682 & 76--82 GHz & --- & 1 Hz & +11 dBm typ & +10 \ldots{} +14 dBm
-& no & no \\
+FSL-0010 & 0.65--10 GHz & --- & 1 mHz & +15 dBm min, fixed & none & no &
+no \\
+FSL-0020 & 0.65--20 GHz & --- & 1 mHz & +10 dBm min, fixed & none & no &
+no \\
+FSL-E020 & 0.65--20 GHz & --- & 1 mHz & +10 dBm min, fixed & none & no &
+no \\
+FSL-2740 & 27--40 GHz & --- & 1 Hz & +18 dBm typ (+17 min, +24 max),
+fixed & none & no & no \\
+FSL-5067 & 50--67 GHz & --- & 1 Hz & +17 dBm typ (+15 min, +22 max),
+fixed & none & no & no \\
+FSL-7682 & 76--82 GHz & --- & 1 Hz & +11 dBm typ (+10 min, +14 max),
+fixed & none & no & no \\
 \end{longtable}
+
+Only the FSW models list option 2; the Lite models list option 8 only
+and the mmW models options 3 and 8 {[}4{]}. Up to 0.0.6 the mmW min/max
+output specification was put in the control-range column and offered in
+the power box; 0.0.7 corrects that (§3.3).
 
 {[}1{]} names only the FSW-0010 and FSW-0020. The other models are
 offered with the same commands but flagged \textbf{unverified} in the
@@ -1452,6 +1731,20 @@ Command-set limit used for range checks, datasheet figure surfaced in
 the UI \\
 10 & \texttt{DIAG:BAUD} assumed to apply to USB & Documented as
 debug-port only; USB fixed at 115200 \\
+11 & \texttt{POW\ +/-\ XX.X} in {[}1, Table 5{]} with only a negative
+example (\texttt{POW\ -8.3}); whether a \texttt{+} is required, accepted
+or rejected is not stated & Sign always written (\texttt{POW\ +12.0});
+the native command is the fallback, chosen automatically when
+\texttt{POW?} shows no change (§3.3) \\
+12 & {[}1{]} marks native Set Output Power ``\emph{When option is
+present'' but says nothing of the kind for SCPI \texttt{POW}; }IDN? does
+not report the options & Power is assumed to need option 2 in both forms
+(as {[}4{]} states); the level is read back after every change and a
+mismatch names option 2 \\
+13 & Native Get Power (\texttt{0D}) reply format for negative levels not
+stated in {[}1, Table 4{]} & Decoded as 16-bit two's complement, like
+the Set Output Power examples; to be confirmed against \texttt{POW?} on
+hardware \\
 \end{longtable}
 
 \begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
@@ -1460,9 +1753,11 @@ debug-port only; USB fixed at 115200 \\
 \section{10. Verification status}\label{verification-status}}
 
 Validated headlessly against the built-in simulator, with Qt on the
-offscreen platform. The first table was run for \textbf{this build}
-(0.0.6, 2026-10-11) on Python 3.12.3 (the declared target, clean virtual
-environment) and Python 3.13.16, PySide6 6.12.0. The environment had:
+offscreen platform. \textbf{Nothing in 0.0.7 has been run against a
+QuickSyn}: the power fix is verified against the simulator only (§13
+item 7). The first table was run for \textbf{this build} (0.0.7,
+2026-10-12) on Python 3.12.3 (the declared target) and Python 3.13.16,
+PySide6 6.12.0. The environment had:
 
 \begin{itemize}
 \tightlist
@@ -1479,17 +1774,89 @@ environment) and Python 3.13.16, PySide6 6.12.0. The environment had:
 \end{itemize}
 
 The 3.12 run is the one that counts: it found a defect the 3.13 runs had
-hidden (0.0.3 history entry). The second table lists results 0.0.6 did
-not change. Rows marked † are measurements from 0.0.4/0.0.5 that were
-not repeated. The others are re-run by the test suite in every build;
-their counts, from an earlier run, vary by a few samples with timing.
+hidden (0.0.3 history entry). The second table is the 0.0.6 build, whose
+code 0.0.7 does not change outside the GUI's power, RF-off and console
+code; the rows that \texttt{check\_vszh5.py} and
+\texttt{check\_console.py} cover were re-run in this build (first
+table). The third table lists older results. Rows marked † are
+measurements from 0.0.4/0.0.5 that were not repeated. Counts vary by a
+few samples with timing.
 
 \begin{longtable}[]{@{}
   >{\raggedright\arraybackslash}p{(\columnwidth - 2\tabcolsep) * \real{0.5000}}
   >{\raggedright\arraybackslash}p{(\columnwidth - 2\tabcolsep) * \real{0.5000}}@{}}
 \toprule\noalign{}
 \begin{minipage}[b]{\linewidth}\raggedright
-Check (0.0.6 build)
+Check (0.0.7 build, 2026-10-12)
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Result
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{tests/run\_all.py}, Python 3.12.3,
+\texttt{QUICKSYN\_TEST\_VEUSZ\_EXE} = Veusz 4.2.1 & 5 / 5 checks pass
+(release metadata, smoke, reduction, \texttt{.vszh5}, console) \\
+\texttt{tests/run\_all.py}, Python 3.13.16 & 5 / 5 checks pass;
+\texttt{check\_vszh5.py} 53 passed, 5 skipped (the in-process Veusz
+checks: no Veusz package for 3.13 here) \\
+\texttt{check\_release\_metadata.py} & 148 / 148: every file at 0.0.7
+with a 0.0.7 history entry, SPDX tags, \texttt{LICENSE} SHA-256,
+\texttt{-\/-version}, About dialog, README PDF bookmarked and current \\
+\texttt{check\_vszh5.py}, Python 3.12.3 with Veusz 4.2.1 & \textbf{58 /
+58} (writer, export, render plumbing, page scale, bookmarks, re-render,
+LuaLaTeX report) \\
+\texttt{check\_console.py} & all pass with the new \emph{Send} line in
+place \\
+Native Set Output Power & \texttt{030078} (+12), \texttt{03FFE2} (−3)
+--- both {[}1, Table 2a{]} examples --- and \texttt{030082} (+13),
+\texttt{03FF9C} (−10) \\
+SCPI form & \texttt{POW\ +12.0}; the vendor example \texttt{POW\ -8.3}
+still byte-exact \\
+Read-back & \texttt{POW?} after every \emph{Set power}, \texttt{FREQ?}
+after every \emph{Set frequency}; 0.05 dB tolerance \\
+Auto fallback (simulated firmware that ignores SCPI \texttt{POW}) &
+sends \texttt{POW\ +12.0}, \texttt{POW?}, \texttt{030078},
+\texttt{POW?}; selector switches to \emph{Native}; next level sent as
+\texttt{03FFE2} \\
+Unit without option 2 (simulated) & level stays at +12.0 dBm; read-back
+red, status bar names option 2, console \texttt{NOTE\ !} line \\
+FSW-0020 limits & −10.0 and +13.0 dBm accepted; −10.1 and +13.1 refused;
+box range −10 \ldots{} +13 dBm \\
+Fixed-output models (FSL-0020, FSL-E020, FSL-2740) & driver refuses
+\texttt{POW} and power sweeps; GUI disables the power box, \emph{Set
+power} and both power-sweep types and shows why; FSW-0020 re-enables
+them \\
+Enter in the boxes & typing \texttt{7.25} + Enter sends
+\texttt{FREQ\ …}, \texttt{FREQ?}; \texttt{-5.0} + Enter sends
+\texttt{POW\ -5.0}, \texttt{POW?} \\
+\emph{Read (0D)} & sends \texttt{0D}, decodes \texttt{FFE2} as −3.0
+dBm \\
+Console \emph{Send} line & \texttt{*IDN?}, \texttt{0D}, \texttt{POW?}
+sent as queries and \texttt{030078} as a write by Enter; a forced query
+on a write reported, not raised; a 71-byte command refused by the
+64-byte check \\
+RF OUTPUT OFF & button (Main tab) and toolbar (from the Monitor tab)
+each send \texttt{OUTP:STAT\ OFF}, \texttt{STAT?}; status bar
+``confirmed''; checkbox cleared; stays enabled on fixed-output models \\
+Appearance & Main tab and console inspected in light and dark themes; RF
+OFF buttons drawn \#c62828 in both (0.0.7 draft drew the Main-tab button
+pale red under the platform bevel; fixed with a border rule) \\
+Example session (\texttt{examples/}) & 41 s simulated session recorded
+with 0.0.7 at 10 Hz (411 samples, levels set with read-back, RF OFF at
+the end); export with Veusz 4.2.1: 7-page PDF with 10 bookmarks, 9-page
+LuaLaTeX report with 17 bookmarks \\
+Archive & see §11; checked with 7-Zip 16.02 \texttt{t}, extracted to a
+clean folder and \texttt{run\_all.py} re-run there \\
+\end{longtable}
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 2\tabcolsep) * \real{0.5000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 2\tabcolsep) * \real{0.5000}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Check (0.0.6 build, 2026-10-11)
 \end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
 Result
 \end{minipage} \\
@@ -1569,7 +1936,7 @@ clean folder and \texttt{run\_all.py} re-run there \\
   >{\raggedright\arraybackslash}p{(\columnwidth - 2\tabcolsep) * \real{0.5000}}@{}}
 \toprule\noalign{}
 \begin{minipage}[b]{\linewidth}\raggedright
-Check (unchanged in 0.0.6)
+Check (unchanged since 0.0.4/0.0.5)
 \end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
 Result
 \end{minipage} \\
@@ -1627,17 +1994,21 @@ Telemetry writer shutdown on Python 3.12 & thread exits cleanly after
 \texttt{os.cpu\_count()} fallback \\
 \end{longtable}
 
-\textbf{Not yet verified:} the LuaLaTeX report with TeX Live 2025 or
-MiKTeX on Windows (verified with TeX Live 2023 on Linux; the packages it
-uses are standard in both); anything requiring hardware --- real
-round-trip latencies, the actual response terminator, whether the SCPI
-temperature query needs its second issue and the \texttt{*IDN?} field
-order. The Veusz render is verified on Linux with Veusz 3.6.2 and 4.2.1,
-\textbf{not yet on Windows} in your conda-forge environment; in
-particular, whether the Windows \texttt{veusz.exe} (a windowed program)
-reads a script piped to its standard input in \texttt{-\/-listen} mode
-is untested. If it does not, \texttt{method="auto"} falls back to the
-Python package, which conda-forge installs. Also not run: an actual
+\textbf{Not yet verified:} anything about output power on a real unit
+--- whether yours has option 2, which command form its firmware obeys,
+whether \texttt{POW?} follows the real output, the \texttt{0D} reply
+format, the muted level after RF OFF (§3.3, §13 item 7); the LuaLaTeX
+report with TeX Live 2025 or MiKTeX on Windows (verified with TeX Live
+2023 on Linux; the packages it uses are standard in both); anything
+requiring hardware --- real round-trip latencies, the actual response
+terminator, whether the SCPI temperature query needs its second issue
+and the \texttt{*IDN?} field order. The Veusz render is verified on
+Linux with Veusz 3.6.2 and 4.2.1, \textbf{not yet on Windows} in your
+conda-forge environment; in particular, whether the Windows
+\texttt{veusz.exe} (a windowed program) reads a script piped to its
+standard input in \texttt{-\/-listen} mode is untested. If it does not,
+\texttt{method="auto"} falls back to the Python package, which
+conda-forge installs. Also not run: an actual
 \texttt{mamba\ env\ create} (the container has no conda-forge access).
 The presence of \texttt{qt.py} 2.0.3 and \texttt{veusz} 4.2.1,
 \texttt{h5py} 3.16.0 (win-64 included) and \texttt{pypdf} 6.20.0
@@ -1764,6 +2135,22 @@ page scale, bookmarks, re-render, LuaLaTeX report).
 (calibration manual {[}R3{]}, datasheet {[}R4{]}, memory note {[}R5{]};
 {[}R5{]} had been used twice and {[}R3{]} not at all). \texttt{pypdf}
 added to the environment. \\
+0.0.7 & 2026-10-12 & \textbf{Output power.} Reported: the level could
+not be changed. Fixed: Enter now applies the frequency and power boxes
+(0.0.6 applied only on the Set buttons); every change is read back with
+\texttt{POW?} / \texttt{FREQ?} and a mismatch is shown in red, in the
+status bar, the session log and the console, naming option 2; the level
+is written with its sign (\texttt{POW\ +12.0}); a \emph{Command}
+selector adds the native Set Output Power command (\texttt{030078},
+{[}1, Table 2a{]} examples reproduced) with automatic fallback;
+fixed-output models (FSL Lite, FSL mmW) no longer offer a level box or
+power sweeps, and the mmW min/max output specification is no longer
+offered as a control range. \textbf{Bring-up aids:} \emph{Read (0D)}
+(native Get Power) and a console \emph{Send} line. \textbf{RF OUTPUT
+OFF:} red button on the Main tab and on a \emph{Safety} toolbar,
+confirmed with \texttt{STAT?} (§3.4). \textbf{Documentation:} §2.1
+pyserial vs PyVISA; §3.3, §3.4; conflicts 11--13; model table corrected.
+\textbf{Tests:} \texttt{check\_smoke.py} covers all of the above. \\
 \end{longtable}
 
 \begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
@@ -1887,6 +2274,20 @@ https://tug.org/texlive/windows.html \\
 (\texttt{lastWindowClosed}: emitted when the last \emph{visible} primary
 window is closed), accessed 11 Oct.~2026. &
 https://doc.qt.io/qt-6/qguiapplication.html \\
+{[}30{]} & PyVISA Authors, ``PyVISA 1.16.2,'' Python Package Index, 27
+Feb.~2026 (MIT; Python ≥ 3.10); ``VISA resource names''
+(\texttt{ASRLboard::INSTR},
+\texttt{GPIB{[}board{]}::primary\ address::INSTR},
+\texttt{TCPIP{[}board{]}::host\ address::port::SOCKET}), PyVISA
+documentation, accessed 12 Oct.~2026. & https://pypi.org/project/PyVISA/
+; https://pyvisa.readthedocs.io/en/latest/introduction/names.html \\
+{[}31{]} & PyVISA Authors, ``PyVISA-py 0.8.1,'' Python Package Index, 4
+Sep.~2025 (MIT; Python ≥ 3.10): serial instruments need PySerial, GPIB
+needs gpib-ctypes or linux-gpib, TCPIP needs no extra package. &
+https://pypi.org/project/PyVISA-py/ \\
+{[}32{]} & C. Liechti, ``pySerial 3.5,'' Python Package Index, 23
+Nov.~2020 (BSD); documentation. & https://pypi.org/project/pyserial/ ;
+https://pyserial.readthedocs.io/ \\
 \end{longtable}
 
 \hypertarget{sourcing-confidence}{%
@@ -1965,6 +2366,23 @@ ratios should not \\
 \textasciitilde8 ms round-trip estimate in the rate budget &
 \textbf{Medium} & Engineering estimate for a 115.2 kbaud USB-CDC bridge,
 not vendor data; the achieved rate is measured, not estimated \\
+Native Set Output Power format (\texttt{03} + 16-bit two's complement,
+ASCII hex) & \textbf{High} & {[}1, Table 2a{]} text and both worked
+examples, reproduced byte-exact \\
+Power control needs option 2; Lite and mmW models have none &
+\textbf{High} & {[}4{]} option tables; {[}1{]} marks the native command
+``*When option is present'' \\
+Whether the user's unit has option 2, accepts \texttt{POW\ +12.0}, and
+whether \texttt{POW?} tracks the real output & \textbf{Unknown} & Needs
+the instrument and a power meter (§13 item 7) \\
+Native Get Power (\texttt{0D}) negative-value encoding & \textbf{Medium}
+& Inferred from the Set Output Power examples; {[}1, Table 4{]} gives no
+example \\
+PyVISA, pyvisa-py and pyserial versions, licences and back-end
+requirements (§2.1) & \textbf{High} & Read from their PyPI pages and
+documentation {[}30{]}--{[}32{]} on 12 Oct.~2026 \\
+Ethernet port 10001, GPIB address 5, USB as a standard COM port &
+\textbf{High} & Stated in {[}1{]}, ``Communication Interfaces'' \\
 \end{longtable}
 
 \begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
@@ -2013,7 +2431,30 @@ not vendor data; the achieved rate is measured, not estimated \\
   installed and check that \texttt{quicksyn\_session\_report.pdf}
   appears beside the plots. If \texttt{lualatex} is not on the PATH, set
   \texttt{QUICKSYN\_LUALATEX}.
+\item
+  \textbf{Output power on the real unit (0.0.7).} Not testable without
+  the instrument. With a power meter or spectrum analyser on RF OUT:
+  connect, note the \texttt{*IDN?} line and the reply to the native
+  \texttt{01} (Send line); set +13, 0, −10 dBm with \emph{Command} =
+  \emph{SCPI only}, then again with \emph{Native only}, reading
+  \texttt{POW?} and \emph{Read (0D)} each time and the measured level.
+  Then press RF OUTPUT OFF and measure. Send the
+  \texttt{transactions.csv} of that session. This settles whether option
+  2 is fitted, whether the firmware accepts \texttt{POW\ +12.0} (sign)
+  and \texttt{POW\ +0.0}, which command form works, whether
+  \texttt{POW?} reflects the output or only the setting, and the
+  \texttt{0D} reply format.
+\item
+  \textbf{Ethernet and GPIB transports.} Optional (§2.1): a
+  standard-library socket transport for the Ethernet adapter (port
+  10001) and a PyVISA transport for GPIB (address 5) or any VISA
+  resource. Not started; say if either is wanted.
 \end{enumerate}
+
+\textbf{Closed in 0.0.7.} \emph{Output level could not be changed}
+(§3.3), as far as software can close it; the hardware part is item 7.
+\emph{RF output off button} (§3.4). \emph{Why pyserial and not PyVISA}
+(§2.1).
 
 \textbf{Closed in 0.0.6.} \emph{The full package:} 0.0.6 contains every
 file at one version; the files that existed only in the unreleased 0.0.5

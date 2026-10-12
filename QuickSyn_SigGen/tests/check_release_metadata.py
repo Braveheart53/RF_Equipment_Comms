@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 William W. Wallace <wwallace@nrao.edu>
 """Release metadata, licence and About-dialog checks.
 
-Part of the QuickSyn SCPI controller package, version 0.0.6.
+Part of the QuickSyn SCPI controller package, version 0.0.7.
 Author: William W. Wallace <wwallace@nrao.edu>, NRAO/GBO.
 Licence: GPL-3.0-or-later (see ../LICENSE).
 
@@ -12,7 +12,7 @@ Run directly (``python tests/check_release_metadata.py``) or through
 What it checks
 --------------
 1. The GUI, the export script and vszh5_writer.py carry the SPDX tags, the
-   author / company / email / version / licence fields, a 0.0.6 history
+   author / company / email / version / licence fields, a 0.0.7 history
    entry, no ``Project`` line and no leftover template placeholders; every
    other Python file in the package (tests, upstream check) carries the SPDX
    tags and the package version.
@@ -44,13 +44,13 @@ sys.path.insert(0, str(PKG))
 sys.dont_write_bytecode = True   # keep __pycache__ out of the package tree
 
 # ---------------------------------------------------------------- expectations
-VERSION = "0.0.6"
+VERSION = "0.0.7"
 AUTHOR = "William W. Wallace"
 COMPANY = "NRAO/GBO"
 EMAIL = "wwallace@nrao.edu"
 LICENCE_ID = "GPL-3.0-or-later"
-GUI = PKG / "quicksyn_scpi_gui_v0_0_6.py"
-EXPORT = PKG / "quicksyn_veusz_export_v0_0_6.py"
+GUI = PKG / "quicksyn_scpi_gui_v0_0_7.py"
+EXPORT = PKG / "quicksyn_veusz_export_v0_0_7.py"
 WRITER = PKG / "vszh5_writer.py"
 # SHA-256 of the GPL-3.0 text as distributed by the FSF and packaged in
 # /usr/share/common-licenses/GPL-3 (674 lines).
@@ -81,7 +81,7 @@ def squash(text: str) -> str:
 # ------------------------------------------------------------ 1. file manifest
 print("1. Package manifest")
 for rel in (
-    "quicksyn_scpi_gui_v0_0_6.py", "quicksyn_veusz_export_v0_0_6.py", "vszh5_writer.py",
+    "quicksyn_scpi_gui_v0_0_7.py", "quicksyn_veusz_export_v0_0_7.py", "vszh5_writer.py",
     "environment_quicksyn.yml", "README_quicksyn_controller.md", "LICENSE",
     "tests/check_smoke.py", "tests/check_reduction.py", "tests/check_console.py",
     "tests/check_release_metadata.py", "tests/check_vszh5.py", "tests/run_all.py",
@@ -201,7 +201,7 @@ check(hashlib.sha256(lic_bytes).hexdigest() == LICENSE_SHA256,
       "LICENSE SHA-256 matches the reference GPL-3.0 text")
 check("GNU GENERAL PUBLIC LICENSE" in lic and "Version 3, 29 June 2007" in lic,
       "LICENSE identifies GPL version 3")
-import quicksyn_scpi_gui_v0_0_6 as app  # noqa: E402  (after sys.path setup)
+import quicksyn_scpi_gui_v0_0_7 as app  # noqa: E402  (after sys.path setup)
 
 flat_lic = squash(lic)
 for i, para in enumerate(app.GPL_NOTICE_PARAGRAPHS, 1):

@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 William W. Wallace <wwallace@nrao.edu>
 """Veusz HDF5 document (.vszh5) checks: vszh5_writer.py and export_veusz().
 
-Part of the QuickSyn SCPI controller package, version 0.0.6.
+Part of the QuickSyn SCPI controller package, version 0.0.7.
 Author: William W. Wallace <wwallace@nrao.edu>, NRAO/GBO.
 Licence: GPL-3.0-or-later (see ../LICENSE).
 
@@ -59,7 +59,7 @@ import numpy as np   # noqa: E402
 import h5py          # noqa: E402
 
 import vszh5_writer as vw                      # noqa: E402
-import quicksyn_veusz_export_v0_0_6 as qe      # noqa: E402
+import quicksyn_veusz_export_v0_0_7 as qe      # noqa: E402
 
 results: list[tuple[str, str, str]] = []
 

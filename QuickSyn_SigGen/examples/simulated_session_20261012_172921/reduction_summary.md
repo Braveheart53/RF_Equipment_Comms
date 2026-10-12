@@ -1,6 +1,6 @@
-# QuickSyn session reduction - 20261012_005651_FSW-0020_00000007
+# QuickSyn session reduction - 20261012_172921_FSW-0020_00000007
 
-Produced by `quicksyn_veusz_export_v0_0_6.py` on 2026-10-12 00:57:53 UTC.
+Produced by `quicksyn_veusz_export_v0_0_7.py` on 2026-10-12 17:30:11 UTC.
 
 ## Instrument
 
@@ -21,18 +21,18 @@ Produced by `quicksyn_veusz_export_v0_0_6.py` on 2026-10-12 00:57:53 UTC.
 
 | Quantity | Value | Unit |
 | --- | --- | --- |
-| Samples | 401 |  |
+| Samples | 411 |  |
 | Loaded from | chunks |  |
-| Duration | 39.9992 | s |
+| Duration | 40.9987 | s |
 | Requested sample rate | 10 | Hz |
-| Achieved sample rate | 10.0002 | Hz |
-| Mean sample interval | 99.9979 | ms |
-| Interval std (jitter) | 2.56112 | ms |
-| Interval min / max | 82.566 / 113.767 | ms |
-| Jitter relative to period | 25611.7 | ppm |
-| Device I/O latency, mean | 6.1296 | ms |
-| Device I/O latency, p95 | 8.9224 | ms |
-| Device I/O latency, max | 10.424 | ms |
+| Achieved sample rate | 10.0003 | Hz |
+| Mean sample interval | 99.9967 | ms |
+| Interval std (jitter) | 3.13743 | ms |
+| Interval min / max | 68.880 / 131.124 | ms |
+| Jitter relative to period | 31375.3 | ppm |
+| Device I/O latency, mean | 6.00259 | ms |
+| Device I/O latency, p95 | 8.77772 | ms |
+| Device I/O latency, max | 13.0153 | ms |
 
 The sample period is the reciprocal of the requested rate,
 
@@ -58,7 +58,7 @@ $t_q \approx 8$ ms gives $f_{s,\max} \approx 21$ Hz.
 | Frequency max | 19.500000000 | GHz |
 | Power min | -3.0 | dBm |
 | Power max | +8.0 | dBm |
-| RF output on, fraction of samples | 1.000 | - |
+| RF output on, fraction of samples | 0.976 | - |
 | Samples with RF unlocked | 0 |  |
 | Samples with reference unlocked | 0 |  |
 | Samples with voltage error | 0 |  |
@@ -89,19 +89,19 @@ with phase residuals $x_k = \tau_0 \sum_{i<k} y_i$.
 
 | Averaging time tau (s) | ADEV |
 | --- | --- |
-| 0.1 | 2.137e-02 |
-| 0.2 | 2.623e-02 |
-| 0.4 | 3.570e-02 |
-| 0.8 | 5.042e-02 |
-| 1.6 | 7.262e-02 |
-| 3.2 | 1.074e-01 |
-| 6.4 | 1.687e-01 |
-| 12.8 | 3.058e-01 |
+| 0.1 | 1.574e-02 |
+| 0.2 | 1.932e-02 |
+| 0.4 | 2.629e-02 |
+| 0.8 | 3.713e-02 |
+| 1.6 | 5.344e-02 |
+| 3.2 | 7.892e-02 |
+| 6.4 | 1.245e-01 |
+| 12.8 | 2.301e-01 |
 
 ## Reduction
 
 | Quantity | Value |
 | --- | --- |
 | Compute backend | numpy |
-| Reduction wall time | 6.6 ms |
-| Script revision | 0.0.6 |
+| Reduction wall time | 15.6 ms |
+| Script revision | 0.0.7 |

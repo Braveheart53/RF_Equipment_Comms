@@ -9,13 +9,13 @@
 
 ===============================================================================
  Title          : QuickSyn SCPI Controller and Telemetry Logger
- Filename       : quicksyn_scpi_gui_v0_0_6.py
- Version        : 0.0.6  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Filename       : quicksyn_scpi_gui_v0_0_7.py
+ Version        : 0.0.7  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
  Author         : William W. Wallace
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
  Created        : 2026-10-09
- Modified       : 2026-10-11
+ Modified       : 2026-10-12
  Language       : Python 3.12
  GUI toolkit    : Qt.py abstraction layer -> PySide6 (Qt 6)
  Environment    : mamba env "quicksyn" (see environment_quicksyn.yml)
@@ -75,6 +75,13 @@ FEATURE SUMMARY
 * Port discovery, connect/disconnect, identity decode, firmware gate check.
 * Main control: frequency, power, RF output, blanking, reference source,
   reference output, lock recovery, reset, save/recall states, temperature.
+  Enter in the frequency or power box applies the value, and every change
+  is read back (FREQ? / POW?) and flagged if the instrument did not follow.
+  Power control is offered only where the model can have it (FSW with
+  option 2); fixed-output models show their level instead. The level can be
+  sent as SCPI (POW +12.0) or as the native command (030078), and read back
+  with POW? or the native Get Power query (0D). A red RF OUTPUT OFF button
+  (also on the toolbar and Ctrl+Shift+O) mutes the output from any tab.
 * Modulation: pulse, AM (state + sensitivity DAC), FM/phase (state, mode,
   sensitivity DAC). Hidden for models with no modulation inputs.
 * Sweeps: fast and normal, frequency and power, with trigger and direction.
@@ -88,6 +95,7 @@ FEATURE SUMMARY
   every command and reply as it happens, with time, source (GUI action or
   telemetry poll), latency and errors; pause, filter, show/hide polls, copy
   and save. Memory and redraw time stay bounded however long it is paused.
+  A Send line sends any SCPI or native command as typed (bring-up aid).
 * Veusz HDF5 document (.vszh5) of each session, written directly with h5py
   by vszh5_writer.py (no Veusz needed to write it): automatically when
   logging stops, on demand (Veusz menu, Ctrl+E), and optionally every N
@@ -113,7 +121,7 @@ Every session creates <log_root>/<YYYYmmdd_HHMMSS>_<model>_<opts>/ holding:
     reduction_summary.{json,md}, telemetry_reduced.npz   From the export.
 
 The .vszh5 and the reduction are produced by the companion script
-quicksyn_veusz_export_v0_0_6.py (with vszh5_writer.py), which the GUI runs
+quicksyn_veusz_export_v0_0_7.py (with vszh5_writer.py), which the GUI runs
 as a separate process: the GUI's PySide6 never mixes with the Qt binding
 Veusz uses, a large session never stalls the window, and an export started
 by closing the window finishes after the window has gone.
@@ -148,7 +156,7 @@ REQUIREMENTS
 
         mamba env create -f environment_quicksyn.yml
         mamba activate quicksyn
-        python quicksyn_scpi_gui_v0_0_6.py
+        python quicksyn_scpi_gui_v0_0_7.py
 
 REFERENCES
 ----------
@@ -328,6 +336,44 @@ REVISION HISTORY
                    script is now quicksyn_veusz_export_v0_0_6.py, which adds
                    PDF bookmarks and a LuaLaTeX session report; the status
                    line after an export names the report as well as the plots.
+0.0.7  2026-10-12  OUTPUT POWER. Reported: the output level could not be
+                   changed. Causes found and fixed:
+                   (1) Typing a level and pressing Enter sent nothing; only
+                   the Set power button did (the same for frequency). Enter
+                   now applies the value in both boxes.
+                   (2) Set power showed "commanded" without reading the level
+                   back, so a unit that ignored POW looked as if it had
+                   obeyed. Power control on the FSW needs option 2 [R4], and
+                   whether it is fitted cannot be read from *IDN? (the option
+                   field is not defined in [R1]). Every Set power and Set
+                   frequency now reads POW? / FREQ? back; a mismatch is shown
+                   in red, in the status bar, the session log and the SCPI
+                   console, naming option 2 as the likely cause.
+                   (3) Fixed-output models: the FSL Lite (0010, 0020, E020)
+                   and FSL mmW (2740, 5067, 7682) list no power-control option
+                   [R4], but the box looked editable and silently snapped
+                   back (Lite), or offered a range that is really the min/max
+                   output specification (mmW: 17-24 dBm etc.). The capability
+                   table gains has_power_control; on fixed-output models the
+                   power box and power sweeps are disabled with the reason
+                   shown, and the driver refuses POW and power sweeps.
+                   (4) SCPI POW syntax: [R1, Table 5] gives "POW +/- XX.X"
+                   with only a negative example. The level is now always
+                   written with its sign (POW +12.0), and a Command selector
+                   offers Auto (SCPI, then the native Set Output Power
+                   command 03xxxx if POW? shows no change), SCPI only or
+                   Native only. native_power_command() reproduces both [R1,
+                   Table 2a] examples (12 dBm -> 030078, -3 dBm -> 03FFE2).
+                   Bring-up aids: Read (0D) reads the level with the native
+                   Get Power query [R1, Table 4] as a check on POW?, and the
+                   SCPI console has a Send line for any SCPI or native
+                   command, logged like every other exchange.
+                   RF OUTPUT OFF: a red button on the Main tab and an RF OFF
+                   toolbar button (any tab) send OUTP:STAT OFF and confirm it
+                   with STAT?; Ctrl+Shift+O does the same.
+                   The simulator can emulate an FSW without option 2
+                   (power_control=False) and firmware that ignores SCPI POW
+                   (scpi_power=False), and answers the native 03xxxx and 0D.
 ===============================================================================
 """
 
@@ -446,7 +492,7 @@ except ImportError:  # pragma: no cover - export still runs if the file exists
 # %% ===========================================================================
 #    MODULE CONSTANTS
 # =============================================================================
-__version__ = "0.0.6"                 # Semantic Versioning 2.0.0
+__version__ = "0.0.7"                 # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO/GBO"
@@ -523,8 +569,64 @@ MIN_SCPI_FIRMWARE: int = 100
 DEFAULT_SAMPLE_RATE_HZ: float = 2.0
 MIN_SAMPLE_RATE_HZ: float = 0.01
 MAX_SAMPLE_RATE_HZ: float = 50.0
+#: A POW? reply within this many dB of the commanded level counts as obeyed
+#: (POW? reports tenths of a dB [R1, Table 5]).
+POWER_READBACK_TOL_DB: float = 0.05
+#: How a level is commanded: "scpi" = ``POW +12.0`` [R1, Table 5], "native" =
+#: ``030078`` (header 03, tenth-dBm as 16-bit two's complement, ASCII hex
+#: [R1, Table 2a]), "auto" = SCPI first, native if POW? shows no change.
+POWER_COMMAND_SETS: tuple[str, ...] = ("auto", "scpi", "native")
+
+
+def native_power_command(power_dbm: float) -> str:
+    """Native Set Output Power command for a level in dBm.
+
+    [R1, Table 2a]: header 03 followed by the level in tenths of a dBm as a
+    16-bit two's-complement number, sent as ASCII hex. The two worked
+    examples in [R1] are reproduced exactly: +12 dBm -> ``030078`` and
+    -3 dBm -> ``03FFE2``.
+    """
+    tenths = int(round(quantise_power_dbm(power_dbm) * 10))
+    if not -32768 <= tenths <= 32767:
+        raise ParameterError(f"{power_dbm} dBm does not fit the 16-bit power field.")
+    return f"03{tenths & 0xFFFF:04X}"
+
+
+#: Native query codes for USB, Ethernet, GPIB and RS232 [R1, Table 4]: Get ID,
+#: Get Status, Get Freq, Ref Source, Get Power, Get Temperature, Get
+#: Modulation, Get AM and Get FM Sensitivity. They carry no "?", so the
+#: console's Send line uses this list to know that a reply is expected.
+NATIVE_QUERY_CODES: tuple[str, ...] = ("01", "02", "04", "07", "0D", "10", "47", "48", "49")
+#: Native Get Power query [R1, Table 4]: the reply is 4 ASCII-hex characters,
+#: the level in tenths of a dBm.
+NATIVE_GET_POWER: str = "0D"
+
+
+def decode_native_power(reply: str) -> float:
+    """Decode the reply to the native Get Power query (``0D``) to dBm.
+
+    [R1, Table 4] gives the reply as 2 bytes (4 ASCII-hex characters),
+    "dBm x10". Negative levels are taken as 16-bit two's complement, as in
+    the Set Output Power examples of [R1, Table 2a] (-3 dBm -> FFE2); the
+    query table itself does not say, so this is checked on hardware by
+    comparing with POW?.
+    """
+    text = reply.strip()
+    if not re.fullmatch(r"[0-9A-Fa-f]{1,4}", text):
+        raise ValueError(f"native Get Power reply {reply!r} is not 1-4 hex digits")
+    raw = int(text, 16)
+    tenths = raw - 0x10000 if raw & 0x8000 else raw
+    return tenths / 10.0
+
+
+def expects_reply(command: str) -> bool:
+    """True when a raw command is a query: SCPI ending in "?" or a native query code."""
+    text = command.strip().upper()
+    return text.endswith("?") or text in NATIVE_QUERY_CODES
+
+
 #: Companion export script run by the GUI to write the session .vszh5.
-COMPANION_EXPORT_SCRIPT: str = "quicksyn_veusz_export_v0_0_6.py"
+COMPANION_EXPORT_SCRIPT: str = "quicksyn_veusz_export_v0_0_7.py"
 #: File name of the session document written by the export script.
 SESSION_VSZH5_NAME: str = "quicksyn_session.vszh5"
 
@@ -673,9 +775,16 @@ class ModelCapability:
     f_resolution_hz:
         Smallest commandable frequency step.
     p_default_dbm:
-        Rated output power with no power-control option.
+        Rated output power with no power-control option (the typical level
+        for fixed-output models).
     p_min_dbm, p_max_dbm:
-        Levelled power-control range with option 2 fitted.
+        Levelled power-control range with option 2 fitted; equal to
+        ``p_default_dbm`` for fixed-output models.
+    has_power_control:
+        True when the model can be ordered with a power-control option (the
+        FSW series, option 2 [R4]). Whether option 2 is actually fitted is
+        not visible in ``*IDN?`` (the option field is undefined in [R1]), so
+        the GUI reads the level back after every change.
     scpi_documented:
         True only for the models whose SCPI set is explicitly covered by
         [R1]. For the others the same commands are offered but flagged as
@@ -700,6 +809,7 @@ class ModelCapability:
     scpi_documented: bool
     notes: str = ""
     has_modulation: bool = True
+    has_power_control: bool = False
 
 
 #: Keyed by the model token found in the ``*IDN?`` response.
@@ -718,6 +828,7 @@ MODEL_TABLE: dict[str, ModelCapability] = {
               "power control over -25 to +15 dBm with 0.01 dB nominal "
               "resolution; option 3 gives 100 us switching in triggered "
               "list mode [R4].",
+        has_power_control=True,
     ),
     "FSW-0020": ModelCapability(
         model="FSW-0020",
@@ -733,6 +844,7 @@ MODEL_TABLE: dict[str, ModelCapability] = {
               "power control over -10 to +13 dBm with 0.1 dB nominal "
               "resolution; option 3 gives 100 us switching in triggered "
               "list mode [R4].",
+        has_power_control=True,
     ),
     "FSL-0010": ModelCapability(
         model="FSL-0010",
@@ -744,9 +856,10 @@ MODEL_TABLE: dict[str, ModelCapability] = {
         p_min_dbm=15.0,
         p_max_dbm=15.0,
         scpi_documented=False,
-        notes="Lite series: +15 dBm min, tested to 10.4 GHz, 60 dB RF "
-              "on-off ratio. [R4] lists RF OUT, REF IN and REF OUT only - "
-              "no PULSE, AM or FM connectors, and no power-control option.",
+        notes="Lite series: fixed output, +15 dBm min, tested to 10.4 GHz, "
+              "60 dB RF on-off ratio. [R4] lists RF OUT, REF IN and REF OUT "
+              "only - no PULSE, AM or FM connectors - and option 8 only, so "
+              "no power control.",
         has_modulation=False,
     ),
     "FSL-0020": ModelCapability(
@@ -759,8 +872,8 @@ MODEL_TABLE: dict[str, ModelCapability] = {
         p_min_dbm=10.0,
         p_max_dbm=10.0,
         scpi_documented=False,
-        notes="Lite series: +10 dBm min, tested to 20.8 GHz. No PULSE, "
-              "AM or FM connectors and no power-control option [R4].",
+        notes="Lite series: fixed output, +10 dBm min, tested to 20.8 GHz. "
+              "No PULSE, AM or FM connectors and no power-control option [R4].",
         has_modulation=False,
     ),
     "FSL-E020": ModelCapability(
@@ -774,7 +887,7 @@ MODEL_TABLE: dict[str, ModelCapability] = {
         p_max_dbm=10.0,
         scpi_documented=False,
         notes="Non-export-controlled FSL-0020, 1 ms switching mode [R4]. "
-              "No modulation inputs.",
+              "Fixed output, +10 dBm min; no power control. No modulation inputs.",
         has_modulation=False,
     ),
     "FSL-2740": ModelCapability(
@@ -784,11 +897,12 @@ MODEL_TABLE: dict[str, ModelCapability] = {
         f_min_opt1_hz=None,
         f_resolution_hz=1.0,
         p_default_dbm=18.0,
-        p_min_dbm=17.0,
-        p_max_dbm=24.0,
+        p_min_dbm=18.0,
+        p_max_dbm=18.0,
         scpi_documented=False,
-        notes="mmW series: 1 Hz resolution, K-type RF output, +17 dBm "
-              "min / +18 dBm typ / +24 dBm max [R4]. No modulation inputs.",
+        notes="mmW series: 1 Hz resolution, K-type RF output. Fixed output "
+              "level, +17 dBm min / +18 dBm typ / +24 dBm max [R4]; options "
+              "3 and 8 only, no power control. No modulation inputs.",
         has_modulation=False,
     ),
     "FSL-5067": ModelCapability(
@@ -798,11 +912,12 @@ MODEL_TABLE: dict[str, ModelCapability] = {
         f_min_opt1_hz=None,
         f_resolution_hz=1.0,
         p_default_dbm=17.0,
-        p_min_dbm=15.0,
-        p_max_dbm=22.0,
+        p_min_dbm=17.0,
+        p_max_dbm=17.0,
         scpi_documented=False,
-        notes="mmW series: 1 Hz resolution, V-type RF output, +15 dBm "
-              "min / +17 dBm typ / +22 dBm max [R4]. No modulation inputs.",
+        notes="mmW series: 1 Hz resolution, V-type RF output. Fixed output "
+              "level, +15 dBm min / +17 dBm typ / +22 dBm max [R4]; options "
+              "3 and 8 only, no power control. No modulation inputs.",
         has_modulation=False,
     ),
     "FSL-7682": ModelCapability(
@@ -812,12 +927,12 @@ MODEL_TABLE: dict[str, ModelCapability] = {
         f_min_opt1_hz=None,
         f_resolution_hz=1.0,
         p_default_dbm=11.0,
-        p_min_dbm=10.0,
-        p_max_dbm=14.0,
+        p_min_dbm=11.0,
+        p_max_dbm=11.0,
         scpi_documented=False,
-        notes="mmW series: 1 Hz resolution, WR12 waveguide RF output, "
-              "+10 dBm min / +11 dBm typ / +14 dBm max [R4]. No modulation "
-              "inputs.",
+        notes="mmW series: 1 Hz resolution, WR12 waveguide RF output. Fixed "
+              "output level, +10 dBm min / +11 dBm typ / +14 dBm max [R4]; "
+              "options 3 and 8 only, no power control. No modulation inputs.",
         has_modulation=False,
     ),
 }
@@ -837,6 +952,7 @@ FALLBACK_CAPABILITY = ModelCapability(
     notes="Model not in the built-in capability table; limits are the union "
           "of every documented QuickSyn model. Verify against your "
           "calibration sheet before transmitting.",
+    has_power_control=True,
 )
 
 
@@ -1563,10 +1679,17 @@ class SimulatedTransport(SerialTransport):
         self,
         on_transaction: Callable[[Transaction], None] | None = None,
         model: str = "FSW-0020",
+        power_control: bool = True,
     ) -> None:
         super().__init__(on_transaction=on_transaction)
         self._open = False
         self._model = model
+        #: False emulates a unit without power-control option 2: POW is
+        #: accepted but the level stays at the rated output.
+        self.power_control = power_control
+        #: False emulates firmware that ignores SCPI POW but obeys the native
+        #: 03xxxx command (exercises the "auto" fallback).
+        self.scpi_power = True
         self._state: dict[str, Any] = {
             "freq_mlhz": 10_000_000_000_000,   # 10 GHz default [R1/R2]
             "power_dbm": 13.0,
@@ -1610,6 +1733,19 @@ class SimulatedTransport(SerialTransport):
 
     # --- Command interpretation --------------------------------------------
     def _apply(self, command: str) -> str | None:
+        """Native commands the simulator knows (Set Output Power), else SCPI."""
+        text = command.strip().upper()
+        if re.fullmatch(r"03[0-9A-F]{4}", text):    # native Set Output Power
+            if self.power_control:
+                raw = int(text[2:], 16)
+                tenths = raw - 0x10000 if raw & 0x8000 else raw
+                self._state["power_dbm"] = tenths / 10.0
+            return None
+        if text == NATIVE_GET_POWER:                # native Get Power
+            return f"{int(round(self._state['power_dbm'] * 10)) & 0xFFFF:04X}"
+        return self._apply_scpi(command)
+
+    def _apply_scpi(self, command: str) -> str | None:
         """Update simulated state and return a response for queries."""
         cmd = command.strip()
         upper = cmd.upper()
@@ -1649,9 +1785,10 @@ class SimulatedTransport(SerialTransport):
             case "FREQ?":
                 return str(int(self._state["freq_mlhz"]))
             case "POW":
-                self._state["power_dbm"] = quantise_power_dbm(
-                    parse_float_response(arg)
-                )
+                if self.power_control and self.scpi_power:
+                    self._state["power_dbm"] = quantise_power_dbm(
+                        parse_float_response(arg)
+                    )
                 return None
             case "POW?":
                 return f"{self._state['power_dbm']:.1f}"
@@ -1966,8 +2103,9 @@ class QuickSyn:
         return mlhz_to_hz(parse_float_response(self.io.query("FREQ?")))
 
     # --- Power --------------------------------------------------------------
-    def set_power(self, power_dbm: float, check_limits: bool = True) -> float:
-        """Set the output level with ``POW``.
+    def set_power(self, power_dbm: float, check_limits: bool = True,
+                  command_set: str = "scpi") -> float:
+        """Set the output level with ``POW`` (or the native ``03`` command).
 
         Parameters
         ----------
@@ -1975,6 +2113,13 @@ class QuickSyn:
             Requested level in dBm; quantised to 0.1 dB.
         check_limits:
             Validate against the model's levelled power-control range.
+        command_set:
+            "scpi" sends ``POW +12.0``; "native" sends ``030078``.
+
+        Notes
+        -----
+        [R1, Table 5] gives the SCPI syntax as ``POW +/- XX.X [DBM]`` with
+        only a negative example, so the sign is always written explicitly.
 
         Returns
         -------
@@ -1983,19 +2128,90 @@ class QuickSyn:
         """
         value = quantise_power_dbm(power_dbm)
         cap = self.capability
+        if check_limits:
+            self.require_power_control()
         if check_limits and not (cap.p_min_dbm <= value <= cap.p_max_dbm):
             raise ParameterError(
                 f"{value:+.1f} dBm is outside the {cap.p_min_dbm:+.1f} to "
                 f"{cap.p_max_dbm:+.1f} dBm control range of the {cap.model} "
                 f"(power control requires option 2)."
             )
-        self.io.write(f"POW {value:.1f}")
+        self._write_power(value, command_set)
         self._emit_state("power_dbm", value)
         return value
+
+    def _write_power(self, value: float, command_set: str) -> None:
+        """Send one already-quantised level with the chosen command set."""
+        if command_set == "native":
+            self.io.write(native_power_command(value))
+        elif command_set == "scpi":
+            self.io.write(f"POW {value:+.1f}")
+        else:
+            raise ValueError(f"command_set must be 'scpi' or 'native', not {command_set!r}")
 
     def get_power(self) -> float:
         """Read the output level with ``POW?``. Returns dBm."""
         return parse_float_response(self.io.query("POW?"))
+
+    def get_power_native(self) -> float:
+        """Read the output level with the native Get Power query (``0D``).
+
+        An independent check on ``POW?`` during bring-up [R1, Table 4]: if
+        the two disagree, one of them reports a stored setting rather than
+        the level in force.
+        """
+        return decode_native_power(self.io.query(NATIVE_GET_POWER))
+
+    def require_power_control(self) -> None:
+        """Refuse level changes on models with a fixed output level.
+
+        Raises
+        ------
+        ParameterError
+            The detected model lists no power-control option [R4].
+        """
+        cap = self.capability
+        if not cap.has_power_control:
+            raise ParameterError(
+                f"The {cap.model} has a fixed output level ({cap.p_default_dbm:+.1f} dBm "
+                f"typical) and no power-control option [R4]; POW cannot change it."
+            )
+
+    def set_power_checked(self, power_dbm: float,
+                          command_set: str = "auto") -> tuple[float, float, str]:
+        """Set the level and read it back with ``POW?``.
+
+        Parameters
+        ----------
+        command_set:
+            "scpi", "native", or "auto": SCPI first and, if ``POW?`` shows
+            the level did not change, the native command [R1, Table 2a].
+
+        Returns
+        -------
+        tuple
+            (level commanded, level reported by ``POW?``, command set that
+            produced the reported level). A difference after both command
+            sets means the unit did not apply the level; on an FSW the usual
+            cause is that power-control option 2 is not fitted ([R1] marks
+            Set Output Power "when option is present").
+        """
+        if command_set not in POWER_COMMAND_SETS:
+            raise ValueError(f"command_set must be one of {POWER_COMMAND_SETS}")
+        first = "native" if command_set == "native" else "scpi"
+        commanded = self.set_power(power_dbm, command_set=first)
+        reported = self.get_power()
+        used = first
+        if command_set == "auto" and abs(reported - commanded) > POWER_READBACK_TOL_DB:
+            self._write_power(commanded, "native")
+            reported = self.get_power()
+            used = "native"
+        return commanded, reported, used
+
+    def set_frequency_checked(self, freq_hz: float) -> tuple[float, float]:
+        """Set the carrier and read it back; returns (commanded, reported) in Hz."""
+        commanded = self.set_frequency(freq_hz)
+        return commanded, self.get_frequency()
 
     # --- Output and reference control --------------------------------------
     def set_rf_output(self, enabled: bool) -> None:
@@ -2438,6 +2654,7 @@ class QuickSyn:
 
         The fast power sweep is limited to 500 points [R1, Table 2c].
         """
+        self.require_power_control()
         if not (1 <= n_points <= POWER_SWEEP_POINTS_MAX):
             raise ParameterError(
                 f"Fast power sweep is limited to {POWER_SWEEP_POINTS_MAX} points."
@@ -2470,6 +2687,7 @@ class QuickSyn:
         run_now: bool = False,
     ) -> None:
         """Configure a normal power sweep (``SWE:NORM:POW:SETUP``)."""
+        self.require_power_control()
         if step_db <= 0.0:
             raise ParameterError("Power step must be positive.")
         args = (
@@ -3286,6 +3504,27 @@ class LEDIndicator(QtWidgets.QLabel):
         )
 
 
+class EnterApplies(QtCore.QObject):
+    """Call ``action`` when Enter or Return is pressed in ``widget``.
+
+    Installed as an event filter, so the spin box still handles the key
+    itself (committing the typed text); the action runs after that.
+    """
+
+    def __init__(self, widget: QtWidgets.QAbstractSpinBox, action: Callable[[], Any]) -> None:
+        super().__init__(widget)
+        self._widget = widget
+        self._action = action
+        widget.installEventFilter(self)
+
+    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:  # noqa: N802 (Qt API)
+        if (obj is self._widget and event.type() == QtCore.QEvent.Type.KeyPress
+                and event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter)):
+            self._widget.interpretText()      # commit what was typed
+            QtCore.QTimer.singleShot(0, self._action)
+        return False
+
+
 def labelled_row(*widgets: QtWidgets.QWidget) -> QtWidgets.QWidget:
     """Pack widgets into a margin-free horizontal row."""
     container = QtWidgets.QWidget()
@@ -3539,7 +3778,10 @@ class ConnectionTab(QtWidgets.QWidget):
         self.caps_label.setText(
             f"{cap.model}: {lower / 1e9:.3f} - {cap.f_max_hz / 1e9:.3f} GHz, "
             f"resolution {cap.f_resolution_hz:g} Hz, "
-            f"power {cap.p_min_dbm:+.1f} to {cap.p_max_dbm:+.1f} dBm. "
+            + (f"power control {cap.p_min_dbm:+.1f} to {cap.p_max_dbm:+.1f} dBm with "
+               f"option 2 (checked by read-back after each change). "
+               if cap.has_power_control else
+               f"fixed output level {cap.p_default_dbm:+.1f} dBm typical (no power control). ")
             + ("SCPI set documented for this model. " if cap.scpi_documented
                else "SCPI set NOT explicitly documented for this model; "
                     "commands are offered but unverified. ")
@@ -3576,6 +3818,7 @@ class MainControlTab(QtWidgets.QWidget):
             "", labelled_row(self.set_freq_button, self.read_freq_button)
         )
         self.freq_readback = QtWidgets.QLabel("-")
+        self.freq_readback.setWordWrap(True)
         freq_form.addRow("Readback", self.freq_readback)
         left.addWidget(freq_box)
 
@@ -3587,17 +3830,50 @@ class MainControlTab(QtWidgets.QWidget):
         )
         self.set_power_button = QtWidgets.QPushButton("Set power")
         self.read_power_button = QtWidgets.QPushButton("Read (POW?)")
+        #: Cross-check with the native Get Power query (bring-up aid).
+        self.read_power_native_button = QtWidgets.QPushButton("Read (0D)")
+        self.read_power_native_button.setToolTip(
+            "Native Get Power query 0D [R1, Table 4], an independent check on POW?.")
         pow_form.addRow("Power", self.power_spin)
         pow_form.addRow(
-            "", labelled_row(self.set_power_button, self.read_power_button)
+            "", labelled_row(self.set_power_button, self.read_power_button,
+                             self.read_power_native_button)
         )
+        self.power_range_label = QtWidgets.QLabel("-")
+        self.power_range_label.setWordWrap(True)
+        pow_form.addRow("Range", self.power_range_label)
+        self.power_cmd_combo = QtWidgets.QComboBox()
+        self.power_cmd_combo.addItem("Auto: SCPI POW, then native 03 if not applied", "auto")
+        self.power_cmd_combo.addItem("SCPI only (POW +12.0)", "scpi")
+        self.power_cmd_combo.addItem("Native only (030078)", "native")
+        self.power_cmd_combo.setToolTip(
+            "Both command sets are accepted on USB, Ethernet, GPIB and RS232 [R1]. Auto "
+            "tries SCPI and falls back to the native command if POW? shows no change.")
+        pow_form.addRow("Command", self.power_cmd_combo)
         self.power_readback = QtWidgets.QLabel("-")
+        self.power_readback.setWordWrap(True)
         pow_form.addRow("Readback", self.power_readback)
+        #: Shown instead of the controls on fixed-output models.
+        self.power_note = QtWidgets.QLabel("")
+        self.power_note.setWordWrap(True)
+        self.power_note.setVisible(False)
+        pow_form.addRow(self.power_note)
         left.addWidget(pow_box)
 
         out_box = QtWidgets.QGroupBox("Output and reference")
         out_form = QtWidgets.QFormLayout(out_box)
         self.rf_check = QtWidgets.QCheckBox("RF output on (OUTP:STAT)")
+        #: Always-available mute, also on the toolbar and Ctrl+Shift+O.
+        self.rf_off_button = QtWidgets.QPushButton("RF OUTPUT OFF")
+        self.rf_off_button.setToolTip("OUTP:STAT OFF, confirmed with STAT? (Ctrl+Shift+O)")
+        self.rf_off_button.setStyleSheet(
+            # A border makes Qt draw the button from the style sheet alone; with
+            # only a background colour the platform bevel tints it pale red.
+            "QPushButton { background-color: #c62828; color: white; font-weight: bold; "
+            "border: 1px solid #8e1b1b; border-radius: 3px; padding: 6px 14px; } "
+            "QPushButton:hover { background-color: #d32f2f; } "
+            "QPushButton:pressed { background-color: #8e1b1b; } "
+            "QPushButton:disabled { background-color: #8c8c8c; border-color: #6e6e6e; }")
         self.blank_check = QtWidgets.QCheckBox(
             "Blanking on (OUTP:BLAN) - mute while retuning"
         )
@@ -3611,6 +3887,7 @@ class MainControlTab(QtWidgets.QWidget):
         self.refsrc_combo.addItem("Internal OCXO", RefSource.INTERNAL)
         self.refsrc_combo.addItem("External 10 MHz (+/-2 ppm)", RefSource.EXTERNAL)
         out_form.addRow("", self.rf_check)
+        out_form.addRow("", self.rf_off_button)
         out_form.addRow("", self.blank_check)
         out_form.addRow("", self.refout_check)
         out_form.addRow("", self.lockrec_check)
@@ -3695,6 +3972,12 @@ class MainControlTab(QtWidgets.QWidget):
     def _wire(self) -> None:
         """Connect widget signals to controller actions."""
         c = self.ctl
+        # Enter in either box applies it, as the Set button does (0.0.6 only
+        # applied on the button, so a typed level and Enter changed nothing).
+        self._enter_filters = [
+            EnterApplies(self.freq_spin, lambda: c.guard(lambda: self._apply_frequency())),
+            EnterApplies(self.power_spin, lambda: c.guard(lambda: self._apply_power())),
+        ]
         self.set_freq_button.clicked.connect(
             lambda: c.guard(lambda: self._apply_frequency())
         )
@@ -3708,12 +3991,18 @@ class MainControlTab(QtWidgets.QWidget):
         )
         self.read_power_button.clicked.connect(
             lambda: c.guard(lambda: self.power_readback.setText(
-                f"{c.driver.get_power():+.1f} dBm"
+                f"POW? reports {c.driver.get_power():+.1f} dBm"
+            ))
+        )
+        self.read_power_native_button.clicked.connect(
+            lambda: c.guard(lambda: self.power_readback.setText(
+                f"native Get Power (0D) reports {c.driver.get_power_native():+.1f} dBm"
             ))
         )
         self.rf_check.clicked.connect(
             lambda v: c.guard(lambda: c.driver.set_rf_output(v))
         )
+        self.rf_off_button.clicked.connect(c.rf_off)
         self.blank_check.clicked.connect(
             lambda v: c.guard(lambda: c.driver.set_blanking(v))
         )
@@ -3756,15 +4045,49 @@ class MainControlTab(QtWidgets.QWidget):
         )
         self.sync_button.clicked.connect(lambda: c.guard(c.sync_from_instrument))
 
+    def _show_readback(self, label: QtWidgets.QLabel, ok: bool, text: str) -> None:
+        """Readback line: plain when the instrument followed, red otherwise."""
+        label.setText(text if ok else f'<span style="color:#d9483b;">{html.escape(text)}</span>')
+
     def _apply_frequency(self) -> None:
-        """Command the frequency and refresh the readback."""
-        actual = self.ctl.driver.set_frequency(self.freq_spin.value() * 1e9)
-        self.freq_readback.setText(f"commanded {actual / 1e9:.9f} GHz")
+        """Command the frequency, read it back with FREQ? and compare."""
+        commanded, reported = self.ctl.driver.set_frequency_checked(self.freq_spin.value() * 1e9)
+        ok = hz_to_mlhz(reported) == hz_to_mlhz(commanded)
+        text = (f"set {commanded / 1e9:.9f} GHz; instrument reports {reported / 1e9:.9f} GHz"
+                + ("" if ok else " - the instrument did not follow"))
+        self._show_readback(self.freq_readback, ok, text)
+        if not ok:
+            self.ctl.warn(f"FREQ {commanded / 1e9:.9f} GHz sent, but FREQ? reports "
+                          f"{reported / 1e9:.9f} GHz.")
 
     def _apply_power(self) -> None:
-        """Command the level and refresh the readback."""
-        actual = self.ctl.driver.set_power(self.power_spin.value())
-        self.power_readback.setText(f"commanded {actual:+.1f} dBm")
+        """Command the level, read it back with POW? and compare.
+
+        A unit without power-control option 2 accepts POW but keeps its
+        rated level, and *IDN? does not say whether option 2 is fitted, so
+        the read-back is the only way to tell.
+        """
+        mode = self.power_cmd_combo.currentData()
+        commanded, reported, used = self.ctl.driver.set_power_checked(
+            self.power_spin.value(), command_set=mode)
+        ok = abs(reported - commanded) <= POWER_READBACK_TOL_DB
+        how = "SCPI POW" if used == "scpi" else f"native {native_power_command(commanded)}"
+        text = (f"set {commanded:+.1f} dBm ({how}); instrument reports {reported:+.1f} dBm"
+                + ("" if ok else " - the level did not change"))
+        self._show_readback(self.power_readback, ok, text)
+        if ok and mode == "auto" and used == "native":
+            # SCPI POW was ignored but the native command worked: use it
+            # directly from now on, and say so.
+            self.power_cmd_combo.setCurrentIndex(self.power_cmd_combo.findData("native"))
+            self.ctl.warn("SCPI POW did not change the level, the native power command "
+                          "did; switched the power command to Native for this session.")
+        if not ok:
+            tried = "SCPI POW and the native 03 command" if mode == "auto" else how
+            self.ctl.warn(
+                f"{tried} sent for {commanded:+.1f} dBm, but POW? still reports "
+                f"{reported:+.1f} dBm. This unit may not have power-control option 2, or "
+                f"the level is outside what it can produce at this frequency."
+            )
 
     def _do_reset(self) -> None:
         """Reset and immediately read back, rather than assume defaults.
@@ -4106,12 +4429,26 @@ class SweepTab(QtWidgets.QWidget):
         layout.addStretch(1)
 
         self.mode_combo.currentIndexChanged.connect(self._update_enabled)
+        self._power_sweeps_allowed = True
         self.setup_button.clicked.connect(lambda: self.ctl.guard(self._configure))
         self.start_button.clicked.connect(lambda: self.ctl.guard(self._start))
         self.stop_button.clicked.connect(
             lambda: self.ctl.guard(self.ctl.driver.stop_sweep)
         )
         self._update_enabled()
+
+    def set_power_sweeps_allowed(self, allowed: bool, model: str = "") -> None:
+        """Enable or disable the two power-sweep types (fixed-output models)."""
+        self._power_sweeps_allowed = allowed
+        model_items = self.mode_combo.model()
+        for index in range(self.mode_combo.count()):
+            if self.mode_combo.itemData(index) in ("fast_power", "normal_power"):
+                item = model_items.item(index)
+                if item is not None:
+                    item.setEnabled(allowed)
+                    item.setToolTip("" if allowed else f"{model}: fixed output level, no power sweeps")
+        if not allowed and self.mode_combo.currentData() in ("fast_power", "normal_power"):
+            self.mode_combo.setCurrentIndex(self.mode_combo.findData("fast_freq"))
 
     def _update_enabled(self) -> None:
         """Grey out parameters that do not apply to the selected sweep."""
@@ -5048,6 +5385,43 @@ class AppController(QtCore.QObject):
         if self.session is not None:
             self.session.logger.info("UI %s", text)
 
+    def rf_off(self) -> None:
+        """Mute the RF output (OUTP:STAT OFF) and confirm with STAT?."""
+        def action() -> None:
+            self.driver.set_rf_output(False)
+            status = self.driver.get_status()
+            self.window.tab_main.rf_check.setChecked(status.rf_output_on)
+            if status.rf_output_on:
+                self.warn("OUTP:STAT OFF sent, but STAT? still reports the RF output on.")
+            else:
+                self.status_message("RF output OFF (confirmed by STAT?).")
+        self.guard(action)
+
+    def send_raw(self, command: str, as_query: bool) -> None:
+        """Send a command typed on the console's Send line, exactly as typed.
+
+        It goes through the same transport (64-byte check, lock shared with
+        the sampler) and is logged like any other exchange; the reply shows
+        in the console. No interlock or range check applies.
+        """
+        def action() -> None:
+            if as_query:
+                reply = self.driver.io.query(command)
+                self.status_message(f"{command} -> {reply or '(no reply before the timeout)'}")
+            else:
+                self.driver.io.write(command)
+                self.status_message(f"{command} sent (no reply expected).")
+        self.guard(action)
+
+    def warn(self, text: str) -> None:
+        """A warning: status bar (30 s), session log and the SCPI console."""
+        self.window.statusBar().showMessage(f"Warning: {text}", 30_000)
+        if self.session is not None:
+            self.session.logger.warning("%s", text)
+        console = getattr(self.window, "console", None)
+        if console is not None:
+            console.add_note(f"Warning: {text}")
+
     # --- Transaction routing ------------------------------------------------
     def _on_transaction(self, txn: Transaction) -> None:
         """Route a transaction to the session log and the live console."""
@@ -5163,6 +5537,28 @@ class AppController(QtCore.QObject):
             self.window.tab_memory.safe_power,
         ):
             spin.setRange(cap.p_min_dbm, cap.p_max_dbm)
+        # Power control exists only on models with a power-control option
+        # (FSW, option 2 [R4]). Fixed-output models get no editable level and
+        # no power sweeps, and are told why, instead of a box that snaps back.
+        main = self.window.tab_main
+        fixed = not cap.has_power_control
+        main.power_spin.setEnabled(not fixed)
+        main.set_power_button.setEnabled(not fixed)
+        main.power_cmd_combo.setEnabled(not fixed)
+        main.power_range_label.setText(
+            f"{cap.p_min_dbm:+.1f} to {cap.p_max_dbm:+.1f} dBm ({cap.model} with power-control "
+            f"option 2; without it the output stays at {cap.p_default_dbm:+.1f} dBm) [R4]"
+            if not fixed else f"fixed at {cap.p_default_dbm:+.1f} dBm typical ({cap.model})")
+        main.power_note.setVisible(fixed)
+        main.power_note.setText(
+            f"The {cap.model} has a fixed output level ({cap.p_default_dbm:+.1f} dBm "
+            f"typical) and no power-control option [R4], so the level cannot be set."
+            if fixed else "")
+        main.power_spin.setToolTip(
+            "POW. Quantised to 0.1 dB. Needs power-control option 2; the level is "
+            "read back with POW? after each change." if not fixed else
+            f"{cap.model}: fixed output level, no power control.")
+        self.window.tab_sweep.set_power_sweeps_allowed(not fixed, cap.model)
 
     def sync_from_instrument(self) -> None:
         """Read every settable parameter back and refresh the UI."""
@@ -5641,6 +6037,9 @@ class ScpiConsole(QtWidgets.QWidget):
       line up under their commands.
     """
 
+    #: (command, as_query): a command typed on the Send line.
+    commandRequested = QtCore.Signal(str, bool)
+
     MAX_LINES = 5000            #: text-view line limit (oldest dropped)
     MAX_RECORDS = 20_000        #: exchanges retained PER SOURCE for re-filtering
     FLUSH_MS = 150              #: render interval
@@ -5698,6 +6097,24 @@ class ScpiConsole(QtWidgets.QWidget):
         self.view.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.NoWrap)
         self.view.setFont(QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.SystemFont.FixedFont))
         layout.addWidget(self.view, 1)
+        # Send line: any SCPI or native command, for bring-up and debugging.
+        send_row = QtWidgets.QHBoxLayout()
+        self.send_edit = QtWidgets.QLineEdit()
+        self.send_edit.setPlaceholderText(
+            "Send a command:  *IDN?   POW?   0D   01   POW +5.0   030078 ...")
+        self.send_edit.setToolTip(
+            "Sent as typed, CR-terminated, through the same port and 64-byte check as "
+            "every other command, and logged. Enter sends it as a query when it ends "
+            "in '?' or is a native query code (01 02 04 07 0D 10 47 48 49), otherwise "
+            "as a write. It bypasses the GUI's interlocks and range checks, and the "
+            "tabs are not refreshed: use Instrument > Read all settings afterwards.")
+        self.write_button = QtWidgets.QPushButton("Write")
+        self.query_button = QtWidgets.QPushButton("Query")
+        send_row.addWidget(QtWidgets.QLabel("Send:"))
+        send_row.addWidget(self.send_edit, 1)
+        send_row.addWidget(self.write_button)
+        send_row.addWidget(self.query_button)
+        layout.addLayout(send_row)
         self.stats_label = QtWidgets.QLabel()
         layout.addWidget(self.stats_label)
         self._update_stats()
@@ -5720,6 +6137,17 @@ class ScpiConsole(QtWidgets.QWidget):
         self.copy_button.clicked.connect(
             lambda: QtWidgets.QApplication.clipboard().setText(self.view.toPlainText()))
         self.save_button.clicked.connect(self._save_dialog)
+        self.send_edit.returnPressed.connect(
+            lambda: self._send(expects_reply(self.send_edit.text())))
+        self.write_button.clicked.connect(lambda: self._send(False))
+        self.query_button.clicked.connect(lambda: self._send(True))
+
+    def _send(self, as_query: bool) -> None:
+        """Emit the typed command (the main window routes it to the controller)."""
+        command = self.send_edit.text().strip()
+        if command:
+            self.commandRequested.emit(command, as_query)
+            self.send_edit.selectAll()      # ready to resend or overtype
 
     # --- input ---------------------------------------------------------------
     def add_transaction(self, txn: Transaction, source: str = "GUI") -> None:
@@ -5737,6 +6165,19 @@ class ScpiConsole(QtWidgets.QWidget):
         self._n_total += 1
         self._n_errors += 0 if txn.ok else 1
         self._n_polls += 1 if source == "POLL" else 0
+
+    def add_note(self, text: str) -> None:
+        """Show a one-line note, such as a read-back warning, in the error colour.
+
+        Notes are part of the view only: they are not stored with the
+        exchanges, so a filter change or Clear removes them (the session log
+        keeps them).
+        """
+        if not self.pause_button.isChecked():
+            self._render_new()          # draw the exchange the note is about first
+        stamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        self._insert_rows([[(stamp + " ", "meta"), ("NOTE ", "meta"),
+                            ("! " + self._one_line(text), "error")]])
 
     @property
     def records(self) -> list[tuple[Transaction, str]]:
@@ -5836,6 +6277,10 @@ class ScpiConsole(QtWidgets.QWidget):
             rows.append(self._notice(lost + start, approximate and lost > 0))
         for _, txn, source in records[start:]:
             rows.extend(self.format_segments(txn, source))
+        self._insert_rows(rows)
+
+    def _insert_rows(self, rows: list[list[tuple[str, str]]]) -> None:
+        """Append rows of (text, colour key) segments at the end of the view."""
         if not rows:
             return
         bar = self.view.verticalScrollBar()
@@ -6029,6 +6474,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.resizeDocks([self.console_dock], [CONSOLE_DOCK_HEIGHT_PX],
                          QtCore.Qt.Orientation.Vertical)
         self.controller.transactionLogged.connect(self.console.add_transaction)
+        self.console.commandRequested.connect(self.controller.send_raw)
 
         self.statusBar().showMessage("Ready. Connect to an instrument.")
         self._build_menus()
@@ -6094,6 +6540,20 @@ class MainWindow(QtWidgets.QMainWindow):
         act_rf_off.setShortcut("Ctrl+Shift+O")
         act_rf_off.triggered.connect(self._panic_rf_off)
         instrument_menu.addAction(act_rf_off)
+        # The same action on a toolbar, so RF OFF is one click from any tab.
+        self.safety_bar = self.addToolBar("Safety")
+        self.safety_bar.setObjectName("safety_toolbar")
+        self.safety_bar.setMovable(False)
+        self.rf_off_action = QtGui.QAction("RF OFF", self)
+        self.rf_off_action.setToolTip("Turn the RF output off (OUTP:STAT OFF), from any tab. "
+                                      "Ctrl+Shift+O")
+        self.rf_off_action.triggered.connect(self._panic_rf_off)
+        self.safety_bar.addAction(self.rf_off_action)
+        widget = self.safety_bar.widgetForAction(self.rf_off_action)
+        if widget is not None:
+            widget.setObjectName("rf_off_tool_button")
+            widget.setStyleSheet("QToolButton { background-color: #c62828; color: white; "
+                                 "font-weight: bold; padding: 4px 12px; }")
 
         veusz_menu = menubar.addMenu("Veu&sz")
         act_vz_write = QtGui.QAction("&Write session .vszh5 now", self)
@@ -6119,11 +6579,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _panic_rf_off(self) -> None:
         """Mute the RF output immediately, whatever tab is in front."""
-        self.controller.guard(
-            lambda: self.controller.driver.set_rf_output(False)
-        )
-        self.tab_main.rf_check.setChecked(False)
-        self.statusBar().showMessage("RF output muted.", 5000)
+        self.controller.rf_off()
 
     def _build_about_box(self) -> QtWidgets.QMessageBox:
         """Construct the About dialog without showing it.
