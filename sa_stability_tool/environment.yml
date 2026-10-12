@@ -1,25 +1,30 @@
-# Environment for SA Time Stability Tools 0.0.2 (Time_Stability_App.py)
+# Environment for SA Time Stability Tools 0.0.3 (Time_Stability_App.py)
 #
 #   mamba env create -f environment.yml
 #   mamba activate sa_stability
 #   python Time_Stability_App.py
+#   python run_all.py --veusz-python python        # validation suite
 #
-# Version 0.0.2 (Semantic Versioning 2.0.0) - William W. Wallace, NRAO/GBO
+# Version 0.0.3 (Semantic Versioning 2.0.0) - William W. Wallace, NRAO/GBO
 #
 # What each package is for:
-#   numpy, scipy      analysis (scipy.signal.welch for phase noise)
+#   numpy, scipy      analysis (scipy.signal.welch, scipy.fft workers)
 #   matplotlib        the on-screen plots (QtAgg canvas)
-#   pyside6           the GUI
+#   qt.py, pyside6    the GUI (Qt.py abstraction, PySide6 binding)
 #   h5py              writes the native Veusz HDF5 document (.vszh5);
 #                     Veusz is NOT needed for that
+#   threadpoolctl     caps BLAS threads inside the Thêo1 thread pool
 #   allantools        reference implementation, validate_core.py only
-#   veusz             OPTIONAL: open the .vszh5 and render PDF/PNG from it.
-#                     It brings PyQt; the GUI never imports it (the render
-#                     runs in a child process), so PySide6 and PyQt do not
-#                     meet in one process. Delete the line if you use the
-#                     Veusz Windows installer instead (then set
-#                     TIME_STABILITY_VEUSZ to veusz.exe).
+#   veusz             OPTIONAL: open the .vszh5 and render PDF/PNG. It brings
+#                     PyQt; the GUI never imports it (renders run in a child
+#                     process). Delete the line if you use the Veusz Windows
+#                     installer (then set TIME_STABILITY_VEUSZ to veusz.exe).
+#   cupy              OPTIONAL: GPU Thêo1 sums (needs an NVIDIA driver; not
+#                     tested - no GPU was available).
 #   spyder-kernels    OPTIONAL: run the scripts from Spyder in this env.
+#
+# Not tested here: an actual `mamba env create` (no conda in the test VM);
+# the package set was tested with pip wheels of the same packages.
 
 name: sa_stability
 channels:
@@ -29,8 +34,11 @@ dependencies:
   - numpy>=1.26
   - scipy>=1.10
   - matplotlib>=3.7
+  - qt.py>=1.3
   - pyside6>=6.6
   - h5py>=3.0
+  - threadpoolctl>=3.0
   - allantools>=2024.1
   - veusz>=3.6
+  # - cupy
   # - spyder-kernels

@@ -10,8 +10,8 @@
 ===============================================================================
  Title          : Veusz HDF5 Plot Export
  Filename       : veusz_export.py
- Version        : 0.0.2  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
- Package        : SA Time Stability Tools 0.0.2 (GUI: Time_Stability_App.py)
+ Version        : 0.0.3  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Package        : SA Time Stability Tools 0.0.3 (GUI: Time_Stability_App.py)
  Author         : William W. Wallace
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
@@ -71,12 +71,15 @@ DATASETS  (every numeric dataset is float64; tag in brackets)
   stability/theoh_tau_s, theoh_dev,       ThêoH hybrid curve and the  [stability]
             theoh_m, theoh_source         estimator of each point
   noise_id/tau_s, m, slope_adev,          time-domain noise ID        [noise_id]
-           slope_mdev, noise_type, confidence
+           slope_mdev, slope_hdev, noise_type, confidence
   phase_noise/freq_hz, phase_noise/l_dbc_hz   SSB L(f)                [phase_noise]
   phase_noise_id/f_lo_hz, f_hi_hz,        frequency-domain noise ID   [noise_id]
            slope_db_per_decade, noise_type
   curves/<label>_tau_s, curves/<label>_dev    extra sigma-tau curves  [curves]
                                           (0.0.1 sigma_tau_series)
+  plot/<series>_time_s, plot/<series>     min/max envelope of x, residual,
+                                          y (only when longer than
+                                          max_plot_points); pages use these  [plot]
   meta/title, meta/source, meta/generator, meta/parameters_json,
   meta/datasets                           run description             [meta]
 
@@ -152,6 +155,12 @@ REVISION HISTORY
                    0.0.1 functions export_all_plots() and
                    export_all_plots_subprocess() kept as wrappers. Spyder
                    cells; full header.
+0.0.3  2026-10-11  Long series: pages plot a min/max envelope
+                   (envelope_decimate, max_plot_points = 200 000; datasets
+                   plot/*, tag "plot") while raw/* keep every sample - Veusz
+                   draws a few hundred thousand points quickly, not tens of
+                   millions. noise_id/slope_hdev stored (drift detection of
+                   stability_core 0.0.3). Version strings follow the package.
 ===============================================================================
 """
 
@@ -172,7 +181,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -185,7 +194,7 @@ if str(_HERE) not in sys.path:          # sibling modules, also under python -I
 
 import vszh5_writer as vw  # noqa: E402  (needs the path set above)
 
-__version__ = "0.0.2"                   # Semantic Versioning 2.0.0
+__version__ = "0.0.3"                   # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO/GBO"
@@ -198,6 +207,7 @@ PROGRAM_NAME = "Veusz HDF5 Plot Export"
 
 __all__ = [
     "export_vszh5", "render_vszh5", "render_vszh5_subprocess", "render_command",
+    "envelope_decimate", "DEFAULT_MAX_PLOT_POINTS",
     "find_veusz", "export_all_plots", "export_all_plots_subprocess",
     "VEUSZ_ENV_VARS", "PALETTE",
 ]
@@ -241,6 +251,7 @@ DATASET_NOTES = (
     "phase_noise/*: SSB phase noise L(f) in dBc/Hz",
     "phase_noise_id/*: noise type from the local L(f) slope in dB/decade",
     "curves/*: extra sigma-tau curves passed as sigma_tau_series",
+    "plot/*: min/max display envelope of long series (raw/* hold every sample)",
 )
 
 
@@ -284,6 +295,42 @@ def _json_default(obj: Any) -> Any:
 def _running_in_ipython() -> bool:
     """True inside IPython/Spyder, where sys.exit() should not be called."""
     return bool(getattr(builtins, "__IPYTHON__", False))
+
+
+#: Series longer than this are plotted as a min/max envelope.
+DEFAULT_MAX_PLOT_POINTS = 200_000
+
+
+def envelope_decimate(t: Any, v: Any, max_points: int = DEFAULT_MAX_PLOT_POINTS
+                      ) -> "Tuple[np.ndarray, np.ndarray]":
+    """Min/max envelope of a long series for display.
+
+    The series is cut into max_points/2 equal bins; each bin keeps its
+    minimum and maximum sample, in time order, so every excursion stays
+    visible while the point count drops to <= max_points. Series that
+    are already short are returned unchanged. NaN samples are ignored
+    (an all-NaN bin keeps a NaN, i.e. a gap).
+
+    Returns
+    -------
+    (t_d, v_d): float64 arrays.
+    """
+    t = np.asarray(t, dtype=np.float64)
+    v = np.asarray(v, dtype=np.float64)
+    n = v.size
+    if n <= max_points or max_points < 4:
+        return t, v
+    bins = max_points // 2
+    k = int(math.ceil(n / bins))
+    bins = int(math.ceil(n / k))
+    vp = np.concatenate((v, np.full(bins * k - n, np.nan))).reshape(bins, k)
+    nan = np.isnan(vp)
+    i_min = np.argmin(np.where(nan, np.inf, vp), axis=1)
+    i_max = np.argmax(np.where(nan, -np.inf, vp), axis=1)
+    base = np.arange(bins) * k
+    idx = np.stack((base + np.minimum(i_min, i_max), base + np.maximum(i_min, i_max)), axis=1).ravel()
+    idx = np.unique(idx[idx < n])
+    return t[idx], v[idx]
 
 
 # %% ===========================================================================
@@ -389,7 +436,8 @@ def export_vszh5(output_path: "str | os.PathLike",
                  drift: Any = None,
                  title: str = "SA time-stability analysis",
                  source: str = "",
-                 compress: bool = True) -> Path:
+                 compress: bool = True,
+                 max_plot_points: int = DEFAULT_MAX_PLOT_POINTS) -> Path:
     """Write one stability analysis as a native Veusz HDF5 document.
 
     Parameters
@@ -426,6 +474,9 @@ def export_vszh5(output_path: "str | os.PathLike",
         Page title text (printed literally) and the input file name.
     compress:
         gzip+shuffle for arrays of 4096 elements or more.
+    max_plot_points:
+        Longer x, residual and y series are drawn from a min/max envelope
+        (plot/* datasets); raw/* always hold every sample. 0 disables.
 
     Returns
     -------
@@ -502,6 +553,23 @@ def export_vszh5(output_path: "str | os.PathLike",
         if yr is not None:
             w.dataset_1d("raw/frac_freq_residual", yr, tags=raw)
 
+        # ---- display envelopes of long series -----------------------------------
+        # src maps a plotted series to its (x dataset, y dataset) names.
+        src = {"x": ("raw/time_s", "raw/phase_s"), "r": ("raw/time_s", "raw/residual_s"),
+               "y": ("raw/freq_time_s", "raw/frac_freq"),
+               "yr": ("raw/freq_time_s", "raw/frac_freq_residual")}
+        decimated = bool(max_plot_points) and t.size > max_plot_points
+        if decimated:
+            for key, (tt, vv, name) in {"x": (t, x, "phase"), "r": (t, xr, "residual"),
+                                        "y": (y_t, y, "frac_freq"),
+                                        "yr": (y_t, yr, "frac_freq_residual")}.items():
+                if vv is None:
+                    continue
+                t_d, v_d = envelope_decimate(tt, vv, max_plot_points)
+                w.dataset_1d(f"plot/{name}_time_s", t_d, tags=("plot",))
+                w.dataset_1d(f"plot/{name}", v_d, tags=("plot",))
+                src[key] = (f"plot/{name}_time_s", f"plot/{name}")
+
         # ---- AVAR-family sweep -----------------------------------------------
         st = ("stability",)
         has_tdev = False
@@ -530,6 +598,9 @@ def export_vszh5(output_path: "str | os.PathLike",
             w.dataset_1d("noise_id/m", [_get(c, "m") for c in noise_classes], tags=nid)
             w.dataset_1d("noise_id/slope_adev", [_get(c, "slope_adev") for c in noise_classes], tags=nid)
             w.dataset_1d("noise_id/slope_mdev", [_get(c, "slope_mdev") for c in noise_classes], tags=nid)
+            if all(_get(c, "slope_hdev") is not None for c in noise_classes):
+                w.dataset_1d("noise_id/slope_hdev", [_get(c, "slope_hdev") for c in noise_classes],
+                             tags=nid)
             w.dataset_text("noise_id/noise_type", [_get(c, "noise_type", "") for c in noise_classes], nid)
             w.dataset_text("noise_id/confidence", [_get(c, "confidence", "") for c in noise_classes], nid)
 
@@ -558,6 +629,7 @@ def export_vszh5(output_path: "str | os.PathLike",
             "title": title, "source": source, "n_points": int(t.size),
             "tau0_s": tau0, "f0_hz": f0_hz, "span_s": float(t[-1] - t[0]),
             "residual_present": xr is not None,
+            "plot_envelope": bool(decimated), "max_plot_points": int(max_plot_points or 0),
             "n_sigma_tau_points": len(dev_points or []),
             "n_theoh_points": len(theoh_points or []),
         }
@@ -580,15 +652,16 @@ def export_vszh5(output_path: "str | os.PathLike",
         head = f"{vw.vz_text(title)}  -  {n_txt}"
         t_label = "Elapsed time (s)"
 
-        phase_series = [{"name": "x_raw", "x": "raw/time_s", "y": "raw/phase_s",
+        if decimated:
+            head += vw.vz_text(f"  (plots: min/max envelope of {t.size} samples)")
+        phase_series = [{"name": "x_raw", "x": src["x"][0], "y": src["x"][1],
                          "color": PALETTE["blue"], "key": "x(t)"}]
-        resid_series = [{"name": "x_resid", "x": "raw/time_s", "y": "raw/residual_s",
+        resid_series = [{"name": "x_resid", "x": src["r"][0], "y": src["r"][1],
                          "color": PALETTE["orange"], "key": "residual"}]
-        freq_series = [{"name": "y_raw", "x": "raw/freq_time_s", "y": "raw/frac_freq",
+        freq_series = [{"name": "y_raw", "x": src["y"][0], "y": src["y"][1],
                         "color": PALETTE["blue"], "key": "y(t)"}]
-        freq_r_series = [{"name": "y_resid", "x": "raw/freq_time_s",
-                          "y": "raw/frac_freq_residual", "color": PALETTE["orange"],
-                          "key": "y(t) of residual"}]
+        freq_r_series = [{"name": "y_resid", "x": src["yr"][0], "y": src["yr"][1],
+                          "color": PALETTE["orange"], "key": "y(t) of residual"}]
 
         sigma_series: List[Dict[str, Any]] = []
         if has_dev:

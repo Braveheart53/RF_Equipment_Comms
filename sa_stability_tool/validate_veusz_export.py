@@ -10,8 +10,8 @@
 ===============================================================================
  Title          : Veusz HDF5 Export Validation
  Filename       : validate_veusz_export.py
- Version        : 0.0.2  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
- Package        : SA Time Stability Tools 0.0.2
+ Version        : 0.0.3  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Package        : SA Time Stability Tools 0.0.3
  Author         : William W. Wallace
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
@@ -43,7 +43,10 @@ veusz_export.export_vszh5() and checks the file WITHOUT Veusz:
   * the stored command script compiles as Python and creates the pages;
   * the 0.0.1 wrappers export_all_plots() and
     export_all_plots_subprocess() now also write real HDF5;
-  * a failed write leaves the previous file untouched (atomic write).
+  * a failed write leaves the previous file untouched (atomic write);
+  * a long series (300 000 points) keeps every sample in raw/* while the
+    pages plot the min/max envelope plot/* (0.0.3);
+  * the OHDEV slope of the noise identification is stored (0.0.3).
 
 The Veusz-side round trip (Veusz's own loader, bit-exact after load,
 renders) is validate_vszh5_in_veusz.py, run with a Python that has Veusz.
@@ -59,6 +62,7 @@ REVISION HISTORY
 0.0.2  2026-10-11  Rewritten for the native HDF5 export: structure, bit-exact
                    data, script, wrappers, atomic write; exit status; own
                    folder and a temporary folder; full header; Spyder cells.
+0.0.3  2026-10-11  Long-series envelope (plot/*) and noise_id/slope_hdev checks.
 ===============================================================================
 """
 
@@ -83,7 +87,7 @@ import phase_noise as pn      # noqa: E402
 import stability_core as sc   # noqa: E402
 import veusz_export as ve     # noqa: E402
 
-__version__ = "0.0.2"                   # Semantic Versioning 2.0.0
+__version__ = "0.0.3"                   # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __license__ = "GPL-3.0-or-later"
 
@@ -148,6 +152,8 @@ with h5py.File(written, "r") as f:
                [r[2] for r in sorted(theoh, key=lambda r: r[0])]), "ThêoH bit-exact")
     check(same(read_1d(f, "phase_noise/l_dbc_hz"), pn_res.l_f_dbc_hz), "L(f) bit-exact")
     check(len(read_1d(f, "noise_id/tau_s")) == len(classes), "noise-ID table length")
+    check(same(read_1d(f, "noise_id/slope_hdev"), [c.slope_hdev for c in classes]),
+          "noise_id/slope_hdev stored (drift detection)")
     tags = sorted(f["Veusz/Document/Tags"].keys())
     check(tags == ["meta", "noise_id", "phase_noise", "raw", "stability"], "tags " + ", ".join(tags))
     script = f["Veusz/Document/document"][0].decode("utf-8")
@@ -181,6 +187,26 @@ try:
 except ValueError:
     check(True, "length mismatch rejected")
 check(out_path.read_bytes() == before, "failed export leaves the old file intact")
+
+# %% ===========================================================================
+#    LONG SERIES: FULL DATA, ENVELOPE ON THE PAGES
+# =============================================================================
+NL = 300_000
+xl = sc.generate_power_law_phase(NL - 1, 1.0, alpha=-1, seed=11)
+tl = np.arange(NL, dtype=float)
+long_path = ve.export_vszh5(TMP / "long.vszh5", tl, xl, tau0=1.0, title="long")
+with h5py.File(long_path, "r") as f:
+    raw_l = read_1d(f, "raw/phase_s")
+    env = read_1d(f, "plot/phase")
+    script = f["Veusz/Document/document"][0].decode("utf-8")
+    plot_tag = sorted(v.decode() for v in f["Veusz/Document/Tags/plot"][()])
+check(len(raw_l) == NL and same(raw_l, xl),
+      f"raw/phase_s keeps all {NL} samples")
+check(len(env) <= ve.DEFAULT_MAX_PLOT_POINTS and np.nanmax(env) == np.max(xl) and np.nanmin(env) == np.min(xl),
+      f"plot/phase envelope: {len(env)} points, extremes kept")
+check("Set('yData', 'plot/phase')" in script and "Set('yData', 'raw/phase_s')" not in script,
+      "pages draw the envelope, not the raw series")
+check("plot/frac_freq" in plot_tag, "plot/* datasets tagged 'plot'")
 
 shutil.rmtree(TMP, ignore_errors=True)
 print("\n{0} failure(s)".format(len(FAILURES)))

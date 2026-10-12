@@ -10,8 +10,8 @@
 ===============================================================================
  Title          : SA Converter Validation
  Filename       : validate_sa_convert.py
- Version        : 0.0.2  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
- Package        : SA Time Stability Tools 0.0.2
+ Version        : 0.0.3  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Package        : SA Time Stability Tools 0.0.3
  Author         : William W. Wallace
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
@@ -34,18 +34,20 @@ General Public License (file LICENSE) for details.
 
 DESCRIPTION
 -----------
-Writes synthetic generic, Keysight-style and R&S-style export files and a
-batch of trace snapshots into a temporary folder, converts them, and
-prints the detected kind (time series vs frequency trace) and the peak
-values. The files are synthetic: confirm units against a real export
-from your own instrument and firmware.
+Writes synthetic generic, Keysight-style, R&S-style (point and DECIMAL
+COMMA), white-space-delimited files and a batch of trace snapshots into a
+temporary folder, converts them and checks the detected kind, the values,
+the full-precision round trip and the parallel batch. The files are
+synthetic: confirm units against a real export from your own instrument
+and firmware. Exit status 0 = all PASS, 1 = any FAIL.
 
 REVISION HISTORY
 ----------------
-0.0.1  (baseline)  As received; fixed import path, files in /tmp.
-0.0.2  2026-10-11  Imports from its own folder; files in a temporary
-                   folder (works on Windows); full header; Spyder cells.
-                   Tests unchanged.
+0.0.1  (baseline)  As received; fixed import path, files in /tmp, no checks.
+0.0.2  2026-10-11  Own folder, temporary folder, full header, Spyder cells.
+0.0.3  2026-10-11  Every case asserts; new cases: decimal-comma R&S export,
+                   white-space file, 10 GHz precision round trip, value
+                   column check, parallel batch == serial; exit status.
 ===============================================================================
 """
 
@@ -54,6 +56,7 @@ REVISION HISTORY
 # =============================================================================
 from __future__ import annotations
 
+import builtins
 import sys
 import tempfile
 from pathlib import Path
@@ -65,77 +68,108 @@ if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 import sa_convert as sac  # noqa: E402
 
-__version__ = "0.0.2"                   # Semantic Versioning 2.0.0
+__version__ = "0.0.3"                   # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __license__ = "GPL-3.0-or-later"
 
 TMP = Path(tempfile.mkdtemp(prefix="sa_convert_check_"))
+FAILURES = []
 print("working folder:", TMP)
 
-# %% ===========================================================================
-#    1. GENERIC CSV TIME SERIES
-# =============================================================================
-with open(TMP / "generic_ts.csv", "w") as f:
-    f.write("time_s,value\n")
-    for i in range(20):
-        f.write("{0},{1}\n".format(i * 1.0, 1e-9 * np.sin(i / 3.0)))
-kind = sac.convert_to_canonical_csv(str(TMP / "generic_ts.csv"), str(TMP / "generic_ts_out.csv"), vendor="generic")
-print("Generic time-series CSV -> kind detected:", kind, "(expect time_series)")
-print(open(TMP / "generic_ts_out.csv").read()[:150])
 
-# %% ===========================================================================
-#    2. GENERIC CSV FREQUENCY (PHASE-NOISE) TRACE
-# =============================================================================
-freqs = np.logspace(0, 5, 30)  # 1 Hz to 100 kHz - large span_ratio > 1e3
+def check(ok: bool, label: str) -> bool:
+    """Print and record one PASS/FAIL line."""
+    print(("PASS  " if ok else "FAIL  ") + label)
+    if not ok:
+        FAILURES.append(label)
+    return ok
+
+
+def read_back(path: Path) -> np.ndarray:
+    """The two numeric columns of a canonical CSV."""
+    return np.loadtxt(path, delimiter=",", skiprows=1, ndmin=2)
+
+
+freqs = np.logspace(0, 5, 30)  # 1 Hz to 100 kHz
 lf = -20 * np.log10(freqs) - 60
-with open(TMP / "generic_trace.csv", "w") as f:
-    f.write("freq_hz,l_f\n")
-    for a, b in zip(freqs, lf):
-        f.write("{0},{1}\n".format(a, b))
-kind2 = sac.convert_to_canonical_csv(str(TMP / "generic_trace.csv"), str(TMP / "generic_trace_out.csv"), vendor="generic")
-print("\nGeneric freq-trace CSV -> kind detected:", kind2, "(expect freq_trace)")
 
 # %% ===========================================================================
-#    3. KEYSIGHT-STYLE EXPORT WITH METADATA HEADER
+#    1. GENERIC CSV TIME SERIES AND TRACE
 # =============================================================================
-with open(TMP / "keysight_export.csv", "w") as f:
-    f.write("Keysight PXA Phase Noise Measurement\n")
-    f.write("Carrier Frequency: 10000000000 Hz\n")
-    f.write("Frequency Offset (Hz),Phase Noise (dBc/Hz)\n")
-    for a, b in zip(freqs, lf):
-        f.write("{0},{1}\n".format(a, b))
-kind3 = sac.convert_to_canonical_csv(str(TMP / "keysight_export.csv"), str(TMP / "keysight_out.csv"), vendor="keysight")
-print("\nKeysight-style export -> kind detected:", kind3, "(expect freq_trace)")
-print(open(TMP / "keysight_out.csv").read()[:150])
+ts = 1e-9 * np.sin(np.arange(20) / 3.0)
+(TMP / "generic_ts.csv").write_text("time_s,value\n" + "".join(
+    f"{i * 1.0},{repr(float(v))}\n" for i, v in enumerate(ts)))
+kind = sac.convert_to_canonical_csv(str(TMP / "generic_ts.csv"), str(TMP / "generic_ts_out.csv"))
+back = read_back(TMP / "generic_ts_out.csv")
+check(kind == "time_series" and np.array_equal(back[:, 1], ts), "generic time series: kind and exact values")
+(TMP / "generic_trace.csv").write_text("freq_hz,l_f\n" + "".join(
+    f"{a},{b}\n" for a, b in zip(freqs, lf)))
+kind = sac.convert_to_canonical_csv(str(TMP / "generic_trace.csv"), str(TMP / "generic_trace_out.csv"))
+check(kind == "freq_trace", "generic log-spaced trace -> freq_trace")
 
 # %% ===========================================================================
-#    4. R&S-STYLE SEMICOLON-DELIMITED EXPORT
+#    2. KEYSIGHT-STYLE EXPORT WITH METADATA HEADER
 # =============================================================================
-with open(TMP / "rs_export.dat", "w") as f:
-    f.write("Type;FSWP Phase Noise\n")
-    f.write("Center Freq;10000000000 Hz\n")
-    f.write("Values\n")
-    for a, b in zip(freqs, lf):
-        f.write("{0};{1}\n".format(a, b))
-kind4 = sac.convert_to_canonical_csv(str(TMP / "rs_export.dat"), str(TMP / "rs_out.csv"), vendor="rs")
-print("\nR&S-style export -> kind detected:", kind4, "(expect freq_trace)")
-print(open(TMP / "rs_out.csv").read()[:150])
+(TMP / "keysight_export.csv").write_text(
+    "Keysight PXA Phase Noise Measurement\nCarrier Frequency: 10000000000 Hz\n"
+    "Frequency Offset (Hz),Phase Noise (dBc/Hz)\n" + "".join(f"{a},{b}\n" for a, b in zip(freqs, lf)))
+kind = sac.convert_to_canonical_csv(str(TMP / "keysight_export.csv"), str(TMP / "keysight_out.csv"),
+                                    vendor="keysight")
+back = read_back(TMP / "keysight_out.csv")
+check(kind == "freq_trace" and back.shape == (30, 2) and np.allclose(back[:, 1], lf, rtol=0, atol=1e-12),
+      "Keysight-style export: 30 trace points read")
 
 # %% ===========================================================================
-#    5. BATCH MARKER EXTRACTION FROM SNAPSHOT FILES
+#    3. R&S-STYLE SEMICOLON EXPORTS (DECIMAL POINT AND DECIMAL COMMA)
+# =============================================================================
+body = "".join(f"{a!r};{b!r};\n" for a, b in zip(map(float, freqs), map(float, lf)))
+(TMP / "rs_export.dat").write_text("Type;FSWP Phase Noise;\nCenter Freq;10000000000;Hz\nValues;30;\n" + body)
+kind = sac.convert_to_canonical_csv(str(TMP / "rs_export.dat"), str(TMP / "rs_out.csv"), vendor="rs")
+back = read_back(TMP / "rs_out.csv")
+check(kind == "freq_trace" and np.array_equal(back[:, 0], freqs), "R&S export (decimal point, trailing ';')")
+(TMP / "rs_comma.dat").write_text("Type;FSWP Phase Noise;\nCenter Freq;10000000000;Hz\nValues;30;\n"
+                                  + body.replace(".", ","))
+kind = sac.convert_to_canonical_csv(str(TMP / "rs_comma.dat"), str(TMP / "rs_comma_out.csv"), vendor="rs")
+back = read_back(TMP / "rs_comma_out.csv")
+check(kind == "freq_trace" and back.shape == (30, 2) and np.array_equal(back[:, 0], freqs)
+      and np.array_equal(back[:, 1], lf), "R&S export with DECIMAL COMMAS read exactly (0.0.1: no data)")
+
+# %% ===========================================================================
+#    4. WHITE-SPACE FILE, FULL PRECISION, VALUE COLUMN
+# =============================================================================
+f10 = 10e9 + np.array([0.0, 1.234e-3, 2.468e-3, 3.702e-3, 4.936e-3])
+(TMP / "ws.txt").write_text("# counter log\n" + "".join(f"{i}   {v!r}\n" for i, v in enumerate(map(float, f10))))
+kind = sac.convert_to_canonical_csv(str(TMP / "ws.txt"), str(TMP / "ws_out.csv"), value_column_name="freq_hz")
+back = read_back(TMP / "ws_out.csv")
+header = (TMP / "ws_out.csv").read_text().splitlines()[0]
+check(kind == "time_series" and header == "time_s,freq_hz", "white-space file -> time_s,freq_hz")
+check(np.array_equal(back[:, 1], f10), "10 GHz series round-trips bit-exact (0.0.1 lost 3.7 mHz)")
+try:
+    sac.convert_to_canonical_csv(str(TMP / "ws.txt"), str(TMP / "bad.csv"), value_column_name="volts")
+    check(False, "unknown value column rejected")
+except ValueError:
+    check(True, "unknown value column rejected")
+
+# %% ===========================================================================
+#    5. BATCH MARKER EXTRACTION (SERIAL AND PARALLEL)
 # =============================================================================
 paths = []
 rng = np.random.default_rng(3)
-for k in range(6):
-    p = TMP / "snapshot_{0}.csv".format(k)
+for k in range(12):
+    p = TMP / "snapshot_{0:02d}.csv".format(k)
     freqs_k = np.linspace(9.999e9, 10.001e9, 50)
     amp_k = -50 - 20 * ((freqs_k - 1e10) ** 2) / 1e12 + rng.normal(0, 0.1, 50)
-    with open(p, "w") as f:
-        f.write("freq_hz,amp_dbm\n")
-        for a, b in zip(freqs_k, amp_k):
-            f.write("{0},{1}\n".format(a, b))
+    p.write_text("freq_hz,amp_dbm\n" + "".join(f"{a},{b}\n" for a, b in zip(freqs_k, amp_k)))
     paths.append(str(p))
-t_idx, peak_vals = sac.batch_extract_marker_time_series(paths, vendor="generic", marker_index=0)
-print("\nBatch marker extraction peak values (should hover near -50 dBm):", peak_vals)
+_, serial = sac.batch_extract_marker_time_series(paths[:6], vendor="generic")
+_, parallel = sac.batch_extract_marker_time_series(paths, vendor="generic", workers=2)
+print("peaks:", np.round(parallel, 3))
+check(np.all(np.abs(serial + 50) < 1.0), "batch peaks near -50 dBm (6 files, serial)")
+check(np.array_equal(parallel[:6], serial) and len(parallel) == 12, "12-file batch (parallel) = serial")
 
-print("\nALL sa_convert.py smoke tests completed without exceptions.")
+# %% ===========================================================================
+#    SUMMARY
+# =============================================================================
+print("\n{0} failure(s)".format(len(FAILURES)))
+if not getattr(builtins, "__IPYTHON__", False):
+    sys.exit(1 if FAILURES else 0)

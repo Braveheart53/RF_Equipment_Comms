@@ -5,6 +5,117 @@ All notable changes to this package. Versions follow
 internal drafts. Every Python file carries its version in its header and in
 `__version__`.
 
+## 0.0.3 — 2026-10-11
+
+Pass 2 of 2: every defect found in the 0.0.2 review fixed, analysis
+parallelised, GUI moved to Qt.py with menus and a light/dark display, all
+references re-checked. `vszh5_writer.py` stays 0.0.5 (byte-identical to
+QuickSyn's copy); its issues are worked around in `veusz_export.py` and listed
+in the README for the next writer release.
+
+### Fixed (0.0.2 known issues 1–13)
+1. `freq_hz`/`frac_freq` CSVs loaded with `len(x) = len(t) + 1` → time tags
+   extended by one interval (`stability_core.load_canonical_series()`).
+2. Loading new data kept the previous drift fit and results → cleared on
+   load; results of a job that finishes after new data arrive are discarded.
+3. GUI logged "converting to phase" on every load → logs the column read;
+   `f0` is filled from `freq_hz` data. README wording corrected.
+4. Decimal-comma exports (`;`/tab/white space) read as "no numeric data" →
+   delimiter chosen from the data lines, decimal commas read.
+5. Canonical CSV kept 11 significant digits → shortest exact decimal.
+6. Stable32 writer left a partial file on a rejected last-point gap →
+   validation before writing, atomic `.part` + rename, basename in header.
+7. `NOISE_TABLE` "Linear Freq. Drift" (+1.5) → "Random Run FM"; linear drift
+   (ADEV slope +1) detected with the OHDEV slope (`LINEAR_DRIFT_LABEL`).
+8. Drift rate logged "s/s^2" → `D = 2 a2` in 1/s; drift fit on a scaled axis
+   (`Polynomial.fit`), same result as `np.polyfit`.
+9. Single-threaded, on the GUI thread → see *Performance* below.
+10. References corrected (see below).
+11. Validation scripts always exited 0 → PASS/FAIL exit status everywhere.
+12. `PySide6~=6.6.3` pin (no Python 3.13 wheels) → version-gated pins.
+13. GUI on PySide6 directly, no menus, no light/dark → Qt.py, menu bar,
+    View › Light/Dark display (Fusion palette + plot colours, remembered).
+
+### Performance and parallelism
+- Thêo1 kernel on array views with two reused buffers (BLAS capped to one
+  thread): 4.5–5.5× faster per core than 0.0.2 at N = 100 000 (identical
+  results to rounding).
+- ThêoH: all Thêo1 values (bias ladder + grid) in one batch, largest first;
+  spawn process pool ≥ 100 000 points, thread pool ≥ 50 000, serial below
+  (threads measured slower on short records); `theo1_batch()`.
+- BLAS capped to one thread inside the pools (threadpoolctl, reference
+  counted); BLAS-free einsum kernel when threadpoolctl is absent.
+- Optional CuPy GPU path for the Thêo1 sums (not run here: no GPU).
+- Workers capped at the CPUs available; `available_cpus()`,
+  `set_default_workers()`, `gpu_available()`.
+- Spawned workers do not re-run the parent's `__main__` (cell-style scripts,
+  Spyder consoles, the GUI): `__file__`/`__spec__` hidden while a pool starts;
+  a lock makes concurrent pool starts (GUI threads) take turns.
+- GUI analyses on a worker thread with Qt signals; Run All; Threads and GPU
+  controls.
+- Welch FFT on `scipy.fft` worker threads; batch snapshot parsing in a
+  process pool.
+- ThêoH N = 100 000 on the 2-vCPU test VM: 218.1 s (0.0.2) → 26.5 s serial →
+  23.0 s with 2 processes.
+
+### Changed
+- ThêoH grid follows Howe eq. 7 exactly (AVAR for m < k) and ends at the
+  largest even m ≤ N − 1: coverage 75 % (was 62.8 %).
+- Phase-noise identification: windowed least-squares slope over ±0.25 decade
+  of log-binned L(f) (99 % correct on synthetic noise; two-bin method 67 %).
+- Veusz export: min/max display envelope (`plot/*`) for series longer than
+  200 000 points; `noise_id/slope_hdev`.
+- Stable32: value-only layout (`timetags=False`); sigma-tau table skips
+  non-finite rows; frequency and sigma-tau export from the GUI.
+- SA conversion: white-space files; the GUI asks what a time series holds
+  (`phase_s`, `freq_hz`, `frac_freq`); a converted trace is classified.
+- GUI: tau0 down to 1 ns; long series drawn from an envelope; File › Close
+  Data frees memory; Help › About; Export › Render a `.vszh5`.
+- Validation: `validate_core` T7–T11 (allantools.theo1, parallel = serial,
+  CSV loader, drift detection, drift fit); independent seeds and an accuracy
+  test in `validate_phase_noise`; decimal comma, precision and parallel batch
+  in `validate_sa_convert`; envelope in `validate_veusz_export`; long-series
+  document in `validate_vszh5_in_veusz`; menus, themes, threads, reload and
+  exports in `validate_gui`.
+
+### Added
+- `validate_stable32_export.py` (0.0.1's README claimed a Stable32 round-trip
+  test that did not exist), `run_all.py` (parallel suite runner).
+- `README_LuaLaTeX.pdf` and its source `latex/README_LuaLaTeX.tex`: the README
+  typeset with LuaLaTeX (numbered sections, table of contents, live links,
+  bookmark hierarchy). Build: `latexmk -lualatex README_LuaLaTeX.tex`.
+- Both README PDFs carry a PDF bookmark hierarchy (sections > subsections),
+  document metadata and open with the bookmark pane; `README.pdf` URLs are
+  live links.
+- README: the equation appendix and "Rendering" are sub-headings (they show
+  in Obsidian's outline and in the bookmarks); BLAS figures re-measured.
+
+### References corrected
+- ThêoH: *Metrologia* 43(4) pp. **S322–S331**, DOI `10.1088/0026-1394/43/4/`**`S20`**
+  (0.0.1: S322–S327 / `S17`).
+- Thêo1: D. A. Howe and **T. N. Tasset**, Proc. 18th EFTF 2004, pp. 725–728
+  (0.0.1: "F. Vernotte (T. N. Tasset)").
+- ThêoH bias removal: Howe, McGee-Taylor and Tasset, Proc. 2006 IEEE IFCS,
+  pp. 788–792 (0.0.1: "Purdue University OxideMEMS Lab").
+- Greenhall and Riley (Greenhall first), **35th** PTTI meeting, 2003
+  (0.0.1: Riley first, "36th").
+- SP 559 is Kamas & Lombardi, *Time and Frequency Users Manual* (Rev. 1990);
+  0.0.1's [2] merged it with NIST TN 1337 (*Characterization of Clocks and
+  Oscillators*). Both now cited separately.
+- Thêo1's τ = 0.75 m τ₀ attributed to Howe & Tasset, not IEEE 1139.
+- Stable32: distribution via IEEE UFFC; `stable32.com/Manual154.pdf` not
+  verified. Added SciPy, NumPy, CuPy, Qt.py, threadpoolctl, Python
+  multiprocessing and spyder-kernels. Removed the uncited, unverifiable MHM
+  2010 maser guide.
+
+### Also fixed
+- `load_canonical_series()` rejects a `time_s` column that does not increase
+  (a zero or negative median spacing gave tau0 <= 0).
+
+### Documented as data gaps
+- Stable32 interpretation of numeric time tags (MJD days or not).
+- Keysight/R&S manual document numbers.
+
 ## 0.0.2 — 2026-10-11
 
 Pass 1 of 2: the Veusz output is rebuilt on the native HDF5 writer and the

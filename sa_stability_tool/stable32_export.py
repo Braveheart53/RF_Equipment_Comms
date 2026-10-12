@@ -10,8 +10,8 @@
 ===============================================================================
  Title          : Stable32-Compatible Data File Export
  Filename       : stable32_export.py
- Version        : 0.0.2  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
- Package        : SA Time Stability Tools 0.0.2 (GUI: Time_Stability_App.py)
+ Version        : 0.0.3  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Package        : SA Time Stability Tools 0.0.3 (GUI: Time_Stability_App.py)
  Author         : William W. Wallace
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
@@ -21,7 +21,7 @@
  Requires       : numpy
  Licence        : GPL-3.0-or-later (GNU General Public License v3.0 or later)
  Copyright      : Copyright (C) 2026 William W. Wallace
- Status         : Internal draft - validated on synthetic data only
+ Status         : Internal draft - files not yet read back in Stable32
 ===============================================================================
 
 LICENCE
@@ -42,47 +42,57 @@ The full text is in the file LICENSE distributed with this program.
 
 DESCRIPTION
 -----------
-Writes phase or frequency time-series data (and, optionally, deviation
-results) to the ASCII data-file format read natively by Stable32
-(Hamilton Technical Services), so results computed by this tool can be
-cross-checked directly in Stable32 or shared with colleagues who use it.
+Writes phase or frequency time-series data (and deviation results) as
+plain ASCII files for Stable32 (Hamilton Technical Services; now
+distributed by the IEEE UFFC Society) [1], so results can be cross-checked
+in Stable32 or shared with Stable32 users.
 
-Format rules implemented (per the Stable32 manual, Ref. [1]):
-  - Plain ASCII, one data record per line.
-  - Up to 8 space- or comma-delimited columns per line; this exporter
-    writes the simplest widely-compatible layout:
-        phase data (.PHD):  <timetag_s>  <phase_s>
-        freq  data (.FRD):  <timetag_s>  <frac_freq>
-  - Values in double-precision exponential notation (e.g. 1.234567890123E+00).
-  - "Gap = 0" convention: a missing/invalid point is written as exactly
-    "0" (not blank, not NaN) except that the first and last points of a
-    phase-data file must never be a gap (Stable32 requirement).
-  - Optional header block (lines beginning with a recognized keyword are
-    treated as metadata by Stable32 and skipped on import): File:, Date:,
-    Type:, and free-text comment lines beginning with '#' (a Stable32-
-    tolerated convention for extra documentation -- verify with your
-    Stable32 version if strict compliance matters, since the base format
-    technically does not require or define comment lines).
-  - Recommended file extensions: .DAT (general/mixed), .PHD (phase),
-    .FRD (frequency).
+Format written (per the Stable32 documentation [1], [2]):
+  - Plain ASCII, one record per line, tab-delimited.
+        phase data (.PHD):  [timetag]  phase_s
+        freq  data (.FRD):  [timetag]  frac_freq
+  - Values in exponential notation, 16 significant digits (Stable32 lists
+    data with 15-digit precision [2]); time tags 11 significant digits.
+  - "Gap = 0": a missing/invalid point is written as exactly 0; the first
+    and last points of a file must not be gaps. Checked BEFORE the file is
+    opened (0.0.1 wrote the file up to the bad last point, then raised).
+  - Optional '#' comment header (File/Date/Type/Title/Columns). Stable32
+    accepts comments and non-numeric time tags in data files [2]; check
+    your version if strict compliance matters.
+  - Extensions: .PHD (phase), .FRD (frequency), .DAT (general).
 
-Python 3.8 / 3.12 compatible.
+DATA GAP - TIME TAGS: the time-tag column holds elapsed seconds, as in
+0.0.1. Whether Stable32 interprets numeric time tags as MJD (days) when it
+derives tau from them could not be confirmed from the available Stable32
+documentation. Enter tau in Stable32 yourself, or write the file with
+timetags=False (value column only).
+
+The file is written to "<name>.part" and renamed, so an error never leaves
+a truncated file.
 
 REFERENCES (IEEE format)
 ------------------------
-[1] "Stable32 Software Manual," Hamilton Technical Services, rev. 1.54.
-    [Online]. Available: http://www.stable32.com/Manual154.pdf
-[2] W. J. Riley, "Stable32 Frequency Stability Analysis," Hamilton
-    Technical Services application note. [Online].
-    Available: http://www.wriley.com/Learn%20Frequency%20Stability%20Analysis%20Using%20Stable32.pdf
+[1] W. J. Riley, "Stable32 User Manual," Hamilton Technical Services.
+    Stable32 is distributed by the IEEE UFFC Society:
+    https://ieee-uffc.org/technical-committees/frequency-control/educational-resources/frequency-control-software
+    (0.0.1 cited http://www.stable32.com/Manual154.pdf, not verified.)
+[2] W. J. Riley, "Stable32 Tour - Data Listing," Hamilton Technical
+    Services. https://wriley.com/Tour004.htm
 
 REVISION HISTORY
 ----------------
 0.0.1  (baseline)  As received (unversioned archive sa_stability_tool.7z).
-0.0.2  2026-10-11  Full header (version, author, licence, history), version
-                   dunders and Spyder # %% cells. Code unchanged (every
-                   function and class is AST-identical to 0.0.1); known
-                   defects are listed in CHANGELOG.md and fixed in 0.0.3.
+0.0.2  2026-10-11  Full header, version dunders, Spyder cells; code unchanged.
+0.0.3  2026-10-11  FIX: a gap at the first/last point is rejected before the
+                   file is opened (0.0.1 left a partial file). Atomic write
+                   (.part + rename). File name in the header via
+                   os.path.basename (0.0.1 printed the whole Windows path).
+                   Vectorised formatting (one pass, no per-line Python).
+                   timetags=False writes the value column only. Sigma-tau
+                   table: rows with non-finite values are skipped and
+                   counted in the header (Stable32 cannot read NaN).
+                   Time-tag units documented as a data gap. References
+                   updated.
 ===============================================================================
 """
 
@@ -92,11 +102,12 @@ REVISION HISTORY
 from __future__ import annotations
 
 import datetime
-from typing import Optional, Sequence
+import os
+from typing import Iterable, List, Optional, Sequence
 
 import numpy as np
 
-__version__ = "0.0.2"                   # Semantic Versioning 2.0.0
+__version__ = "0.0.3"                   # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO/GBO"
@@ -108,78 +119,119 @@ __copyright__ = "Copyright (C) 2026 William W. Wallace"
 #    PHASE AND FREQUENCY DATA FILES
 # =============================================================================
 def write_stable32_phase_file(path: str, t_s: Sequence[float], x_phase_s: Sequence[float],
-                               title: Optional[str] = None, include_header: bool = True) -> None:
+                              title: Optional[str] = None, include_header: bool = True,
+                              timetags: bool = True) -> None:
     """Write a Stable32-compatible phase-data file (.PHD convention).
-    First and last points are never written as a gap, per Ref. [1]."""
+    First and last points are never written as a gap [1]."""
     t_s = np.asarray(t_s, dtype=float)
     x = np.asarray(x_phase_s, dtype=float)
     if len(t_s) != len(x):
         raise ValueError("t_s and x_phase_s must be the same length")
-    _write_two_column(path, t_s, x, kind="Phase", title=title, include_header=include_header)
+    _write_two_column(path, t_s, x, kind="Phase", title=title,
+                      include_header=include_header, timetags=timetags)
 
 
 def write_stable32_freq_file(path: str, t_s: Sequence[float], y_frac_freq: Sequence[float],
-                              title: Optional[str] = None, include_header: bool = True) -> None:
+                             title: Optional[str] = None, include_header: bool = True,
+                             timetags: bool = True) -> None:
     """Write a Stable32-compatible fractional-frequency data file (.FRD)."""
     t_s = np.asarray(t_s, dtype=float)
     y = np.asarray(y_frac_freq, dtype=float)
     if len(t_s) != len(y):
         raise ValueError("t_s and y_frac_freq must be the same length")
-    _write_two_column(path, t_s, y, kind="Frequency", title=title, include_header=include_header)
+    _write_two_column(path, t_s, y, kind="Frequency", title=title,
+                      include_header=include_header, timetags=timetags)
 
 
 # %% ===========================================================================
 #    TWO-COLUMN WRITER (GAP = 0 CONVENTION)
 # =============================================================================
+def _header(path: str, kind: str, title: Optional[str], columns: str) -> List[str]:
+    """Comment lines that document the file."""
+    lines = [
+        "# File: {0}".format(os.path.basename(path)),
+        "# Date: {0}".format(datetime.datetime.now().isoformat(timespec="seconds")),
+        "# Type: {0}".format(kind),
+    ]
+    if title:
+        lines.append("# Title: {0}".format(title))
+    lines.append("# Columns: {0}".format(columns))
+    return lines
+
+
+def _atomic_write(path: str, text_lines: Iterable[str], table: Optional[np.ndarray] = None,
+                  fmt: str = "") -> None:
+    """Write header lines and an optional numeric table via '<path>.part'."""
+    part = path + ".part"
+    try:
+        with open(part, "w", encoding="ascii", errors="replace", newline="\n") as f:
+            for line in text_lines:
+                f.write(line + "\n")
+            if table is not None and table.size:
+                np.savetxt(f, table, fmt=fmt, delimiter="\t")
+        os.replace(part, path)
+    except BaseException:
+        if os.path.exists(part):
+            os.remove(part)
+        raise
+
+
 def _write_two_column(path: str, t_s: "np.ndarray", v: "np.ndarray", kind: str,
-                       title: Optional[str], include_header: bool) -> None:
+                      title: Optional[str], include_header: bool, timetags: bool = True) -> None:
+    """Gap = 0 two-column writer. Validates everything before writing."""
     n = len(v)
+    if n == 0:
+        raise ValueError("no data to write")
     finite = np.isfinite(v)
-    with open(path, "w") as f:
-        if include_header:
-            f.write("# File: {0}\n".format(path.split("/")[-1]))
-            f.write("# Date: {0}\n".format(datetime.datetime.now().isoformat(timespec="seconds")))
-            f.write("# Type: {0}\n".format(kind))
-            if title:
-                f.write("# Title: {0}\n".format(title))
-            f.write("# Columns: timetag_s  {0}\n".format(
-                "phase_s" if kind == "Phase" else "frac_freq"))
-            f.write("# Generated per Stable32 ASCII data-file convention, Ref. [1] "
-                    "(gap=0, non-gap first/last point).\n")
-        for i in range(n):
-            is_gap = (not finite[i]) and 0 < i < n - 1
-            val = 0.0 if is_gap else float(v[i])
-            if not finite[i] and (i == 0 or i == n - 1):
-                raise ValueError(
-                    "Stable32 format forbids a gap at the first or last data "
-                    "point (index {0}); trim or interpolate the series first.".format(i)
-                )
-            f.write("{0:.10E}\t{1:.15E}\n".format(float(t_s[i]), val))
+    for i in (0, n - 1):
+        if not finite[i]:
+            raise ValueError(
+                "Stable32 format forbids a gap at the first or last data "
+                "point (index {0}); trim or interpolate the series first.".format(i))
+    if timetags and not np.all(np.isfinite(t_s)):
+        raise ValueError("time tags must be finite (or write with timetags=False)")
+    values = np.where(finite, v, 0.0)                    # gap = 0
+    lines: List[str] = []
+    if include_header:
+        col = "phase_s" if kind == "Phase" else "frac_freq"
+        lines = _header(path, kind, title, ("timetag_s  " if timetags else "") + col)
+        lines.append("# Generated per Stable32 ASCII data-file convention, Ref. [1] "
+                     "(gap=0, non-gap first/last point).")
+        n_gap = int(np.count_nonzero(~finite))
+        if n_gap:
+            lines.append("# Gaps written as 0: {0}".format(n_gap))
+    if timetags:
+        _atomic_write(path, lines, np.column_stack((t_s, values)), fmt="%.10E\t%.15E")
+    else:
+        _atomic_write(path, lines, values.reshape(-1, 1), fmt="%.15E")
 
 
 # %% ===========================================================================
 #    SIGMA-TAU RESULTS TABLE
 # =============================================================================
 def write_stable32_sigma_tau_table(path: str, tau_m_dev_rows, columns=("tau_s", "m", "n", "adev"),
-                                    title: Optional[str] = None) -> None:
-    """Write a generic multi-column Sigma-Tau results table in
-    Stable32-readable ASCII (up to 8 columns/line per Ref. [1]) -- useful
-    for exporting this tool's OADEV/MDEV/TDEV/OHDEV sweep results for
-    direct tabular comparison against a Stable32 "Run" computation.
-    tau_m_dev_rows: iterable of tuples matching `columns` order.
+                                   title: Optional[str] = None) -> None:
+    """Write a multi-column sigma-tau results table in Stable32-readable
+    ASCII (at most 8 columns per line [1]) for comparison with a Stable32
+    "Run". tau_m_dev_rows: iterable of tuples in ``columns`` order. Rows
+    with a non-finite value are skipped (Stable32 cannot read NaN) and
+    counted in the header.
     """
     if len(columns) > 8:
         raise ValueError("Stable32 ASCII format supports at most 8 columns per line")
-    with open(path, "w") as f:
-        f.write("# File: {0}\n".format(path.split("/")[-1]))
-        f.write("# Date: {0}\n".format(datetime.datetime.now().isoformat(timespec="seconds")))
-        f.write("# Type: Sigma-Tau results table\n")
-        if title:
-            f.write("# Title: {0}\n".format(title))
-        f.write("# Columns: {0}\n".format("  ".join(columns)))
-        for row in tau_m_dev_rows:
-            f.write("\t".join("{0:.10E}".format(float(v)) if not isinstance(v, int) else str(v)
-                               for v in row) + "\n")
+    body: List[str] = []
+    skipped = 0
+    for row in tau_m_dev_rows:
+        vals = list(row)
+        if any(isinstance(v, float) and not np.isfinite(v) for v in vals):
+            skipped += 1
+            continue
+        body.append("\t".join(str(int(v)) if isinstance(v, (int, np.integer))
+                              else "{0:.10E}".format(float(v)) for v in vals))
+    lines = _header(path, "Sigma-Tau results table", title, "  ".join(columns))
+    if skipped:
+        lines.append("# Rows skipped (non-finite value): {0}".format(skipped))
+    _atomic_write(path, lines + body)
 
 
 # %% ===========================================================================

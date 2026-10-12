@@ -10,8 +10,8 @@
 ===============================================================================
  Title          : Veusz Round-Trip Validation of the .vszh5 Export
  Filename       : validate_vszh5_in_veusz.py
- Version        : 0.0.2  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
- Package        : SA Time Stability Tools 0.0.2
+ Version        : 0.0.3  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Package        : SA Time Stability Tools 0.0.3
  Author         : William W. Wallace
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
@@ -59,6 +59,8 @@ USAGE
 REVISION HISTORY
 ----------------
 0.0.2  2026-10-11  First version (package 0.0.2).
+0.0.3  2026-10-11  Test document carries the 0.0.3 datasets (noise_id/slope_hdev);
+                   a 250 000-point document checks the plot/* envelope in Veusz.
 ===============================================================================
 """
 
@@ -83,7 +85,7 @@ _HERE = _THIS_FILE.parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
-__version__ = "0.0.2"                   # Semantic Versioning 2.0.0
+__version__ = "0.0.3"                   # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __license__ = "GPL-3.0-or-later"
 
@@ -141,7 +143,7 @@ def make_test_document(folder: Path) -> Path:
         f_classes = pn.classify_freq_domain_noise(pn_res)
     except ImportError:
         print("  note: scipy not importable here - phase-noise page not tested")
-    return ve.export_vszh5(folder / "roundtrip test [v0.0.2].vszh5", t, x,
+    return ve.export_vszh5(folder / "roundtrip test [v0.0.3].vszh5", t, x,
                            x_residual=drift.residual_x, tau0=tau0, f0_hz=1e7,
                            dev_points=pts, theoh_points=theoh, noise_classes=classes,
                            phase_noise=pn_res, freq_classes=f_classes, drift=drift,
@@ -308,6 +310,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         path = Path(args.file).resolve() if args.file else make_test_document(work)
         c = run_checks(path, work / "render")
         program_render(path, work / "render_program", c)
+        if not args.file:
+            print("\nLong series (250 000 points, envelope pages):")
+            import stability_core as sc
+            import veusz_export as ve
+            xl = sc.generate_power_law_phase(249_999, 1.0, alpha=0, seed=8)
+            long_doc = ve.export_vszh5(work / "long.vszh5", np.arange(250_000.0), xl, tau0=1.0,
+                                       title="long series")
+            c_long = run_checks(long_doc, work / "render_long")
+            c.n_pass += c_long.n_pass
+            c.failures += ["long: " + f for f in c_long.failures]
     finally:
         if not args.keep:
             shutil.rmtree(work, ignore_errors=True)
