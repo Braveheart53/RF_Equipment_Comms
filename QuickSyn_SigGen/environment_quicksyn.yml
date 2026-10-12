@@ -2,7 +2,7 @@
 #  Mamba environment for the QuickSyn SCPI controller and logger
 # -----------------------------------------------------------------------------
 #  Filename : environment_quicksyn.yml
-#  Version  : 0.0.4 (Semantic Versioning 2.0.0)
+#  Version  : 0.0.6 (Semantic Versioning 2.0.0)
 #  Author   : William W. Wallace <wwallace@nrao.edu>, NRAO/GBO
 #  Licence  : GPL-3.0-or-later (see LICENSE)
 #  Target   : Python 3.12
@@ -10,7 +10,7 @@
 #  Create and activate:
 #      mamba env create -f environment_quicksyn.yml
 #      mamba activate quicksyn
-#      python quicksyn_scpi_gui_v0_0_4.py
+#      python quicksyn_scpi_gui_v0_0_6.py
 #
 #  Update in place after editing this file:
 #      mamba env update -f environment_quicksyn.yml --prune
@@ -28,10 +28,24 @@
 #  * pyserial provides the USB virtual COM port transport.
 #  * h5py writes the Veusz HDF5 document (.vszh5) directly; Veusz itself
 #    is only needed to render PDF/PNG from it or to open it for editing.
+#  * pypdf writes the bookmark hierarchy into the rendered session PDF
+#    (BSD-3-Clause; without it the PDF is written without bookmarks).
+#  * The LuaLaTeX session report needs a TeX distribution with lualatex
+#    (TeX Live or MiKTeX), installed outside this environment. The export
+#    script finds lualatex on the PATH, in C:\texlive\<year>\bin\windows,
+#    in MiKTeX's folder, or via the QUICKSYN_LUALATEX variable; without it
+#    the .tex is still written and can be compiled later.
 #  * qt.py and veusz were confirmed present on conda-forge on 2026-10-09
-#    (qt.py 2.0.3 noarch, veusz 4.2.1); both satisfy the pins below.
+#    (qt.py 2.0.3 noarch, veusz 4.2.1), and pypdf on 2026-10-11 (6.20.0
+#    noarch); all satisfy the pins below.
 #  * Every dependency listed is under a licence compatible with
 #    GPL-3.0-or-later (see README section 14).
+#
+#  History
+#  -------
+#  0.0.4  2026-10-11  h5py and veusz added for the .vszh5 document.
+#  0.0.6  2026-10-11  pypdf added (PDF bookmarks); LuaLaTeX note. (0.0.5 was
+#                     never packaged.)
 # =============================================================================
 name: quicksyn
 
@@ -55,6 +69,7 @@ dependencies:
   - scipy>=1.11              # not required by the scripts; handy alongside
   - h5py>=3.0                # writes the .vszh5 (Veusz HDF5 document)
   - veusz>=3.6               # renders PDF/PNG from the .vszh5 (optional)
+  - pypdf>=4.0               # bookmark hierarchy in the rendered PDF (optional)
 
   # --- diagnostics ---------------------------------------------------------
   - psutil>=5.9              # process RSS readout on the Monitor tab

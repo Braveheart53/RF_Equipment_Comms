@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 William W. Wallace <wwallace@nrao.edu>
 """Run every check in this folder, in parallel, and print a summary table.
 
-Part of the QuickSyn SCPI controller package, version 0.0.4.
+Part of the QuickSyn SCPI controller package, version 0.0.6.
 Author: William W. Wallace <wwallace@nrao.edu>, NRAO/GBO.
 Licence: GPL-3.0-or-later (see ../LICENSE).
 
@@ -16,6 +16,7 @@ The checks are independent processes, so they run concurrently
 Each runs with ``-I`` (isolated mode) so a stray ``PYTHONPATH`` or a file in
 the current directory cannot change what is imported.
 """
+import os
 import subprocess
 import sys
 import time
@@ -24,15 +25,19 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 CHECKS = ("check_release_metadata.py", "check_smoke.py", "check_reduction.py",
-          "check_vszh5.py")
+          "check_vszh5.py", "check_console.py")
 
 
 def run_one(name: str) -> tuple[str, int, float, str]:
     """Run one check; return (name, exit status, seconds, combined output)."""
     t0 = time.perf_counter()
+    # The checks set sys.dont_write_bytecode themselves (-I ignores PYTHON*
+    # variables); PYTHONDONTWRITEBYTECODE covers the export script the GUI
+    # check starts without -I, so no __pycache__ appears in the package.
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
     proc = subprocess.run(
         [sys.executable, "-I", str(HERE / name)],
-        capture_output=True, text=True, timeout=600,
+        capture_output=True, text=True, timeout=900, env=env,
     )
     return name, proc.returncode, time.perf_counter() - t0, proc.stdout + proc.stderr
 

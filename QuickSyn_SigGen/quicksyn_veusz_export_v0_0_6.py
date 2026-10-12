@@ -9,15 +9,15 @@
 
 ===============================================================================
  Title          : QuickSyn Session Reduction and Veusz Export
- Filename       : quicksyn_veusz_export_v0_0_5.py
- Version        : 0.0.5  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Filename       : quicksyn_veusz_export_v0_0_6.py
+ Version        : 0.0.6  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
  Author         : William W. Wallace
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
  Created        : 2026-10-09
- Modified       : 2026-10-09
+ Modified       : 2026-10-11
  Language       : Python 3.12
- Companion to   : quicksyn_scpi_gui_v0_0_5.py
+ Companion to   : quicksyn_scpi_gui_v0_0_6.py
  Licence        : GPL-3.0-or-later (GNU General Public License v3.0 or later)
  Copyright      : Copyright (C) 2026 William W. Wallace
  Status         : Internal draft - NOT yet verified against hardware
@@ -60,6 +60,13 @@ Veusz. No text .vsz is written:
 a .vsz stores embedded data as text with 7 significant digits, an error of
 up to 500 Hz below 10 GHz and 5 kHz from 10 GHz up; the .vszh5 keeps float64.
 
+The rendered PDF carries a bookmark hierarchy (session > overview, time
+series > one entry per quantity, stability > ADEV; needs pypdf). Alongside
+it a LuaLaTeX report is written and, when lualatex is installed, compiled:
+the same plots as vector graphics, with the statistics tables, the
+equations, the instrument identity and references, and the section
+structure as its own bookmark hierarchy.
+
 Two telemetry representations are written by the controller and either can
 be used here:
 
@@ -88,12 +95,17 @@ OUTPUTS (written into the session directory)
     telemetry_reduced.npz         Concatenated records plus derived series
     quicksyn_session.vszh5        Veusz HDF5 document: data + pages.
                                   Open it in Veusz (File > Open) to restyle.
-    quicksyn_session.pdf          Every page, rendered from the .vszh5
+    quicksyn_session.pdf          Every page, rendered from the .vszh5, with
+                                  a bookmark hierarchy (pypdf)
     quicksyn_session_pNN_*.png    Page PNGs (overview only by default)
+    quicksyn_session_report.tex   LuaLaTeX report: statistics, equations and
+                                  every plot page; written when rendering
+    quicksyn_session_report.pdf   The compiled report, with bookmarks (only
+                                  when lualatex is found; .log kept beside it)
 
 USAGE
 -----
-    python quicksyn_veusz_export_v0_0_5.py <session_dir> [options]
+    python quicksyn_veusz_export_v0_0_6.py <session_dir> [options]
 
         --no-gpu            force the NumPy host path
         --no-veusz          compute and tabulate only: no .vszh5, no plots
@@ -107,6 +119,9 @@ USAGE
         --workers N         process-pool size (default: CPUs available to this
                             process, see available_cpus())
         --dpi N             PNG render resolution (default 150)
+        --no-latex          do not write or compile the LuaLaTeX report
+        --lualatex PATH     lualatex to use (default: search QUICKSYN_LUALATEX,
+                            PATH, C:\\texlive\\<year>\\bin\\windows, MiKTeX)
         --version, -V       print version, copyright and licence, then exit
 
 REQUIREMENTS
@@ -116,6 +131,8 @@ REQUIREMENTS
     h5py  >= 3.0      (writes the .vszh5; no Veusz needed for that)
     vszh5_writer.py   (shipped beside this script)
     veusz >= 3.6      (optional; program or package, only to render)
+    pypdf >= 4        (optional; bookmarks in the rendered PDF)
+    LuaLaTeX          (optional; TeX Live or MiKTeX, compiles the report)
     cupy  >= 13       (optional; GPU reductions)
 
 REFERENCES
@@ -193,6 +210,20 @@ REVISION HISTORY
                    package when the Veusz program fails (not only when it is
                    missing), and a program that cannot start is reported as
                    a render failure while the .vszh5 is kept.
+0.0.6  2026-10-11  Released with controller 0.0.6 (0.0.5 was never
+                   packaged; its changes ship here). The rendered PDF gets a
+                   bookmark hierarchy: session > Overview, Time series (one
+                   entry per quantity), Stability (session_outline(), written
+                   by vszh5_writer.add_pdf_bookmarks) plus title, subject and
+                   keywords. New LuaLaTeX report quicksyn_session_report.tex,
+                   compiled to PDF when lualatex is found (find_lualatex()
+                   also searches the TeX Live and MiKTeX folders on Windows):
+                   instrument, timing, signal, thermal and stability tables
+                   with their equations, every plot page as vector graphics
+                   from the Veusz PDF, the session's files and IEEE-style
+                   references; hyperref bookmarks follow the sections and the
+                   bookmark pane opens on load. New options --no-latex and
+                   --lualatex. No change to the reduction or the .vszh5.
 ===============================================================================
 """
 
@@ -214,6 +245,7 @@ if sys.version_info < MIN_PYTHON:  # pragma: no cover
 import argparse
 import csv
 import datetime
+import glob
 import importlib.util
 import gzip
 import json
@@ -221,6 +253,8 @@ import math
 import os
 import pickle
 import re
+import shutil
+import subprocess
 import time
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, asdict
@@ -261,7 +295,7 @@ try:
 except ImportError:  # pragma: no cover - reported by export_veusz()
     vw = None
 
-__version__ = "0.0.5"                 # Semantic Versioning 2.0.0
+__version__ = "0.0.6"                 # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO/GBO"
@@ -271,7 +305,7 @@ __status__ = "Internal draft - not yet verified against hardware"
 PROGRAM_NAME = "QuickSyn Session Reduction and Veusz Export"
 
 #: Record layout written by the controller. Kept in step with
-#: quicksyn_scpi_gui_v0_0_5.TELEMETRY_DTYPE.
+#: quicksyn_scpi_gui_v0_0_6.TELEMETRY_DTYPE.
 TELEMETRY_DTYPE = np.dtype(
     [
         ("idx", "i8"),
@@ -1166,6 +1200,425 @@ def export_veusz(
 
 
 # %% ===========================================================================
+#    PDF BOOKMARKS AND THE LUALATEX SESSION REPORT
+# =============================================================================
+# Veusz writes the plot pages as one PDF without an outline; render_pages()
+# gives it the bookmark hierarchy built by session_outline().
+#
+# The LuaLaTeX report is the LaTeX version of that PDF: the instrument
+# identity, the timing, signal, thermal and stability statistics with their
+# equations, and every plot page, included as vector graphics straight from
+# the Veusz PDF. hyperref turns the sections and subsections into the PDF
+# bookmark hierarchy and opens the bookmark pane on load. The .tex is written
+# whenever the plots are rendered, so it can be compiled (lualatex, twice) or
+# edited on a machine with TeX even when this one has none.
+
+#: File stem of the LaTeX report written into the session folder.
+REPORT_STEM = "quicksyn_session_report"
+
+#: Bookmark and section titles for the Veusz pages written by export_veusz().
+PAGE_TITLES: dict[str, str] = {
+    "page_overview": "Overview (all quantities)",
+    "page_carrier": "Carrier frequency",
+    "page_level": "Output level",
+    "page_thermal": "Internal temperature",
+    "page_latency": "Serial I/O latency",
+    "page_interval": "Sample interval",
+    "page_stability": "Allan deviation of the reported carrier",
+}
+
+
+def session_outline(names: Sequence[str], session_name: str) -> list[tuple]:
+    """Bookmark hierarchy for the session PDF, from its Veusz page names.
+
+    QuickSyn session <name>
+        Overview (all quantities)
+        Time series
+            Carrier frequency, Output level, ... (one per quantity page)
+        Stability
+            Allan deviation of the reported carrier
+
+    Entries follow vszh5_writer.OutlineEntry: (title, page index, children).
+    Pages this function does not know are listed under Time series by name.
+    """
+    index = {name: i for i, name in enumerate(names)}
+    series = [(PAGE_TITLES.get(name, name), index[name]) for name in names
+              if name not in ("page_overview", "page_stability")]
+    children: list[tuple] = []
+    if "page_overview" in index:
+        children.append((PAGE_TITLES["page_overview"], index["page_overview"]))
+    if series:
+        children.append(("Time series", None, series))
+    if "page_stability" in index:
+        children.append(("Stability", None,
+                         [(PAGE_TITLES["page_stability"], index["page_stability"])]))
+    if not children:
+        return [(name, i) for i, name in enumerate(names)]
+    return [(f"QuickSyn session {session_name}", 0, children)]
+
+
+def vszh5_page_names(vszh5: Path) -> list[str]:
+    """Page names, in order, from the document script stored in a .vszh5."""
+    import h5py
+
+    with h5py.File(vszh5, "r") as handle:
+        script = handle["Veusz/Document/document"][0]
+    script = script.decode("utf-8") if isinstance(script, bytes) else str(script)
+    return re.findall(r"Add\('page', name='([^']*)'", script)
+
+
+#: Characters with a meaning in LaTeX, and how to print them literally.
+_TEX_SPECIAL = {
+    "\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#",
+    "_": r"\_", "{": r"\{", "}": r"\}", "~": r"\textasciitilde{}",
+    "^": r"\textasciicircum{}",
+}
+
+
+def tex_escape(text: Any) -> str:
+    """Make any text print literally in LaTeX (LuaLaTeX handles Unicode)."""
+    return "".join(_TEX_SPECIAL.get(ch, ch) for ch in str(text))
+
+
+def find_lualatex(explicit: str = "") -> str:
+    """Locate lualatex: explicit path, QUICKSYN_LUALATEX, PATH, usual folders.
+
+    On Windows the TeX Live default folders (C:\\texlive\\<year>\\bin\\windows,
+    or bin\\win64 before TeX Live 2023) and MiKTeX are searched when lualatex
+    is not on the PATH. Returns "" when none is found.
+    """
+    if explicit:
+        return explicit if os.path.isfile(explicit) else ""
+    env = os.environ.get("QUICKSYN_LUALATEX", "").strip().strip('"')
+    if env and os.path.isfile(env):
+        return env
+    found = shutil.which("lualatex")
+    if found:
+        return found
+    if os.name == "nt":
+        candidates = sorted(glob.glob(r"C:\texlive\*\bin\windows\lualatex.exe"), reverse=True)
+        candidates += sorted(glob.glob(r"C:\texlive\*\bin\win64\lualatex.exe"), reverse=True)
+        local = os.environ.get("LOCALAPPDATA", "")
+        if local:
+            candidates.append(os.path.join(local, "Programs", "MiKTeX", "miktex", "bin",
+                                           "x64", "lualatex.exe"))
+        candidates.append(r"C:\Program Files\MiKTeX\miktex\bin\x64\lualatex.exe")
+        return next((c for c in candidates if os.path.isfile(c)), "")
+    return ""
+
+
+def _fmt(value: Any, fmt: str = "{:.6g}") -> str:
+    """One table cell: 'not available' for NaN, the format for floats."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return r"\emph{not available}"
+    if isinstance(value, float):
+        return tex_escape(fmt.format(value))
+    return tex_escape(value)
+
+
+def _table(caption: str, rows: Sequence[tuple[str, str, str]]) -> list[str]:
+    """A three-column booktabs table (quantity, value, unit) as LaTeX lines."""
+    out = [r"\begin{center}", r"\begin{tabular}{@{}p{0.52\linewidth}p{0.28\linewidth}l@{}}",
+           r"\toprule", r"\textbf{Quantity} & \textbf{Value} & \textbf{Unit} \\", r"\midrule"]
+    out += [f"{label} & {value} & {unit} \\\\" for label, value, unit in rows]
+    out += [r"\bottomrule", r"\end{tabular}", "", rf"\emph{{{caption}}}", r"\end{center}", ""]
+    return out
+
+
+def write_latex_report(session_dir: Path, records: np.ndarray, stats: SessionStatistics,
+                       metadata: dict[str, Any] | None, plots_pdf: Path | None,
+                       page_names: Sequence[str], render_note: str = "") -> Path:
+    """Write <session_dir>/quicksyn_session_report.tex (LuaLaTeX).
+
+    Parameters
+    ----------
+    session_dir:
+        Session folder; the .tex goes here and refers to files beside it.
+    records:
+        Telemetry records (for the session start and end times).
+    stats:
+        Reduction results.
+    metadata:
+        session_metadata.json contents (identity, capability, transport).
+    plots_pdf:
+        The multipage Veusz PDF rendered in this run, or None when the
+        render did not happen; its pages become the plot subsections.
+    page_names:
+        Veusz page names in page order (see vszh5_page_names).
+    render_note:
+        Why the plots are missing, if they are.
+
+    Returns
+    -------
+    pathlib.Path
+        The .tex file.
+    """
+    meta = metadata or {}
+    ident = meta.get("identity", {})
+    cap = meta.get("capability", {})
+    transport = meta.get("transport", {})
+    name = tex_escape(session_dir.name)
+    t_unix = records["t_unix"].astype(np.float64) if records.size else np.zeros(0)
+
+    def local_time(epoch: float) -> str:
+        stamp = datetime.datetime.fromtimestamp(epoch).astimezone()
+        return stamp.strftime("%Y-%m-%d %H:%M:%S %Z (UTC%z)")
+
+    start = local_time(float(t_unix[0])) if t_unix.size else "not available"
+    end = local_time(float(t_unix[-1])) if t_unix.size else "not available"
+    generator = tex_escape(f"quicksyn_veusz_export_v{__version__.replace('.', '_')}.py {__version__}")
+    lines: list[str] = [
+        "% !TeX program = lualatex",
+        f"% QuickSyn session report for {session_dir.name}",
+        f"% Written by quicksyn_veusz_export_v{__version__.replace('.', '_')}.py "
+        f"{__version__} ({__license__}). Compile with LuaLaTeX, twice:",
+        f"%     lualatex {REPORT_STEM}.tex",
+        r"\documentclass[11pt]{article}",
+        r"\usepackage[letterpaper,margin=2cm]{geometry}",
+        r"\usepackage{fontspec}",
+        r"\usepackage{amsmath}",
+        r"\usepackage{booktabs}",
+        r"\usepackage{array}",
+        r"\usepackage{graphicx}",
+        r"\usepackage{xcolor}",
+        r"\usepackage{fancyhdr}",
+        r"\usepackage[bookmarks=true,bookmarksnumbered=true,bookmarksopen=true,"
+        r"bookmarksopenlevel=2,hidelinks]{hyperref}",
+        r"\usepackage{bookmark}",
+        r"\hypersetup{",
+        rf"  pdftitle={{QuickSyn session report: {name}}},",
+        rf"  pdfauthor={{{tex_escape(PROGRAM_NAME)} {__version__}}},",
+        r"  pdfsubject={QuickSyn telemetry session: statistics and plots},",
+        r"  pdfkeywords={QuickSyn, SCPI, telemetry, Allan deviation, Veusz},",
+        r"  pdfcreator={LuaLaTeX},",
+        r"  pdfpagemode=UseOutlines, pdfstartview=FitH}",
+        r"\setlength{\parindent}{0pt}",
+        r"\setlength{\parskip}{0.5\baselineskip}",
+        r"\setlength{\headheight}{14pt}",
+        r"\pagestyle{fancy}",
+        r"\fancyhf{}",
+        rf"\lhead{{\small QuickSyn session {name}}}",
+        r"\rhead{\small\thepage}",
+        rf"\lfoot{{\scriptsize Generated by {generator}}}",
+        r"\title{QuickSyn session report\\[0.3em]\large " + name + "}",
+        rf"\author{{{tex_escape(PROGRAM_NAME)} {__version__}}}",
+        rf"\date{{Session {tex_escape(start)} to {tex_escape(end)}}}",
+        r"\begin{document}",
+        r"\maketitle",
+        r"\thispagestyle{fancy}",
+    ]
+    if transport.get("simulated"):
+        lines += [r"\begin{center}\fcolorbox{red}{white}{\parbox{0.9\linewidth}{\centering",
+                  r"\textbf{SIMULATED SESSION:} no instrument was connected; every value",
+                  r"below comes from the controller's built-in simulator.}}\end{center}", ""]
+    lines += [r"\pdfbookmark[1]{Contents}{contents}", r"\tableofcontents", r"\clearpage", ""]
+
+    # ---- instrument -----------------------------------------------------------
+    lines += [r"\section{Instrument}", "",
+              r"\begin{center}", r"\begin{tabular}{@{}p{0.3\linewidth}p{0.62\linewidth}@{}}",
+              r"\toprule", r"\textbf{Field} & \textbf{Value} \\", r"\midrule",
+              rf"\texttt{{*IDN?}} reply & \texttt{{{tex_escape(ident.get('raw', 'unknown'))}}} \\",
+              rf"Model & {tex_escape(ident.get('model', 'unknown'))} \\",
+              rf"Option field & \texttt{{{tex_escape(ident.get('options', ''))}}} \\",
+              rf"Software version field & \texttt{{{tex_escape(ident.get('firmware', ''))}}} "
+              rf"(= {tex_escape(ident.get('firmware_value'))}) \\",
+              rf"Serial field & \texttt{{{tex_escape(ident.get('serial', ''))}}} \\",
+              rf"Datasheet coverage & {cap.get('f_min_hz', 0) / 1e9:g} to "
+              rf"{cap.get('f_max_hz', 0) / 1e9:g} GHz \\",
+              rf"Transport & {tex_escape(transport.get('port', '?'))} at "
+              rf"{tex_escape(transport.get('baudrate', '?'))} baud"
+              + (r" (simulated)" if transport.get("simulated") else "") + r" \\",
+              r"\bottomrule", r"\end{tabular}", r"\end{center}", "",
+              r"The \texttt{*IDN?} field order is inferred from the native Get ID order in",
+              r"\cite{nicomms}; it is not specified for the SCPI form.", ""]
+
+    # ---- timing -------------------------------------------------------------------
+    def ms(value: float) -> float:
+        return value * 1e3 if math.isfinite(value) else math.nan
+
+    lines += [r"\section{Acquisition timing}", ""]
+    lines += _table("Timing of the telemetry stream.", [
+        ("Samples", _fmt(stats.n_samples), ""),
+        ("Loaded from", _fmt(stats.source), ""),
+        ("Duration", _fmt(stats.duration_s), "s"),
+        ("Requested sample rate", _fmt(stats.requested_rate_hz), "Hz"),
+        ("Achieved sample rate", _fmt(stats.achieved_rate_hz), "Hz"),
+        ("Mean sample interval", _fmt(ms(stats.interval_mean_s)), "ms"),
+        ("Interval standard deviation (jitter)", _fmt(ms(stats.interval_std_s)), "ms"),
+        ("Interval minimum", _fmt(ms(stats.interval_min_s)), "ms"),
+        ("Interval maximum", _fmt(ms(stats.interval_max_s)), "ms"),
+        ("Jitter relative to the period", _fmt(stats.jitter_ppm_of_period), "ppm"),
+        ("Device I/O latency, mean", _fmt(stats.latency_mean_ms), "ms"),
+        ("Device I/O latency, 95th percentile", _fmt(stats.latency_p95_ms), "ms"),
+        ("Device I/O latency, maximum", _fmt(stats.latency_max_ms), "ms"),
+    ])
+    lines += [
+        r"The sample period is the reciprocal of the requested rate $f_s$,",
+        r"\begin{equation}", r"  \tau_0 = \frac{1}{f_s},", r"\end{equation}",
+        r"and the achievable rate is bounded by the serial round trips each sample",
+        r"costs. With $N_q$ queries per sample and a mean round-trip time $t_q$,",
+        r"\begin{equation}", r"  f_{s,\max} = \frac{1}{N_q\,t_q}.", r"\end{equation}",
+        r"The jitter is the standard deviation of the measured intervals,",
+        r"\begin{equation}",
+        r"  \sigma_{\tau_0} = \operatorname{std}\left(t_i - t_{i-1}\right),",
+        r"\end{equation}",
+        r"taken from the monotonic clock of the logging computer.", ""]
+
+    # ---- signal and thermal -----------------------------------------------------------
+    lines += [r"\section{Generated signal}", ""]
+    lines += _table("Signal state reported by the instrument.", [
+        ("Distinct frequencies observed", _fmt(stats.freq_unique_count), ""),
+        ("Frequency minimum", _fmt(stats.freq_min_ghz, "{:.9f}"), "GHz"),
+        ("Frequency maximum", _fmt(stats.freq_max_ghz, "{:.9f}"), "GHz"),
+        ("Power minimum", _fmt(stats.power_min_dbm, "{:+.1f}"), "dBm"),
+        ("Power maximum", _fmt(stats.power_max_dbm, "{:+.1f}"), "dBm"),
+        ("RF output on, fraction of samples", _fmt(stats.rf_on_fraction, "{:.3f}"), ""),
+        ("Samples with RF unlocked", _fmt(stats.rf_unlocked_samples), ""),
+        ("Samples with reference unlocked", _fmt(stats.ref_unlocked_samples), ""),
+        ("Samples with voltage error", _fmt(stats.voltage_error_samples), ""),
+    ])
+    lines += [r"Status bits are decoded from \texttt{STAT?} with the bit map of",
+              r"\cite[Table 5]{nicomms}; the lock bits are set when \emph{unlocked}.", ""]
+    lines += [r"\section{Thermal}", ""]
+    lines += _table("Internal temperature (DIAG:MEAS? 21).", [
+        ("Internal temperature minimum", _fmt(stats.temp_min_c, "{:.1f}"), r"\textdegree{}C"),
+        ("Internal temperature maximum", _fmt(stats.temp_max_c, "{:.1f}"), r"\textdegree{}C"),
+        ("Rise over the session", _fmt(stats.temp_rise_c, "{:+.1f}"), r"\textdegree{}C"),
+        ("Margin to the +75 \\textdegree{}C limit", _fmt(stats.temp_margin_to_75c, "{:.1f}"),
+         r"\textdegree{}C"),
+    ])
+    lines += [r"The +75\,\textdegree{}C internal limit is the caution in \cite{niguide}.", ""]
+
+    # ---- stability ------------------------------------------------------------------------
+    lines += [
+        r"\section{Stability of the reported carrier}", "",
+        r"The fractional frequency error of sample $i$ against the median",
+        r"commanded carrier $f_c$ is",
+        r"\begin{equation}", r"  y_i = \frac{f_i - f_c}{f_c},", r"\end{equation}",
+        r"and the overlapping Allan deviation at averaging time $\tau = m\,\tau_0$",
+        r"follows IEEE Std 1139-2008 \cite{ieee1139}:",
+        r"\begin{equation}",
+        r"  \sigma_y^2(\tau) = \frac{1}{2\,(N-2m+1)\,\tau^2}",
+        r"  \sum_{k=1}^{N-2m+1}\left(x_{k+2m} - 2x_{k+m} + x_k\right)^2,",
+        r"\end{equation}",
+        r"with the phase residuals",
+        r"\begin{equation}", r"  x_k = \tau_0 \sum_{i<k} y_i .", r"\end{equation}",
+        r"This characterises command fidelity and the logging time base, not the",
+        r"phase noise of the carrier: \texttt{FREQ?} returns the commanded setting,",
+        r"not a measurement of the output. Phase noise is specified separately in",
+        r"the datasheet \cite{nidatasheet} and cannot be inferred from this log.", ""]
+    if stats.adev_tau_s:
+        lines += [r"\begin{center}", r"\begin{tabular}{@{}rr@{}}", r"\toprule",
+                  r"\textbf{Averaging time $\tau$ (s)} & \textbf{ADEV $\sigma_y(\tau)$} \\",
+                  r"\midrule"]
+        lines += [f"{tau:.4g} & {dev:.3e} \\\\" for tau, dev in zip(stats.adev_tau_s, stats.adev)]
+        lines += [r"\bottomrule", r"\end{tabular}", r"\end{center}", ""]
+    else:
+        lines += [r"Too few samples for an Allan deviation estimate.", ""]
+
+    # ---- plots ------------------------------------------------------------------------------
+    lines += [r"\clearpage", r"\section{Plots}", ""]
+    if plots_pdf is not None and page_names:
+        lines += [r"Every page of \texttt{" + tex_escape(plots_pdf.name) + r"}, rendered by",
+                  r"Veusz \cite{veusz} from \texttt{quicksyn\_session.vszh5}, included as vector",
+                  r"graphics. Commanded values are drawn as black diamonds.", ""]
+        for number, page in enumerate(page_names, start=1):
+            height = r"0.78\textheight" if page == "page_overview" else r"0.40\textheight"
+            lines += [rf"\subsection{{{tex_escape(PAGE_TITLES.get(page, page))}}}",
+                      r"\begin{center}",
+                      rf"\includegraphics[page={number},width=\linewidth,height={height},"
+                      rf"keepaspectratio]{{{plots_pdf.name}}}",
+                      r"\end{center}", ""]
+            if page == "page_overview":
+                lines.append(r"\clearpage")
+    else:
+        reason = tex_escape(render_note) if render_note else "the render was not run"
+        lines += [r"The plots were not rendered (" + reason + r"). Open",
+                  r"\texttt{quicksyn\_session.vszh5} in Veusz, or render it again.", ""]
+
+    # ---- files and provenance ------------------------------------------------------------
+    lines += [r"\section{Files in the session folder}", "", r"\begin{itemize}"]
+    names = sorted(p.name for p in session_dir.iterdir() if p.is_file())
+    chunks = [item for item in names if re.fullmatch(r"telemetry_chunk_\d+\.pkl\.gz", item)]
+    for item in names:
+        if item.startswith(REPORT_STEM) or item in chunks[1:]:
+            continue
+        if chunks and item == chunks[0] and len(chunks) > 1:
+            lines.append(rf"  \item \texttt{{{tex_escape(chunks[0])}}} to "
+                         rf"\texttt{{{tex_escape(chunks[-1])}}} ({len(chunks)} files)")
+        else:
+            lines.append(rf"  \item \texttt{{{tex_escape(item)}}}")
+    stem = tex_escape(REPORT_STEM)
+    lines += [rf"  \item \texttt{{{stem}.tex}} and \texttt{{{stem}.pdf}} (this report)",
+              r"\end{itemize}", "",
+              r"\section{Provenance}", "",
+              rf"Statistics computed with the {tex_escape(stats.compute_backend)} backend in",
+              rf"{stats.compute_seconds * 1e3:.1f}\,ms by {generator}. The same numbers are",
+              r"in \texttt{reduction\_summary.json} and \texttt{reduction\_summary.md}.", "",
+              r"\phantomsection",
+              r"\addcontentsline{toc}{section}{References}",
+              r"\begin{thebibliography}{9}",
+              r"\bibitem{nicomms} National Instruments, ``QuickSyn Microwave Synthesizers:",
+              r"  Communications Specifications,'' Doc. No. 5580510-01, Santa Clara, CA, USA, 2014.",
+              r"\bibitem{niguide} National Instruments, ``QuickSyn Microwave Frequency",
+              r"  Synthesizer: User Guide,'' Doc. No. 5580513-01, Rev. F.",
+              r"\bibitem{nidatasheet} National Instruments, ``QuickSyn Frequency Synthesizers,''",
+              r"  product brochure and datasheet, Oct. 2017.",
+              r"\bibitem{ieee1139} \emph{IEEE Standard Definitions of Physical Quantities for",
+              r"  Fundamental Frequency and Time Metrology---Random Instabilities}, IEEE Std",
+              r"  1139-2008, 2008. [Online]. Available: \url{https://ieeexplore.ieee.org/document/4797525}",
+              r"\bibitem{veusz} Veusz Developers, ``Veusz---a scientific plotting package.''",
+              r"  [Online]. Available: \url{https://veusz.github.io/}",
+              r"\end{thebibliography}", "",
+              r"\end{document}", ""]
+    tex = session_dir / f"{REPORT_STEM}.tex"
+    tex.write_text("\n".join(lines), encoding="utf-8")
+    return tex
+
+
+def _latex_error(tex: Path, output: str) -> str:
+    """The first error line of a failed LaTeX run (log file, else console)."""
+    log = tex.with_suffix(".log")
+    text = log.read_text(encoding="utf-8", errors="replace") if log.is_file() else output
+    for line in text.splitlines():
+        if line.startswith("!") or re.search(r":\d+: ", line):
+            return line.strip()[:200]
+    return (output.strip().splitlines() or ["no output"])[-1][:200]
+
+
+def compile_latex(tex: Path, lualatex: str, runs: int = 2,
+                  timeout: float = 300.0) -> tuple[Path | None, str]:
+    """Compile a .tex with LuaLaTeX in its own folder.
+
+    Two runs resolve the table of contents and the bookmarks. Auxiliary
+    files are removed after a successful build; the .log is kept.
+
+    Returns
+    -------
+    tuple
+        (the PDF, or None on failure; on failure the first error line from
+        the LaTeX log, otherwise the tail of LuaLaTeX's output).
+    """
+    command = [lualatex, "-interaction=nonstopmode", "-halt-on-error",
+               "-file-line-error", tex.name]
+    flags = {"creationflags": 0x08000000} if os.name == "nt" else {}
+    output = ""
+    for _ in range(runs):
+        try:
+            proc = subprocess.run(command, cwd=tex.parent, capture_output=True, text=True,
+                                  encoding="utf-8", errors="replace", timeout=timeout, **flags)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return None, f"{type(exc).__name__}: {exc}"
+        output = proc.stdout + proc.stderr
+        if proc.returncode != 0:
+            return None, _latex_error(tex, output)
+    for suffix in (".aux", ".out", ".toc"):
+        tex.with_suffix(suffix).unlink(missing_ok=True)
+    pdf = tex.with_suffix(".pdf")
+    return (pdf if pdf.is_file() else None), output[-1500:]
+
+
+# %% ===========================================================================
 #    ENTRY POINT
 # =============================================================================
 def build_parser() -> argparse.ArgumentParser:
@@ -1196,6 +1649,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="process-pool size for chunk loading")
     parser.add_argument("--dpi", type=int, default=150,
                         help="PNG render resolution")
+    parser.add_argument("--no-latex", action="store_true",
+                        help="do not write or compile the LuaLaTeX report")
+    parser.add_argument("--lualatex", default="",
+                        help="lualatex program (default: search)")
     parser.add_argument("--version", "-V", action="version",
                         version=version_banner(),
                         help="print version, copyright and licence, then exit")
@@ -1258,13 +1715,42 @@ def main(argv: Sequence[str] | None = None) -> int:
             plot_note = "render skipped (--no-render)"
         else:
             try:
-                plots = vw.render_pages(vszh5, dpi=args.dpi, pdf=True,
-                                        png_pages=args.png_pages,
-                                        veusz_exe=args.veusz_exe,
-                                        method=args.render_method)
+                plots = vw.render_pages(
+                    vszh5, dpi=args.dpi, pdf=True, png_pages=args.png_pages,
+                    veusz_exe=args.veusz_exe, method=args.render_method,
+                    bookmarks=lambda names: session_outline(names, session_dir.name),
+                    pdf_info={"title": f"QuickSyn session {session_dir.name}",
+                              "subject": "QuickSyn telemetry session plots, rendered by "
+                                         "Veusz from quicksyn_session.vszh5",
+                              "keywords": "QuickSyn, SCPI, telemetry, Veusz"})
+                if importlib.util.find_spec("pypdf") is None:
+                    plot_note = ("PDF has no bookmarks: pypdf is not installed "
+                                 "(mamba install -c conda-forge pypdf)")
             except Exception as exc:  # noqa: BLE001 - report, keep the data
                 plot_note = (f"render not done ({type(exc).__name__}: {exc}); "
                              f"the .vszh5 is complete - open it in Veusz")
+
+    # LuaLaTeX report: written whenever the plots were meant to be rendered,
+    # compiled when lualatex is available. Failure never touches the data.
+    report_pdf: Path | None = None
+    report_note = ""
+    if vszh5 is not None and not args.no_render and not args.no_latex:
+        plots_pdf = vszh5.with_suffix(".pdf")
+        rendered = plots_pdf if plots_pdf in plots else None
+        try:
+            tex = write_latex_report(session_dir, records, stats, metadata, rendered,
+                                     vszh5_page_names(vszh5), render_note=plot_note)
+            exe = find_lualatex(args.lualatex)
+            if exe:
+                report_pdf, latex_log = compile_latex(tex, exe)
+                if report_pdf is None:
+                    report_note = (f"{tex.name} written; LuaLaTeX failed ({latex_log}) - "
+                                   f"see {tex.with_suffix('.log').name}")
+            else:
+                report_note = (f"{tex.name} written; lualatex not found - compile it with "
+                               f"`lualatex {tex.name}` (twice) or set QUICKSYN_LUALATEX")
+        except Exception as exc:  # noqa: BLE001 - report, keep the data
+            report_note = f"LaTeX report not written ({type(exc).__name__}: {exc})"
 
     print(f"session        : {session_dir}")
     print(f"samples        : {stats.n_samples} (from {source}, "
@@ -1284,6 +1770,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"plots          : {', '.join(p.name for p in plots)}")
     if plot_note:
         print(f"plots          : {plot_note}")
+    if report_pdf is not None:
+        print(f"report         : {report_pdf.name} (LuaLaTeX, bookmarks), "
+              f"{report_pdf.with_suffix('.tex').name}")
+    if report_note:
+        print(f"report         : {report_note}")
     return 0
 
 

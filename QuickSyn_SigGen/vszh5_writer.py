@@ -11,14 +11,15 @@
 ===============================================================================
  Title          : Veusz HDF5 Document Writer
  Filename       : vszh5_writer.py
- Version        : 0.0.4  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Version        : 0.0.6  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
  Author         : William W. Wallace
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
  Created        : 2026-10-11
  Modified       : 2026-10-11
  Language       : Python 3.12
- Requires       : numpy, h5py   (Veusz only to open or render the result)
+ Requires       : numpy, h5py   (Veusz only to open or render the result;
+                  pypdf only for PDF bookmarks)
  Licence        : GPL-3.0-or-later (GNU General Public License v3.0 or later)
  Copyright      : Copyright (C) 2026 William W. Wallace
  Derived from   : isp_speed_monitor.py 1.3.0 (VeuszWriter, VszDoc, vz_text,
@@ -94,6 +95,14 @@ That works with a standalone Veusz install (Windows installer) as well as
 with the conda-forge package. If no Veusz program is found but the veusz
 Python package imports, the same load-and-export runs in-process.
 
+PDF BOOKMARKS  (needs pypdf)
+-------------
+Veusz writes a multipage PDF without an outline. render_pages() adds one
+afterwards with add_pdf_bookmarks(): by default one bookmark per page, named
+after the Veusz page; a caller can pass its own hierarchy (a callable that
+receives the page names). The outline opens in the reader's bookmark pane.
+Without pypdf the PDF is still written, only without bookmarks.
+
 DIFFERENCES FROM isp_speed_monitor.py 1.3.0
 -------------------------------------------
 * vz_text() follows Veusz's own latexEscape exactly: '\\' becomes
@@ -104,7 +113,10 @@ DIFFERENCES FROM isp_speed_monitor.py 1.3.0
 * local_utc_offsets(): per-sample UTC offset, so a local-time axis stays
   correct across a daylight-saving change.
 * render_pages(): the --listen method, every page to PNG plus one multipage
-  PDF, Windows-safe paths (repr), and an in-process fallback.
+  PDF, Windows-safe paths (bound outside exec), waits for a done marker, and
+  falls back to the veusz package when the program fails.
+* add_pdf_bookmarks(): a bookmark hierarchy and document information in the
+  rendered PDF.
 
 REFERENCES
 ----------
@@ -121,6 +133,38 @@ REVISION HISTORY
 0.0.4  2026-10-11  First version, released with QuickSyn package 0.0.4
                    (version follows the package). Extracted from
                    isp_speed_monitor.py 1.3.0 and extended as listed above.
+0.0.5  2026-10-11  render_pages(): Windows paths fixed (the PNG path sat
+                   inside an exec() string, so C:\\Users... was unescaped twice;
+                   it is now bound on its own line); method "auto" falls back
+                   to the veusz package when the Veusz program found fails to
+                   render (e.g. a distribution package built for another
+                   Python) and reports both errors otherwise. A program that
+                   exits before reading its script (broken pipe) or cannot
+                   be started is now reported as a failed render rather than
+                   raising BrokenPipeError/OSError, so the fallback runs. The
+                   stdout pipe is closed (ResourceWarning) and Veusz is never
+                   left running after an error.
+0.0.6  2026-10-11  add_pdf_bookmarks(): writes a bookmark (outline) hierarchy
+                   and the document title, author and subject into a PDF with
+                   pypdf, atomically, and opens the outline pane by default.
+                   render_pages() calls it for the multipage PDF (new
+                   parameters bookmarks= and pdf_info=; one bookmark per page
+                   unless the caller supplies a hierarchy); skipped with a
+                   warning, never an error, when pypdf is not installed.
+                   FIX (Veusz 4.x): PDF pages were drawn at 48 % scale in the
+                   top-left corner. Veusz 4.2.1 (and master) lays a PDF out
+                   at 72 dpi, the only resolution Qt's PDF engine reports,
+                   but sets the printer to Export()'s pdfdpi, default 150;
+                   PDFs are now exported with pdfdpi=72 (PDF_DPI). Veusz
+                   3.6.2 was unaffected. The PNGs were always correct, which
+                   is why the 0.0.4 checks, which inspected PNGs, missed it.
+                   FIX: render_pages() returns the files it wrote even when
+                   they already existed. 0.0.5 compared against the folder
+                   listing taken at the start, so a second render into the
+                   same folder returned an empty list (the files were
+                   rewritten, but the export reported no plots).
+                   Released with QuickSyn package 0.0.6 (0.0.5 was never
+                   packaged; its changes ship here).
 ===============================================================================
 """
 
@@ -130,14 +174,17 @@ REVISION HISTORY
 from __future__ import annotations
 
 import datetime as _dt
+import glob
 import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
+import warnings
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Callable, Iterable, Sequence, Union
 
 import numpy as np
 
@@ -146,7 +193,7 @@ try:
 except ImportError:  # pragma: no cover - reported when a writer is created
     h5py = None
 
-__version__ = "0.0.4"                 # Semantic Versioning 2.0.0
+__version__ = "0.0.6"                 # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO/GBO"
@@ -157,6 +204,7 @@ __all__ = [
     "VSZH5_FORMAT", "VSZH5_LAYOUT_VERSION", "VEUSZ_EPOCH", "UNIX_TO_VEUSZ_S",
     "epoch_to_veusz", "local_utc_offsets", "vz_text", "escape_hdf_name",
     "VszDoc", "VeuszWriter", "find_veusz_exe", "render_pages",
+    "add_pdf_bookmarks", "OutlineEntry",
 ]
 
 # %% ===========================================================================
@@ -168,6 +216,12 @@ VSZH5_FORMAT = 1
 VSZH5_LAYOUT_VERSION = "4.2.1"
 #: Arrays at least this long are gzip+shuffle compressed when compress=True.
 COMPRESS_MIN_ELEMENTS = 4096
+#: Resolution passed to Veusz's Export() for PDF. Veusz 4.x lays a PDF page
+#: out at the nearest resolution the Qt PDF engine supports (72) but sets the
+#: printer to the requested pdfdpi (Export() defaults to 150), so the drawing
+#: lands in the top-left 48 % of each page. 72 keeps both the same; Veusz
+#: 3.6 is unaffected, and PDF output is vector, so nothing is lost.
+PDF_DPI = 72
 
 #: Veusz date origin, and the offset that maps Unix seconds onto it.
 VEUSZ_EPOCH = _dt.datetime(2009, 1, 1)
@@ -457,20 +511,119 @@ def _render_script(src: Path, pdf: Path | None, png_stem: Path | None,
         "print('VSZH5_PAGES', len(names), '|'.join(names))",
     ]
     if pdf is not None:
-        lines.append(f"Export({str(pdf)!r}, page=list(range(len(names))))")
+        lines.append(f"Export({str(pdf)!r}, page=list(range(len(names))), pdfdpi={PDF_DPI})")
     if png_stem is not None:
         upto = "len(names)" if png_pages == "all" else "min(1, len(names))"
+        # The path is bound on its own line, where repr() gives a valid
+        # literal; the exec() string carries no path, so a Windows back-slash
+        # is never unescaped a second time (C:\\Users would become \\U...).
+        lines.append(f"vszh5_png_stem = {str(png_stem)!r}")
         lines.append(
-            f"exec(\"for i in range({upto}): Export({str(png_stem)!r} + '_p%02d_%s.png' "
+            f"exec(\"for i in range({upto}): Export(vszh5_png_stem + '_p%02d_%s.png' "
             f"% (i, names[i]), page=[i], dpi={int(dpi)})\")")
     lines += ["print('VSZH5_DONE')", "Quit()", ""]
     return "\n".join(lines)
 
 
+#: One bookmark: (title, page index) or (title, page index, children). A page
+#: index of None points at the first page of the entry's first child.
+OutlineEntry = tuple
+
+#: What render_pages() accepts as bookmarks: True (one per page), False (none),
+#: an outline list, or a callable mapping the Veusz page names to an outline.
+Bookmarks = Union[bool, Sequence[OutlineEntry], Callable[[list[str]], Sequence[OutlineEntry]]]
+
+
+def _outline_parts(entry: OutlineEntry) -> tuple[str, int | None, Sequence[OutlineEntry]]:
+    """Split an outline entry into (title, page, children)."""
+    if len(entry) == 2:
+        return str(entry[0]), entry[1], ()
+    title, page, children = entry
+    return str(title), page, children or ()
+
+
+def add_pdf_bookmarks(pdf_path: str | os.PathLike, outline: Sequence[OutlineEntry],
+                      title: str = "", author: str = "", subject: str = "",
+                      keywords: str = "", open_outline: bool = True) -> int:
+    """Write a bookmark (outline) hierarchy into an existing PDF, in place.
+
+    Parameters
+    ----------
+    pdf_path:
+        The PDF to annotate. It is rewritten through "<name>.part" and
+        os.replace(), so a reader never sees a half-written file.
+    outline:
+        Nested entries, see OutlineEntry. Page indices count from 0.
+    title, author, subject, keywords:
+        Document information; empty strings leave the existing value.
+    open_outline:
+        Expand every level and open the reader's bookmark pane on load.
+
+    Returns
+    -------
+    int
+        Number of bookmarks written.
+
+    Raises
+    ------
+    ImportError
+        pypdf is not installed.
+    ValueError
+        An entry points outside the document.
+    """
+    try:
+        from pypdf import PdfWriter
+    except ImportError as exc:
+        raise ImportError("pypdf is needed for PDF bookmarks "
+                          "(mamba install -c conda-forge pypdf)") from exc
+    path = Path(pdf_path)
+    writer = PdfWriter(clone_from=str(path))
+    n_pages = len(writer.pages)
+
+    def first_page(entry: OutlineEntry) -> int | None:
+        _, page, children = _outline_parts(entry)
+        if page is not None:
+            return int(page)
+        return next((p for p in map(first_page, children) if p is not None), None)
+
+    count = 0
+
+    def add(entries: Sequence[OutlineEntry], parent: Any) -> None:
+        nonlocal count
+        for entry in entries:
+            name, _, children = _outline_parts(entry)
+            target = first_page(entry)
+            if target is None or not 0 <= target < n_pages:
+                raise ValueError(f"bookmark {name!r} points at page {target}; "
+                                 f"the PDF has {n_pages} pages")
+            item = writer.add_outline_item(name, target, parent=parent, is_open=open_outline)
+            count += 1
+            add(children, item)
+
+    add(outline, None)
+    info = {key: value for key, value in (("/Title", title), ("/Author", author),
+                                          ("/Subject", subject), ("/Keywords", keywords))
+            if value}
+    if info:
+        writer.add_metadata(info)
+    if open_outline:
+        writer.page_mode = "/UseOutlines"
+    part = path.with_name(path.name + ".part")
+    try:
+        with open(part, "wb") as handle:
+            writer.write(handle)
+        os.replace(part, path)
+    finally:
+        if part.exists():
+            part.unlink()
+    return count
+
+
 def render_pages(vszh5: str | os.PathLike, outdir: str | os.PathLike | None = None,
                  dpi: int = 150, pdf: bool = True, png_pages: str = "all",
                  veusz_exe: str = "", timeout: float = 600.0,
-                 method: str = "auto") -> list[Path]:
+                 method: str = "auto", bookmarks: Bookmarks = True,
+                 pdf_info: dict[str, str] | None = None) -> list[Path]:
     """Render a .vszh5 to one multipage PDF and per-page PNG files.
 
     Parameters
@@ -488,13 +641,22 @@ def render_pages(vszh5: str | os.PathLike, outdir: str | os.PathLike | None = No
     veusz_exe:
         Veusz program to drive; found with find_veusz_exe() when empty.
     method:
-        "auto" (program if found, else the Python package), "program"
-        (the Veusz executable only) or "inprocess" (the Python package only).
+        "auto" (the program if found, falling back to the Python package if
+        the program fails or is absent), "program" (the Veusz executable
+        only) or "inprocess" (the Python package only).
+    bookmarks:
+        Outline for the PDF: True (default) = one bookmark per page named
+        after the Veusz page; a list of OutlineEntry; a callable that gets
+        the page names and returns such a list; False = none. Needs pypdf;
+        without it a RuntimeWarning is issued and the PDF has no outline.
+    pdf_info:
+        Optional document information for the PDF: title, author, subject,
+        keywords (see add_pdf_bookmarks).
 
     Returns
     -------
     list of Path
-        Files written.
+        Files written by this call (re-rendered files included).
 
     Raises
     ------
@@ -508,7 +670,7 @@ def render_pages(vszh5: str | os.PathLike, outdir: str | os.PathLike | None = No
     stem = out / src.stem
     pdf_path = stem.with_suffix(".pdf") if pdf else None
     png_stem = stem if png_pages in ("all", "first") else None
-    before = set(out.iterdir())
+    started = time.time()
 
     if method not in ("auto", "program", "inprocess"):
         raise ValueError(f"method must be auto, program or inprocess, not {method!r}")
@@ -521,11 +683,54 @@ def render_pages(vszh5: str | os.PathLike, outdir: str | os.PathLike | None = No
             env.setdefault("QT_QPA_PLATFORM", "offscreen")
         script = _render_script(src, pdf_path, png_stem, png_pages, dpi)
         ok, log = _run_listen(exe, script, env, timeout)
+        names = _page_names_from_log(log)
         if not ok:
-            raise RuntimeError(f"Veusz ({exe}) did not finish the render: {log[-800:]}")
+            program_error = (f"Veusz program {exe} did not finish the render "
+                             f"(check that `{os.path.basename(exe)} --version` runs; set "
+                             f"QUICKSYN_VEUSZ to a working Veusz): {log.strip()[-600:]}")
+            if method == "program":
+                raise RuntimeError(program_error)
+            # auto: a Veusz found on the PATH can be broken (e.g. a Linux
+            # distribution package built for another Python), so try the
+            # veusz Python package before giving up.
+            try:
+                names = _render_in_process(src, pdf_path, png_stem, png_pages, dpi)
+            except RuntimeError as exc:
+                raise RuntimeError(f"{program_error}\nIn-process fallback: {exc}") from exc
     else:
-        _render_in_process(src, pdf_path, png_stem, png_pages, dpi)
-    return sorted(p for p in out.iterdir() if p not in before and p.suffix in (".pdf", ".png"))
+        names = _render_in_process(src, pdf_path, png_stem, png_pages, dpi)
+
+    if pdf_path is not None and pdf_path.is_file() and bookmarks is not False:
+        if bookmarks is True:
+            outline = [(name, i) for i, name in enumerate(names)]
+        elif callable(bookmarks):
+            outline = list(bookmarks(list(names)))
+        else:
+            outline = list(bookmarks)
+        try:
+            if outline:
+                add_pdf_bookmarks(pdf_path, outline, **(pdf_info or {}))
+        except ImportError as exc:
+            warnings.warn(f"{pdf_path.name} written without bookmarks: {exc}",
+                          RuntimeWarning, stacklevel=2)
+
+    # Report what this call wrote, including files that existed before and
+    # were overwritten (0.0.5 compared against the folder listing taken at
+    # the start, so a re-render returned nothing).
+    written = [pdf_path] if pdf_path is not None else []
+    if png_stem is not None:
+        written += sorted(out.glob(f"{glob.escape(png_stem.name)}_p[0-9][0-9]_*.png"))
+    return sorted(p for p in written
+                  if p.is_file() and p.stat().st_mtime >= started - 2.0)
+
+
+def _page_names_from_log(log: str) -> list[str]:
+    """Veusz page names from the VSZH5_PAGES line the render script prints."""
+    for line in log.splitlines():
+        if line.startswith("VSZH5_PAGES"):
+            parts = line.split(maxsplit=2)
+            return parts[2].split("|") if len(parts) == 3 and parts[2] else []
+    return []
 
 
 def _run_listen(exe: str, script: str, env: dict[str, str], timeout: float) -> tuple[bool, str]:
@@ -539,17 +744,30 @@ def _run_listen(exe: str, script: str, env: dict[str, str], timeout: float) -> t
     import threading
 
     with tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as err:
-        proc = subprocess.Popen([exe, "--listen", "--quiet"], stdin=subprocess.PIPE,
-                                stdout=subprocess.PIPE, stderr=err, text=True,
-                                encoding="utf-8", errors="replace", env=env,
-                                **_popen_kwargs())
+        try:
+            proc = subprocess.Popen([exe, "--listen", "--quiet"], stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE, stderr=err, text=True,
+                                    encoding="utf-8", errors="replace", env=env,
+                                    **_popen_kwargs())
+        except OSError as exc:      # missing, not executable, wrong architecture
+            return False, f"cannot start {exe}: {type(exc).__name__}: {exc}"
         killer = threading.Timer(timeout, proc.kill)
         killer.start()
         lines: list[str] = []
         done = False
         try:
-            proc.stdin.write(script)
-            proc.stdin.close()
+            try:
+                proc.stdin.write(script)
+                proc.stdin.close()
+            except OSError:
+                # BrokenPipeError: the program exited before reading its
+                # script (typically it cannot start at all). Not fatal here:
+                # its stderr says why, and the missing VSZH5_DONE marker
+                # reports the failure to the caller, which may fall back.
+                try:
+                    proc.stdin.close()
+                except OSError:
+                    pass
             for line in proc.stdout:
                 lines.append(line)
                 if line.startswith("VSZH5_DONE"):
@@ -566,13 +784,20 @@ def _run_listen(exe: str, script: str, env: dict[str, str], timeout: float) -> t
                     proc.wait()
         finally:
             killer.cancel()
+            if proc.poll() is None:     # an exception above: never leave Veusz behind
+                proc.kill()
+                proc.wait()
+            proc.stdout.close()         # the pipe is ours to close (ResourceWarning)
         err.seek(0)
         return done, "".join(lines) + err.read()
 
 
 def _render_in_process(src: Path, pdf_path: Path | None, png_stem: Path | None,
-                       png_pages: str, dpi: int) -> None:
-    """Fallback: render with the veusz Python package in this process."""
+                       png_pages: str, dpi: int) -> list[str]:
+    """Fallback: render with the veusz Python package in this process.
+
+    Returns the page names, for the PDF bookmarks.
+    """
     try:
         if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
             os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -592,11 +817,12 @@ def _render_in_process(src: Path, pdf_path: Path | None, png_stem: Path | None,
         raise RuntimeError(f"{src.name} loaded as an empty Veusz document")
     ci = vdoc.CommandInterface(doc)
     if pdf_path is not None:
-        ci.Export(str(pdf_path), page=list(range(len(pages))))
+        ci.Export(str(pdf_path), page=list(range(len(pages))), pdfdpi=PDF_DPI)
     if png_stem is not None:
         upto = len(pages) if png_pages == "all" else 1
         for i in range(upto):
             ci.Export(f"{png_stem}_p{i:02d}_{pages[i].name}.png", page=[i], dpi=dpi)
+    return [page.name for page in pages]
 
 
 # %% ===========================================================================

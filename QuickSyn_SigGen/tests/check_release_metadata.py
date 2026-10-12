@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 William W. Wallace <wwallace@nrao.edu>
 """Release metadata, licence and About-dialog checks.
 
-Part of the QuickSyn SCPI controller package, version 0.0.4.
+Part of the QuickSyn SCPI controller package, version 0.0.6.
 Author: William W. Wallace <wwallace@nrao.edu>, NRAO/GBO.
 Licence: GPL-3.0-or-later (see ../LICENSE).
 
@@ -11,11 +11,14 @@ Run directly (``python tests/check_release_metadata.py``) or through
 
 What it checks
 --------------
-1. Both scripts carry the SPDX tags, the author / company / email / version /
-   licence fields, no ``Project`` line and no leftover template placeholders.
+1. The GUI, the export script and vszh5_writer.py carry the SPDX tags, the
+   author / company / email / version / licence fields, a 0.0.6 history
+   entry, no ``Project`` line and no leftover template placeholders; every
+   other Python file in the package (tests, upstream check) carries the SPDX
+   tags and the package version.
 2. The version is valid Semantic Versioning 2.0.0 and is the same in the
    header, in ``__version__``, in the file name, in the README and in the
-   environment file.
+   environment file; the GUI runs the export script of the same version.
 3. ``LICENSE`` is the unmodified GPL-3.0 text (SHA-256) and contains the three
    notice paragraphs that the program embeds, character for character.
 4. ``--version`` prints the identity block for both scripts and exits 0.
@@ -41,13 +44,13 @@ sys.path.insert(0, str(PKG))
 sys.dont_write_bytecode = True   # keep __pycache__ out of the package tree
 
 # ---------------------------------------------------------------- expectations
-VERSION = "0.0.4"
+VERSION = "0.0.6"
 AUTHOR = "William W. Wallace"
 COMPANY = "NRAO/GBO"
 EMAIL = "wwallace@nrao.edu"
 LICENCE_ID = "GPL-3.0-or-later"
-GUI = PKG / "quicksyn_scpi_gui_v0_0_4.py"
-EXPORT = PKG / "quicksyn_veusz_export_v0_0_4.py"
+GUI = PKG / "quicksyn_scpi_gui_v0_0_6.py"
+EXPORT = PKG / "quicksyn_veusz_export_v0_0_6.py"
 WRITER = PKG / "vszh5_writer.py"
 # SHA-256 of the GPL-3.0 text as distributed by the FSF and packaged in
 # /usr/share/common-licenses/GPL-3 (674 lines).
@@ -78,12 +81,17 @@ def squash(text: str) -> str:
 # ------------------------------------------------------------ 1. file manifest
 print("1. Package manifest")
 for rel in (
-    "quicksyn_scpi_gui_v0_0_4.py", "quicksyn_veusz_export_v0_0_4.py", "vszh5_writer.py",
+    "quicksyn_scpi_gui_v0_0_6.py", "quicksyn_veusz_export_v0_0_6.py", "vszh5_writer.py",
     "environment_quicksyn.yml", "README_quicksyn_controller.md", "LICENSE",
-    "tests/check_smoke.py", "tests/check_reduction.py",
+    "tests/check_smoke.py", "tests/check_reduction.py", "tests/check_console.py",
     "tests/check_release_metadata.py", "tests/check_vszh5.py", "tests/run_all.py",
+    "upstream/veusz-4.2.1-vszh5-load-quit-pdfdpi.patch",
+    "upstream/VEUSZ_UPSTREAM_ISSUE.md", "upstream/check_veusz_patch.py",
+    "tools/build_readme_pdf.py", "README_quicksyn_controller.pdf", "README_quicksyn_controller.tex",
 ):
     check((PKG / rel).is_file(), f"present: {rel}")
+stale = sorted(p.name for p in PKG.glob("*_v0_0_*.py") if VERSION.replace(".", "_") not in p.name)
+check(not stale, "no script of another version in the package", ", ".join(stale))
 
 # --------------------------------------------------- 2. header and dunder checks
 print("2. Header fields, SPDX tags and version consistency")
@@ -120,6 +128,8 @@ for path in (GUI, EXPORT, WRITER):
     check("GNU General Public License" in doc
           and "either version 3 of the License, or" in doc,
           f"{tag}: GPL notice in header")
+    check(re.search(rf"^{re.escape(VERSION)}\s+\d{{4}}-\d{{2}}-\d{{2}}\s", doc, re.MULTILINE) is not None,
+          f"{tag}: revision history has a {VERSION} entry")
 
     dunders = {}
     for node in tree.body:
@@ -141,15 +151,44 @@ for path in (GUI, EXPORT, WRITER):
     if path is not WRITER:   # an importable module keeps a fixed name
         check(VERSION.replace(".", "_") in path.name, f"{tag}: file name carries version")
 
-check("quicksyn_veusz_export_v0_0_4.py" in GUI.read_text(encoding="utf-8"),
+check(EXPORT.name in GUI.read_text(encoding="utf-8"),
       "GUI header names the matching export script")
-check("quicksyn_scpi_gui_v0_0_4.py" in EXPORT.read_text(encoding="utf-8"),
+check(GUI.name in EXPORT.read_text(encoding="utf-8"),
       "export header names the matching GUI script")
+gui_tree = ast.parse(GUI.read_text(encoding="utf-8"))
+companion = next((ast.literal_eval(n.value) for n in gui_tree.body
+                  if isinstance(n, ast.AnnAssign) and getattr(n.target, "id", "") == "COMPANION_EXPORT_SCRIPT"),
+                 None)
+check(companion == EXPORT.name, "GUI runs the export script of the same version", str(companion))
+
+# Every other Python file: SPDX tags and the package version in its docstring.
+for path in sorted(list((PKG / "tests").glob("*.py")) + list((PKG / "upstream").glob("*.py"))
+                   + list((PKG / "tools").glob("*.py"))):
+    head = path.read_text(encoding="utf-8").splitlines()[:8]
+    check(any(ln.startswith("# SPDX-License-Identifier: " + LICENCE_ID) for ln in head)
+          and any("SPDX-FileCopyrightText" in ln and EMAIL in ln for ln in head),
+          f"{path.parent.name}/{path.name}: SPDX tags")
+    check(f"package, version {VERSION}." in path.read_text(encoding="utf-8"),
+          f"{path.parent.name}/{path.name}: states package version {VERSION}")
 
 readme = (PKG / "README_quicksyn_controller.md").read_text(encoding="utf-8")
 envtxt = (PKG / "environment_quicksyn.yml").read_text(encoding="utf-8")
-check(VERSION in readme and "v0_0_3" not in readme.split("## 11.")[0],
-      "README states 0.0.4 and no stale 0.0.3 file names before the history")
+before_history = readme.split("## 11.")[0]
+stale_names = sorted(set(re.findall(r"_v0_0_\d+\.py", before_history)) - {f"_v{VERSION.replace('.', '_')}.py"})
+readme_pdf = PKG / "README_quicksyn_controller.pdf"
+try:
+    from pypdf import PdfReader
+    _r = PdfReader(str(readme_pdf))
+    check(len(_r.outline) > 10 and _r.page_mode == "/UseOutlines",
+          "README PDF has a bookmark hierarchy and opens the outline pane",
+          f"{len(_r.pages)} pages")
+    check(readme_pdf.stat().st_mtime >= (PKG / "README_quicksyn_controller.md").stat().st_mtime - 1,
+          "README PDF is not older than the README")
+except ImportError:
+    print("  [SKIP] README PDF bookmarks  - pypdf is not installed")
+check(f"**Version {VERSION}**" in readme and not stale_names,
+      f"README states {VERSION} and names no other version's scripts before the history",
+      ", ".join(stale_names))
 check(all(s in readme for s in (AUTHOR, COMPANY, EMAIL, LICENCE_ID)),
       "README carries author, company, email and licence")
 check(VERSION in envtxt and EMAIL in envtxt, "environment file carries version and email")
@@ -162,7 +201,7 @@ check(hashlib.sha256(lic_bytes).hexdigest() == LICENSE_SHA256,
       "LICENSE SHA-256 matches the reference GPL-3.0 text")
 check("GNU GENERAL PUBLIC LICENSE" in lic and "Version 3, 29 June 2007" in lic,
       "LICENSE identifies GPL version 3")
-import quicksyn_scpi_gui_v0_0_4 as app  # noqa: E402  (after sys.path setup)
+import quicksyn_scpi_gui_v0_0_6 as app  # noqa: E402  (after sys.path setup)
 
 flat_lic = squash(lic)
 for i, para in enumerate(app.GPL_NOTICE_PARAGRAPHS, 1):
@@ -172,7 +211,7 @@ for i, para in enumerate(app.GPL_NOTICE_PARAGRAPHS, 1):
 print("4. --version")
 for path in (GUI, EXPORT):
     proc = subprocess.run(
-        [sys.executable, "-I", str(path), "--version"],
+        [sys.executable, "-I", "-B", str(path), "--version"],
         capture_output=True, text=True, timeout=60,
     )
     out = proc.stdout
@@ -182,7 +221,8 @@ for path in (GUI, EXPORT):
 
 # --------------------------------------------- 5. interpreter compatibility
 print(f"5. Interpreter compatibility (running {sys.version.split()[0]})")
-for path in (GUI, EXPORT, WRITER):
+for path in (GUI, EXPORT, WRITER, *sorted((PKG / "tests").glob("*.py")),
+             *sorted((PKG / "upstream").glob("*.py")), *sorted((PKG / "tools").glob("*.py"))):
     # The built-in compile() checks syntax for the running interpreter and,
     # unlike py_compile, writes nothing to disk (no __pycache__ in the package).
     try:

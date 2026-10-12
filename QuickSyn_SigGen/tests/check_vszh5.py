@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 William W. Wallace <wwallace@nrao.edu>
 """Veusz HDF5 document (.vszh5) checks: vszh5_writer.py and export_veusz().
 
-Part of the QuickSyn SCPI controller package, version 0.0.4.
+Part of the QuickSyn SCPI controller package, version 0.0.6.
 Author: William W. Wallace <wwallace@nrao.edu>, NRAO/GBO.
 Licence: GPL-3.0-or-later (see ../LICENSE).
 
@@ -25,6 +25,16 @@ What it checks
    exist, the layout matches Veusz's own re-save, and the in-process render
    works. Set QUICKSYN_TEST_VEUSZ_EXE to a Veusz program to also test the
    --listen program render. Checks that cannot run are reported as SKIP.
+5. Render plumbing without Veusz: a Windows path with a quote survives the
+   --listen script, PDFs are exported with pdfdpi=72, a broken Veusz program
+   or one that cannot start is a RuntimeError, and method='auto' falls back.
+6. The rendered PDF (needs Veusz and pypdf): pages drawn full size (Veusz
+   4.x drew them at 48 %), the bookmark hierarchy and document information,
+   a render into a folder named odd \\dir 'q', and a re-render returning
+   its files.
+7. The LuaLaTeX report: tex_escape, the bookmark outline, a valid LuaLaTeX
+   document with no unescaped underscores, and, when lualatex is found, a
+   compiled PDF whose bookmarks follow the sections; the CLI writes it.
 
 Exit status is 0 when every check that ran passed, 1 otherwise.
 """
@@ -49,7 +59,7 @@ import numpy as np   # noqa: E402
 import h5py          # noqa: E402
 
 import vszh5_writer as vw                      # noqa: E402
-import quicksyn_veusz_export_v0_0_4 as qe      # noqa: E402
+import quicksyn_veusz_export_v0_0_6 as qe      # noqa: E402
 
 results: list[tuple[str, str, str]] = []
 
@@ -309,6 +319,255 @@ if exe:
           f"{Path(exe).name}, {time.monotonic() - t0:.1f} s")
 else:
     skip("Veusz program render via --listen", "set QUICKSYN_TEST_VEUSZ_EXE to run it")
+
+# =========================================================== 5. render plumbing
+print("5. Render plumbing (no Veusz needed)")
+
+
+class _Recorder:
+    """Stand-in for Veusz's Export(): records the file names it is given."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict]] = []
+
+    def __call__(self, filename, **kw):
+        self.calls.append((filename, kw))
+
+
+win_src = Path(r"C:\Users\new\tmp 'q'\doc.vszh5")
+win_stem = Path(r"C:\Users\new\tmp 'q'\doc")
+lines = vw._render_script(win_src, Path(r"C:\Users\new\tmp 'q'\doc.pdf"), win_stem, "all", 40).splitlines()
+rec_export = _Recorder()
+namespace = {"Export": rec_export, "names": ["page_overview", "page_carrier"],
+             "len": len, "range": range, "list": list}
+for line in lines:
+    if line.startswith(("Export(", "vszh5_png_stem", "exec(")):
+        exec(line, namespace)   # the same statements Veusz would run
+pngs = [c[0] for c in rec_export.calls if c[0].endswith(".png")]
+pdfs = [c for c in rec_export.calls if c[0].endswith(".pdf")]
+check(pngs == [str(win_stem) + "_p00_page_overview.png", str(win_stem) + "_p01_page_carrier.png"],
+      "Windows path with a quote survives the --listen script", pngs[0] if pngs else "no PNG")
+check(len(pdfs) == 1 and pdfs[0][0] == r"C:\Users\new\tmp 'q'\doc.pdf"
+      and pdfs[0][1].get("pdfdpi") == vw.PDF_DPI == 72,
+      "PDF exported with pdfdpi=72 (Veusz 4.x page-scale fix)", str(pdfs[0][1]) if pdfs else "")
+
+fake_dir = work / "fake_veusz"
+fake_dir.mkdir()
+fake_py = fake_dir / "fake_veusz.py"
+fake_py.write_text("import sys\nsys.stderr.write('fake veusz: cannot start Qt\\n')\nsys.exit(3)\n")
+if os.name == "nt":
+    broken = fake_dir / "fake_veusz.bat"
+    broken.write_text(f'@"{sys.executable}" "{fake_py}" %*\r\n')
+else:
+    broken = fake_dir / "fake_veusz"
+    broken.write_text(f"#!{sys.executable}\n" + fake_py.read_text())
+    broken.chmod(0o755)
+try:
+    vw.render_pages(target, outdir=work / "broken_prog", veusz_exe=str(broken), method="program")
+    check(False, "broken Veusz program reported (method='program')", "no exception")
+except RuntimeError as exc:
+    msg = str(exc)
+    check("fake veusz: cannot start Qt" in msg and "--version" in msg,
+          "broken Veusz program reported (method='program')", msg.splitlines()[0][:90])
+not_exec = fake_dir / "not_a_program.txt"
+not_exec.write_text("plain text\n")
+try:
+    vw.render_pages(target, outdir=work / "noexec", veusz_exe=str(not_exec), method="program")
+    check(False, "a program that cannot start is a RuntimeError", "no exception")
+except RuntimeError as exc:
+    check("cannot start" in str(exc), "a program that cannot start is a RuntimeError, not OSError",
+          str(exc).splitlines()[0][:90])
+except OSError as exc:
+    check(False, "a program that cannot start is a RuntimeError, not OSError", repr(exc))
+
+
+if ok_vz:
+    files = vw.render_pages(target, outdir=work / "broken_auto", veusz_exe=str(broken),
+                            method="auto", png_pages="first")
+    check(any(f.suffix == ".pdf" for f in files),
+          "broken program, method='auto': falls back to the Veusz package", f"{len(files)} files")
+else:
+    try:
+        vw.render_pages(target, outdir=work / "broken_auto", veusz_exe=str(broken), method="auto")
+        check(False, "broken program, method='auto': both errors reported", "no exception")
+    except RuntimeError as exc:
+        check("Veusz program" in str(exc) and "In-process fallback" in str(exc),
+              "broken program, method='auto': both errors reported (no Veusz package here)")
+
+# =========================================================== 6. rendered PDF
+print("6. Rendered PDF: page scale, bookmarks, re-render")
+EXE = os.environ.get("QUICKSYN_TEST_VEUSZ_EXE", "")
+have_pypdf = importlib.util.find_spec("pypdf") is not None
+render_how = ("program", EXE) if EXE else (("inprocess", "") if ok_vz else (None, ""))
+pdf_names = ("render into a folder named odd \\dir 'q'", "PDF pages drawn full size",
+             "PDF bookmark hierarchy (session > overview, time series, stability)",
+             "PDF document information and outline pane", "re-render returns its files",
+             "bookmark pointing outside the PDF is refused")
+plots_pdf = None
+
+
+def text_reach(pdf: Path, index: int) -> float:
+    """Rightmost text position on a PDF page as a fraction of its width."""
+    from pypdf import PdfReader
+
+    page = PdfReader(str(pdf)).pages[index]
+    xs: list[float] = []
+
+    def visit(text, cm, tm, _font, _size):
+        if text.strip():
+            xs.append(tm[4] * cm[0] + tm[5] * cm[2] + cm[4])
+
+    page.extract_text(visitor_text=visit)
+    return max(xs) / float(page.mediabox.width) if xs else 0.0
+
+
+def outline_tree(pdf: Path) -> list:
+    """The PDF outline as nested (title, page number, children) tuples."""
+    from pypdf import PdfReader
+
+    reader = PdfReader(str(pdf))
+
+    def walk(items) -> list:
+        out_: list = []
+        for item in items:
+            if isinstance(item, list):
+                out_[-1] = (out_[-1][0], out_[-1][1], walk(item))
+            else:
+                out_.append((item.title, reader.get_destination_page_number(item), []))
+        return out_
+    return walk(reader.outline)
+
+
+if render_how[0] is None:
+    for name in pdf_names:
+        skip(name, "no Veusz here: set QUICKSYN_TEST_VEUSZ_EXE or install the veusz package")
+elif not have_pypdf:
+    for name in pdf_names:
+        skip(name, "pypdf is not installed")
+else:
+    from pypdf import PdfReader
+
+    odd = work / "odd \\dir 'q'"
+    files = vw.render_pages(out, outdir=odd, dpi=40, png_pages="all", veusz_exe=render_how[1],
+                            method=render_how[0],
+                            bookmarks=lambda names: qe.session_outline(names, session.name),
+                            pdf_info={"title": f"QuickSyn session {session.name}",
+                                      "subject": "check_vszh5"})
+    plots_pdf = odd / "axis_local.pdf"
+    check(len(files) == 8 and plots_pdf.is_file(), pdf_names[0],
+          f"{render_how[0]} {Path(render_how[1]).name}".strip() + f", {len(files)} files")
+    reach = [text_reach(plots_pdf, i) for i in range(len(PdfReader(str(plots_pdf)).pages))]
+    check(min(reach) > 0.85, pdf_names[1], "text reaches " + ", ".join(f"{r:.2f}" for r in reach))
+    tree = outline_tree(plots_pdf)
+    expected = [(f"QuickSyn session {session.name}", 0, [
+        ("Overview (all quantities)", 0, []),
+        ("Time series", 1, [("Carrier frequency", 1, []), ("Output level", 2, []),
+                            ("Internal temperature", 3, []), ("Serial I/O latency", 4, []),
+                            ("Sample interval", 5, [])]),
+        ("Stability", 6, [("Allan deviation of the reported carrier", 6, [])])])]
+    check(tree == expected, pdf_names[2], "10 bookmarks, 3 levels" if tree == expected else str(tree))
+    reader = PdfReader(str(plots_pdf))
+    check(reader.metadata.title == f"QuickSyn session {session.name}"
+          and reader.metadata.subject == "check_vszh5" and reader.page_mode == "/UseOutlines",
+          pdf_names[3], f"title {reader.metadata.title!r}, page mode {reader.page_mode}")
+    again = vw.render_pages(out, outdir=odd, dpi=40, png_pages="all", veusz_exe=render_how[1],
+                            method=render_how[0])
+    check(len(again) == 8, pdf_names[4], f"{len(again)} files the second time")
+    try:
+        vw.add_pdf_bookmarks(odd / "axis_local.pdf", [("Nowhere", 99)])
+        check(False, pdf_names[5], "no exception")
+    except ValueError as exc:
+        check("page 99" in str(exc), pdf_names[5])
+    # Restore the full outline for the report check below.
+    vw.add_pdf_bookmarks(plots_pdf, qe.session_outline(
+        [f"page_{p}" for p in ("overview", "carrier", "level", "thermal", "latency",
+                               "interval", "stability")], session.name))
+
+# =========================================================== 7. LuaLaTeX report
+print("7. LuaLaTeX report")
+check(qe.tex_escape(r"a_b%c$d#e&f{g}h~i^j\k") ==
+      r"a\_b\%c\$d\#e\&f\{g\}h\textasciitilde{}i\textasciicircum{}j\textbackslash{}k",
+      "tex_escape covers every LaTeX special character")
+outline = qe.session_outline(["page_overview", "page_carrier", "page_stability"], "S_1")
+check(outline == [("QuickSyn session S_1", 0, [("Overview (all quantities)", 0),
+                                                ("Time series", None, [("Carrier frequency", 1)]),
+                                                ("Stability", None,
+                                                 [("Allan deviation of the reported carrier", 2)])])],
+      "session_outline builds the bookmark hierarchy from page names")
+check(qe.vszh5_page_names(out) == pages, "page names read back from the .vszh5")
+rep_dir = work / "20261011_140000_FSW-0020_report"
+rep_dir.mkdir()
+meta_rep = {"identity": {"raw": "Phase Matrix,FSW-0020,00000007,0106,300A", "model": "FSW-0020",
+                         "options": "00000007", "firmware": "0106", "firmware_value": 106,
+                         "serial": "300A"},
+            "capability": {"f_min_hz": 0.5e9, "f_max_hz": 20e9},
+            "transport": {"port": "SIM", "baudrate": 115200, "simulated": True},
+            "sampler": {"rate_hz": 10.0}}
+if plots_pdf is not None:
+    import shutil as _shutil
+    _shutil.copy(plots_pdf, rep_dir / "quicksyn_session.pdf")
+tex = qe.write_latex_report(rep_dir, rec, stats, meta_rep,
+                            (rep_dir / "quicksyn_session.pdf") if plots_pdf is not None else None,
+                            pages, render_note="" if plots_pdf is not None else "test without Veusz")
+tex_text = tex.read_text(encoding="utf-8")
+check(tex.name == "quicksyn_session_report.tex" and "% !TeX program = lualatex" in tex_text
+      and "\\usepackage{fontspec}" in tex_text and "bookmarksopen=true" in tex_text
+      and "pdfpagemode=UseOutlines" in tex_text, ".tex is a LuaLaTeX document with hyperref bookmarks")
+body = tex_text.split("\\begin{document}", 1)[1]
+body = re.sub(r"\\begin\{equation\}.*?\\end\{equation\}", "", body, flags=re.S)
+body = re.sub(r"\$[^$]*\$", "", body)
+body = re.sub(r"\\includegraphics\[[^\]]*\]\{[^}]*\}", "", body)
+body = re.sub(r"\\url\{[^}]*\}", "", body)
+loose = [ln.strip() for ln in body.splitlines() if re.search(r"(?<!\\)_", ln)]
+check(not loose, "no unescaped underscore in the report text", "; ".join(loose)[:120])
+check("SIMULATED SESSION" in tex_text, "simulated session flagged in the report")
+lualatex = qe.find_lualatex()
+if not lualatex:
+    for name in ("report compiles with LuaLaTeX", "report bookmark hierarchy",
+                 "report outline pane and title"):
+        skip(name, "lualatex not found (install TeX Live or MiKTeX, or set QUICKSYN_LUALATEX)")
+elif not have_pypdf:
+    skip("report checks", "pypdf is not installed")
+else:
+    from pypdf import PdfReader
+
+    t0 = time.monotonic()
+    report, log_tail = qe.compile_latex(tex, lualatex)
+    check(report is not None and report.is_file(), "report compiles with LuaLaTeX",
+          f"{time.monotonic() - t0:.1f} s" if report else log_tail[:120])
+    if report is not None:
+        tree = outline_tree(report)
+        titles = [t[0] for t in tree]
+        plot_children = next((t[2] for t in tree if t[0].endswith("Plots")), [])
+        want_plots = 7 if plots_pdf is not None else 0
+        check(titles[:1] == ["Contents"] and any(t.endswith("Instrument") for t in titles)
+              and any(t.endswith("Stability of the reported carrier") for t in titles)
+              and titles[-1:] == ["References"]
+              and len(plot_children) == want_plots, "report bookmark hierarchy",
+              f"{len(titles)} top-level, {len(plot_children)} under Plots")
+        reader = PdfReader(str(report))
+        check(reader.page_mode == "/UseOutlines" and (reader.metadata.title or "").startswith(
+              "QuickSyn session report"), "report outline pane and title",
+              f"{len(reader.pages)} pages")
+        check(not any(tex.with_suffix(s).exists() for s in (".aux", ".out", ".toc")),
+              "auxiliary files removed after the build")
+
+if render_how[0] is not None and lualatex:
+    cli2 = work / "20261011_150000_FSW-0020_cli_render"
+    cli2.mkdir()
+    with gzip.open(cli2 / "telemetry_chunk_0000.pkl.gz", "wb") as fh:
+        pickle.dump({"records": rec}, fh)
+    (cli2 / "session_metadata.json").write_text(json.dumps(meta_rep))
+    argv = [str(cli2), "--workers", "1", "--png-pages", "first", "--dpi", "40"]
+    argv += ["--veusz-exe", EXE] if EXE else ["--render-method", "inprocess"]
+    rc = qe.main(argv)
+    made = sorted(p.name for p in cli2.iterdir())
+    check(rc == 0 and {"quicksyn_session.pdf", "quicksyn_session_report.pdf",
+                       "quicksyn_session_report.tex"} <= set(made),
+          "CLI render writes the plots PDF and the LuaLaTeX report", ", ".join(m for m in made
+                                                                        if "report" in m))
+else:
+    skip("CLI render writes the plots PDF and the LuaLaTeX report", "needs Veusz and lualatex")
 
 # =========================================================== summary
 failed = [r for r in results if r[0] == "FAIL"]

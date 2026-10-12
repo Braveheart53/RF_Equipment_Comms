@@ -1,0 +1,76 @@
+--- a/veusz/document/commandinterpreter.py
++++ b/veusz/document/commandinterpreter.py
+@@ -172,8 +172,44 @@
+         # return output streams
+         sys.stdout, sys.stderr, sys.stdin = saved
+ 
++    @staticmethod
++    def _isHDF5File(filename):
++        """Whether filename is an HDF5 file, such as a .vszh5 document.
++
++        The 8-byte HDF5 signature is at offset 0, or at 512, 1024, 2048...
++        when the file starts with a user block.
++        """
++        signature = b'\x89HDF\r\n\x1a\n'
++        try:
++            with io.open(filename, 'rb') as f:
++                offset = 0
++                while True:
++                    f.seek(offset)
++                    head = f.read(8)
++                    if len(head) < 8:
++                        return False
++                    if head == signature:
++                        return True
++                    offset = 512 if offset == 0 else offset*2
++        except EnvironmentError:
++            return False
++
+     def Load(self, filename):
+-        """Replace the document with a new one from the filename."""
++        """Replace the document with a new one from the filename.
++
++        Text documents (.vsz) are run as scripts; HDF5 documents (.vszh5)
++        are loaded with Document.load(mode='hdf5').
++        """
++
++        if self._isHDF5File(filename):
++            absfname = os.path.abspath(filename)
++            self.document.load(absfname, mode='hdf5')
++            self.interface.To('/')
++            self.document.filename = absfname
++            self.document.setModified()
++            self.document.setModified(False)
++            self.document.clearHistory()
++            return
+ 
+         with io.open(filename, 'r', encoding='utf8') as f:
+             self.document.wipe()
+--- a/veusz/document/export.py
++++ b/veusz/document/export.py
+@@ -156,7 +156,11 @@
+         """Do the export."""
+         printer = qt.QPrinter()
+         printer.setOutputFormat(qt.QPrinter.OutputFormat.PdfFormat)
+-        printer.setResolution(self.aexport.pdfdpi)
++        # Use the resolution the pages were laid out at. AsyncExport.getDPI()
++        # rounds pdfdpi to a resolution the PDF engine supports (72), so
++        # setting pdfdpi itself (CommandInterface.Export defaults to 150)
++        # drew every page at 72/150 scale in its top-left corner.
++        printer.setResolution(round(self.phelpers[0].dpi[0]))
+         printer.setFullPage(True)
+         printer.setColorMode(
+             qt.QPrinter.ColorMode.Color if self.aexport.color else qt.QPrinter.ColorMode.GrayScale)
+--- a/veusz/veusz_listen.py
++++ b/veusz/veusz_listen.py
+@@ -107,6 +107,10 @@
+     def quitProgram(self):
+         """Exit the program."""
+         self.window.close()
++        # With --quiet the window was never shown, so closing it does not
++        # end the event loop (lastWindowClosed is not emitted): quit the
++        # application explicitly.
++        qt.QCoreApplication.instance().quit()
+ 
+     def plotZoom(self, zoomfactor):
+         """Set the plot zoom factor."""

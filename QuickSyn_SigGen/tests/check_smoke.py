@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 William W. Wallace <wwallace@nrao.edu>
 """Headless smoke test: driver, simulator, logging, sampler and full GUI.
 
-Part of the QuickSyn SCPI controller package, version 0.0.4.
+Part of the QuickSyn SCPI controller package, version 0.0.6.
 Author: William W. Wallace <wwallace@nrao.edu>, NRAO/GBO.
 Licence: GPL-3.0-or-later (see ../LICENSE).
 
@@ -28,7 +28,7 @@ sys.path.insert(0, str(PKG_ROOT))
 sys.dont_write_bytecode = True   # keep __pycache__ out of the package tree
 from pathlib import Path
 
-import quicksyn_scpi_gui_v0_0_4 as app
+import quicksyn_scpi_gui_v0_0_6 as app
 
 print(f"module v{app.__version__}  Qt={app.QT_ABSTRACTION}/{app.QT_BINDING}")
 print(f"pyserial={app.HAVE_PYSERIAL} pyqtgraph={app.HAVE_PYQTGRAPH} "
