@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 William W. Wallace <wwallace@nrao.edu>
 """Headless smoke test: driver, simulator, logging, sampler and full GUI.
 
-Part of the QuickSyn SCPI controller package, version 0.0.7.
+Part of the QuickSyn SCPI controller package, version 0.0.9.
 Author: William W. Wallace <wwallace@nrao.edu>, NRAO/GBO.
 Licence: GPL-3.0-or-later (see ../LICENSE).
 
@@ -24,6 +24,18 @@ explicit-sign SCPI form (POW +12.0), POW? read-back and the auto SCPI ->
 native fallback, a unit without option 2 (mismatch warned), the -10/+13 dBm
 FSW-0020 limits, refusal on fixed-output models, Enter applying the
 frequency and power boxes, and the RF OUTPUT OFF button and toolbar action.
+
+Added in 0.0.8, from the first hardware session (FSL-0020): the *IDN? field
+order confirmed on hardware and the option-word decode, STAT? replies in the
+0x.. form, enum arguments arriving as plain str/int from combo boxes (the
+reference-source crash), the 10 MHz output and source read-backs with native
+fallback, the Internal/External reference LEDs, auto-read, typed entries
+(0.8 GHz typed several ways; out-of-range refused, not swapped for the old
+value), the temperature-step flag, and no time.monotonic() in the source.
+
+Added in 0.0.9: the 10 MHz output switch on firmware that does not answer
+OUTP:ROSC:STAT? (no time-out failure, Read all still works) and the native
+08xx command remembered once it has worked where the SCPI form did not.
 """
 
 import os, sys, time, csv, gzip, pickle, json
@@ -35,7 +47,7 @@ sys.path.insert(0, str(PKG_ROOT))
 sys.dont_write_bytecode = True   # keep __pycache__ out of the package tree
 from pathlib import Path
 
-import quicksyn_scpi_gui_v0_0_7 as app
+import quicksyn_scpi_gui_v0_0_9 as app
 
 print(f"module v{app.__version__}  Qt={app.QT_ABSTRACTION}/{app.QT_BINDING}")
 print(f"pyserial={app.HAVE_PYSERIAL} pyqtgraph={app.HAVE_PYQTGRAPH} "
@@ -57,7 +69,12 @@ assert (st.ref_output_on, st.blanking_on, st.ext_ref_present) == (True, False, F
 assert st.lock_recovery_on is True and st.voltage_error is False
 mw = app.ModulationWord.from_raw(0x10)  # [R1] Table 5 example -> FM WIDE
 assert mw.fm_wide and not (mw.pulse or mw.am or mw.fm_nb1 or mw.fm_nb2 or mw.phase)
-print("unit checks ....................... OK  (STAT? 00A8, DIAG:MOD? 10 decoded)")
+# the hardware's own reply form (first session, 0.0.8): STAT? 0xA1
+hw = app.StatusWord.from_raw(app.parse_int_response("0xA1"))
+assert (hw.ext_ref_present, hw.rf_locked, hw.ref_locked) == (True, True, True)
+assert (hw.rf_output_on, hw.ref_output_on, hw.lock_recovery_on) == (False, True, True)
+assert app.parse_int_response("0x0") == 0
+print("unit checks ....................... OK  (STAT? 00A8 and 0xA1, DIAG:MOD? 10 and 0x0 decoded)")
 
 # ---------------------------------------------------------- command formatting
 seen = []
@@ -66,8 +83,12 @@ sim.open("SIM")
 dut = app.QuickSyn(sim)
 ident = dut.identify()
 assert ident.model == "FSW-0020", ident
-assert ident.firmware_value == 106 and ident.scpi_supported is True, ident
-assert ident.serial == "300A" and ident.options == "00000007"
+# 0.0.8: order confirmed on hardware - manufacturer, model, option word,
+# serial, firmware (the simulator mirrors it).
+assert ident.firmware == "0008" and ident.firmware_value == 8, ident
+assert ident.scpi_supported is False      # informational only: SCPI answers
+assert ident.serial == "1530200001" and ident.options == "0000007f", ident
+assert ident.option_numbers == [1, 2, 3, 4, 5, 6, 7], ident.option_numbers
 assert len(ident.fields) == 5
 print(f"identity ......................... OK  {ident.raw}")
 assert dut.capability.model == "FSW-0020" and dut.capability.has_modulation
@@ -267,6 +288,80 @@ for fixed_model in ("FSL-0020", "FSL-2740", "FSL-E020"):
         raise AssertionError(f"{fixed_model}: level change was not refused")
 dut.capability = app.MODEL_TABLE["FSW-0020"]
 assert app.MODEL_TABLE["FSW-0010"].has_power_control and dut.capability.has_power_control
+# ------------------------------------------------- hardware-session fixes (0.0.8)
+class FslSim(app.SimulatedTransport):
+    """The simulator answering *IDN? as the FSL-0020 of the first hardware session."""
+
+    def _apply(self, command):
+        if command.strip().upper() == "*IDN?":
+            return "Phase Matrix,FSL-0020,0000017f,1530200407,0008"
+        return super()._apply(command)
+
+
+fsl = FslSim(); fsl.open("SIM")
+fsl_ident = app.QuickSyn(fsl).identify()
+assert (fsl_ident.model, fsl_ident.options, fsl_ident.serial, fsl_ident.firmware) == \
+    ("FSL-0020", "0000017f", "1530200407", "0008"), fsl_ident
+assert fsl_ident.option_numbers == [1, 2, 3, 4, 5, 6, 7, 9]   # as NI's calibration panel shows
+assert app.Identity.FIELD_LABELS[3:] == ("Serial #", "Firmware version")
+fsl.close()
+# enum arguments as a combo box hands them back (PySide6: StrEnum -> str)
+dut.set_reference_source("EXT");     assert seen[-1].command == "ROSC:SOUR EXT"
+dut.set_reference_source(app.RefSource.INTERNAL); assert seen[-1].command == "ROSC:SOUR INT"
+dut.set_fm_mode(3);                   assert seen[-1].command == "FM:MODE 3"
+dut.setup_list(1000, 1, 2, 0)
+assert seen[-1].command == "LIST:SETUP 1ms,1,2,0", seen[-1].command
+# native one-byte switches [R1, Table 2a]
+assert [app.native_switch_command(h, on) for h, on in (("08", False), ("08", True), ("06", True))] \
+    == ["0800", "0801", "0601"]
+# 10 MHz output with read-back: obeyed / SCPI ignored (native 0801 works) / ignored
+q_on, st, used = dut.set_reference_output_checked(False)
+assert (q_on, st.ref_output_on, used) == (False, False, "scpi"), (q_on, st, used)
+sim.scpi_refout = False
+mark = len(seen)
+q_on, st, used = dut.set_reference_output_checked(True)
+assert (q_on, st.ref_output_on, used) == (True, True, "native"), (q_on, st, used)
+assert "0801" in [t.command for t in seen[mark:]]
+assert dut.reference_output_command == "native", "the working native command was not kept"
+mark = len(seen)
+dut.set_reference_output_checked(False)                  # 0.0.9: native straight away
+assert seen[mark].command == "0800", [t.command for t in seen[mark:]]
+dut.reference_output_command = "auto"
+sim.refout_control = False
+sim._state["ref_out"] = True                             # output on, commands ignored
+q_on, st, used = dut.set_reference_output_checked(False)
+assert (q_on, st.ref_output_on, used) == (True, True, "native"), (q_on, st, used)
+assert dut.reference_output_command == "auto", "a failed native attempt must not be kept"
+sim.scpi_refout = sim.refout_control = True
+# 0.0.9: firmware that does not answer OUTP:ROSC:STAT? (as on the FSL-0020)
+sim.refout_query_supported = False
+q_on, st, used = dut.set_reference_output_checked(True)
+assert (q_on, st.ref_output_on, used) == (None, True, "scpi"), (q_on, st, used)
+assert dut.refout_query_supported is False
+mark = len(seen)
+assert dut.get_reference_output_optional() is None
+assert len(seen) == mark, "an unsupported query must not be re-sent"
+sim.refout_query_supported = True
+dut.refout_query_supported = None
+# reference source with read-back; STAT? bit 0 = signal present at REF IN
+sim.ext_ref_connected = True
+src, st, used = dut.set_reference_source_checked("EXT")
+assert (src, used, st.ext_ref_present, st.ref_locked) == (app.RefSource.EXTERNAL, "scpi", True, True)
+sim.ext_ref_connected = False
+st = dut.get_status()
+assert not st.ext_ref_present and not st.ref_locked      # EXT selected, nothing to lock to
+dut.set_reference_source("INT")
+# Windows/Python 3.12 timing: monotonic() ticks in 15.6 ms there
+gui_source = (PKG_ROOT / f"quicksyn_scpi_gui_v{app.__version__.replace('.', '_')}.py").read_text()
+import ast  # noqa: E402
+mono_calls = [n.lineno for n in ast.walk(ast.parse(gui_source))
+              if isinstance(n, ast.Attribute) and n.attr == "monotonic"
+              and isinstance(n.value, ast.Name) and n.value.id == "time"]
+assert not mono_calls, f"time.monotonic() used again at lines {mono_calls}"
+assert all(t_.latency_s > 0 for t_ in seen[-5:]), [t_.latency_s for t_ in seen[-5:]]
+print("hardware-session fixes (0.0.8) ... OK  FSL-0020 *IDN? (options 1-7, 9), str/int enum args,")
+print("                                   ref output read-back + native 0801, ref source + REF IN "
+      "presence, perf_counter")
 print("output power (0.0.7) ............. OK  native 030078/03FFE2/030082/03FF9C, "
       "POW +12.0, auto->native fallback,")
 print("                                   no-option-2 mismatch seen, -10/+13 dBm limits, "
@@ -467,6 +562,135 @@ win.rf_off_action.trigger(); pump()
 assert gui_sent[:2] == ["OUTP:STAT OFF", "STAT?"], gui_sent
 assert win.controller.driver.get_rf_output() is False
 win.tabs.setCurrentWidget(main_tab)
+# ---- 0.0.8: typed entries, reference controls, LEDs, auto-read, temperature flag
+K = app.QtCore.Qt.Key
+spin = main_tab.freq_spin
+edit = spin.lineEdit()
+
+
+def typed(steps, commit="enter"):
+    """Type into the frequency box from 1 GHz as a user would; return FREQ commands sent."""
+    spin.setValue(1.0); pump(0.05)
+    gui_sent.clear()
+    spin.setFocus(); pump(0.05)
+    for step in steps:
+        if isinstance(step, str):
+            QtTest.QTest.keyClicks(spin, step)
+        else:
+            QtTest.QTest.keyClick(spin, *step)
+    if commit == "enter":
+        QtTest.QTest.keyClick(spin, K.Key_Return)
+    else:
+        QtTest.QTest.mouseClick(main_tab.set_freq_button, app.QtCore.Qt.MouseButton.LeftButton)
+    pump()
+    return [c for c in gui_sent if c.startswith("FREQ ")]
+
+
+ctrl_a = (K.Key_A, app.QtCore.Qt.KeyboardModifier.ControlModifier)
+for label, steps, commit in (
+        ("select all, 0.800, Enter", [ctrl_a, "0.800"], "enter"),
+        ("Home, Delete, 0.800, Enter", [(K.Key_Home,), (K.Key_Delete,), "0.800"], "enter"),
+        ("End, Backspace x15, 0.800, Enter", [(K.Key_End,)] + [(K.Key_Backspace,)] * 15 + ["0.800"], "enter"),
+        ("End, Backspace x15, 0.800, Set", [(K.Key_End,)] + [(K.Key_Backspace,)] * 15 + ["0.800"], "button"),
+        ("Home, Delete x2, 0.8, Enter", [(K.Key_Home,), (K.Key_Delete,), (K.Key_Delete,), "0.8"], "enter")):
+    got = typed(steps, commit)
+    assert got == ["FREQ 800000000000"], (label, got, edit.text())
+assert typed([ctrl_a, "0.8123456789123"]) == ["FREQ 812345679000"]   # extra decimals rounded
+for commit in ("enter", "button"):                                    # below the 0.2 GHz floor
+    assert typed([ctrl_a, "0.1"], commit) == [], "an out-of-range typed value was sent"
+    assert "nothing was sent" in win.statusBar().currentMessage(), win.statusBar().currentMessage()
+    assert abs(spin.value() - 1.0) < 1e-12
+assert typed([ctrl_a, "12.5"]) == ["FREQ 12500000000000"]
+# reference source from the combo (the 0.0.7 crash), LEDs, lock re-check
+win.controller.transport.ext_ref_connected = True
+combo = main_tab.refsrc_combo
+gui_sent.clear()
+combo.setCurrentIndex(combo.findData(app.RefSource.EXTERNAL)); combo.activated.emit(combo.currentIndex())
+pump()
+assert gui_sent[:3] == ["ROSC:SOUR EXT", "ROSC:SOUR?", "STAT?"], gui_sent
+assert "External 10 MHz reference IN USE" in main_tab.led_ref_ext.text()
+assert "not selected" in main_tab.led_ref_int.text()
+win.controller.transport.ext_ref_connected = False
+pump(1.8)                                                  # the 1.5 s lock re-check
+assert "NO SIGNAL" in main_tab.led_ref_ext.text(), main_tab.led_ref_ext.text()
+assert "no 10 MHz signal" in win.statusBar().currentMessage(), win.statusBar().currentMessage()
+combo.setCurrentIndex(combo.findData(app.RefSource.INTERNAL)); combo.activated.emit(combo.currentIndex())
+pump(1.8)
+assert "Internal 10 MHz reference IN USE" in main_tab.led_ref_int.text()
+# 10 MHz output switch: confirmed / native fallback / not switchable
+for scpi_ok, control_ok, expect_cmd, expect_msg in (
+        (True, True, None, "confirmed"), (False, True, "0800", "native 0800 did"),
+        (False, False, "0800", "Check REF OUT")):
+    win.controller.driver.reference_output_command = "auto"
+    win.controller.transport._state["ref_out"] = True
+    win.controller.transport.scpi_refout = scpi_ok
+    win.controller.transport.refout_control = control_ok
+    main_tab.refout_check.setChecked(True)
+    gui_sent.clear()
+    main_tab.refout_check.click(); pump()
+    assert gui_sent[:3] == ["OUTP:ROSC:STAT OFF", "OUTP:ROSC:STAT?", "STAT?"], gui_sent
+    assert (expect_cmd in gui_sent) if expect_cmd else ("0800" not in gui_sent), gui_sent
+    assert expect_msg in win.statusBar().currentMessage(), win.statusBar().currentMessage()
+win.controller.transport.scpi_refout = win.controller.transport.refout_control = True
+# 0.0.9: native kept after it worked; the next switch sends 0801 first
+win.controller.transport.scpi_refout = False
+main_tab.refout_check.setChecked(True); main_tab.refout_check.click(); pump()   # off: falls back
+main_tab.refout_check.setChecked(False)
+gui_sent.clear(); main_tab.refout_check.click(); pump()                        # on: native first
+assert gui_sent[0] == "0801" and "native 0801" in win.statusBar().currentMessage(), \
+    (gui_sent, win.statusBar().currentMessage())
+win.controller.transport.scpi_refout = True
+win.controller.driver.reference_output_command = "auto"
+# 0.0.9: OUTP:ROSC:STAT? unanswered - switch and "Read all" still work
+win.controller.transport.refout_query_supported = False
+win.controller.driver.refout_query_supported = None
+main_tab.refout_check.setChecked(True)
+gui_sent.clear(); main_tab.refout_check.click(); pump()
+assert "confirmed by STAT?)" in win.statusBar().currentMessage(), win.statusBar().currentMessage()
+gui_sent.clear(); main_tab.sync_button.click(); pump()
+assert "OUTP:ROSC:STAT?" not in gui_sent and "ROSC:SOUR?" in gui_sent, gui_sent
+assert "Error" not in win.statusBar().currentMessage(), win.statusBar().currentMessage()
+win.controller.transport.refout_query_supported = True
+win.controller.driver.refout_query_supported = None
+# power read-back reminds that POW? is a setting when RF is off
+win.controller.driver.set_rf_output(False); main_tab.refresh_status_button.click(); pump()
+main_tab.read_power_button.click(); pump()
+assert "RF output is OFF" in main_tab.power_readback.text(), main_tab.power_readback.text()
+# auto-read every 1 s; a box being typed in is not overwritten; stop
+main_tab.auto_sync_spin.setValue(1.0)
+gui_sent.clear()
+main_tab.auto_sync_check.setChecked(True)
+spin.setFocus(); spin.selectAll(); QtTest.QTest.keyClicks(spin, "3.3")
+pump(2.4)
+assert gui_sent.count("ROSC:SOUR?") >= 2, gui_sent.count("ROSC:SOUR?")
+assert "OUTP:ROSC:STAT?" in gui_sent
+assert edit.text().startswith("3.3"), f"auto-read overwrote typing: {edit.text()!r}"
+main_tab.auto_sync_check.setChecked(False)
+spin.setValue(12.5); main_tab.set_freq_button.setFocus(); pump(0.2)
+gui_sent.clear(); pump(1.3)
+assert "ROSC:SOUR?" not in gui_sent, "auto-read did not stop"
+# temperature step flag
+main_tab.update_temperature(27.0); main_tab.update_temperature(54.2)
+assert "suspect" in main_tab.temp_label.text() and "suspect" in win.statusBar().currentMessage()
+main_tab.update_temperature(54.3)
+assert "suspect" not in main_tab.temp_label.text()
+# FM mode, sweep and list set-up through their combo boxes
+fm_combo = win.tab_modulation.fm_mode_combo
+gui_sent.clear()
+fm_combo.setCurrentIndex(2); fm_combo.activated.emit(2); pump()
+assert gui_sent and gui_sent[-1] == f"FM:MODE {int(fm_combo.currentData())}", gui_sent
+gui_sent.clear()
+win.tab_sweep.setup_button.click(); pump()
+assert any(c.startswith("SWE:") for c in gui_sent), (gui_sent, win.statusBar().currentMessage())
+gui_sent.clear()
+win.tab_list.setup_run_button.click(); pump()
+assert any(c.startswith("LIST:SETUP") for c in gui_sent), (gui_sent, win.statusBar().currentMessage())
+win.controller.driver.stop_list(); win.controller.driver.stop_sweep()
+print("GUI 10 MHz output path (0.0.9) ... OK  native kept after fallback; unanswered OUTP:ROSC:STAT? "
+      "does not break the switch or Read all")
+print("GUI hardware-session fixes (0.0.8)  OK  0.8 GHz typed 5 ways, out-of-range refused, ref source/")
+print("                                   output read-back + native fallback, LEDs, auto-read, "
+      "temperature flag, FM/sweep/list combos")
 print("GUI power and RF OFF (0.0.7) ..... OK  Enter applies FREQ/POW, read-back shown, "
       "no-option-2 warned,")
 print("                                   auto->native 030078/03FFE2, Read (0D), console Send "

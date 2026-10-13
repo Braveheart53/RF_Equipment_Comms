@@ -9,8 +9,8 @@
 
 ===============================================================================
  Title          : QuickSyn SCPI Controller and Telemetry Logger
- Filename       : quicksyn_scpi_gui_v0_0_7.py
- Version        : 0.0.7  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Filename       : quicksyn_scpi_gui_v0_0_9.py
+ Version        : 0.0.9  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
  Author         : William W. Wallace
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
@@ -21,7 +21,7 @@
  Environment    : mamba env "quicksyn" (see environment_quicksyn.yml)
  Licence        : GPL-3.0-or-later (GNU General Public License v3.0 or later)
  Copyright      : Copyright (C) 2026 William W. Wallace
- Status         : Internal draft - NOT yet verified against hardware
+ Status         : Internal draft - first hardware session 2026-10-12 (FSL-0020)
 ===============================================================================
 
 LICENCE
@@ -82,6 +82,9 @@ FEATURE SUMMARY
   sent as SCPI (POW +12.0) or as the native command (030078), and read back
   with POW? or the native Get Power query (0D). A red RF OUTPUT OFF button
   (also on the toolbar and Ctrl+Shift+O) mutes the output from any tab.
+  Any number can be typed into a numeric box; a value outside the model's
+  range is refused with a message. Internal / External 10 MHz reference
+  LEDs, and an "Auto-read all settings every N s" switch.
 * Modulation: pulse, AM (state + sensitivity DAC), FM/phase (state, mode,
   sensitivity DAC). Hidden for models with no modulation inputs.
 * Sweeps: fast and normal, frequency and power, with trigger and direction.
@@ -121,7 +124,7 @@ Every session creates <log_root>/<YYYYmmdd_HHMMSS>_<model>_<opts>/ holding:
     reduction_summary.{json,md}, telemetry_reduced.npz   From the export.
 
 The .vszh5 and the reduction are produced by the companion script
-quicksyn_veusz_export_v0_0_7.py (with vszh5_writer.py), which the GUI runs
+quicksyn_veusz_export_v0_0_9.py (with vszh5_writer.py), which the GUI runs
 as a separate process: the GUI's PySide6 never mixes with the Qt binding
 Veusz uses, a large session never stalls the window, and an export started
 by closing the window finishes after the window has gone.
@@ -156,7 +159,7 @@ REQUIREMENTS
 
         mamba env create -f environment_quicksyn.yml
         mamba activate quicksyn
-        python quicksyn_scpi_gui_v0_0_7.py
+        python quicksyn_scpi_gui_v0_0_9.py
 
 REFERENCES
 ----------
@@ -183,17 +186,20 @@ DOCUMENTATION AMBIGUITIES AND CONFLICTS HANDLED IN CODE
    states "Blanking is off by default". This application never assumes it:
    it reads STAT? back after every reset and reports what was observed.
 
-2. SCPI *IDN? field order is not defined anywhere in [R1]-[R5]. The native
-   Get ID query in [R1] Table 4 returns Model#, Option#, Soft.ver., Serial#,
-   so with the manufacturer prepended that order is used as the labelling
-   for the five comma-separated SCPI fields. It cannot be confirmed: the
-   [R1] Table 5 example response "Phase Matrix,FSW-0010,0000007f,0,300a"
-   puts "0" in the software-version position, which is below the firmware
-   100 minimum that the same table requires for SCPI, and "300a" parses as
-   neither a decimal version nor an obvious serial number. All five raw
-   fields are therefore displayed verbatim in the Connection tab, and the
-   firmware gate is ADVISORY ONLY - it warns and never blocks, because a
-   successful *IDN? response is itself proof that SCPI is being serviced.
+2. SCPI *IDN? field order. [R1] does not define it; its only example is
+   "Phase Matrix,FSW-0010,0000007f,0,300a". Up to 0.0.7 the fields were
+   labelled after the native Get ID order of [R1] Table 4 (model, option,
+   software version, serial), which put the serial number in the firmware
+   field. Confirmed on hardware in 0.0.8: an FSL-0020 answers
+   "Phase Matrix,FSL-0020,0000017f,1530200407,0008", and NI's own soft
+   front panels show that unit as serial 1530200407, firmware 0008, options
+   017F. The order is therefore manufacturer, model, option word (hex),
+   serial number, firmware version. NI's calibration panel decodes option
+   word 017F as options 1, 2, 3, 4, 5, 6, 7, 9 (bit n = option n+1), which
+   Identity.option_numbers reproduces. [R1] also says SCPI needs firmware
+   100 or higher, yet that unit (firmware 0008) answers SCPI, so the
+   firmware gate is informational only. All five raw fields are still
+   shown verbatim in the Connection tab.
 
 3. The double-issue rule for queries. [R1] requires every query to be sent
    twice on SPI, and states that on the native USB/Ethernet/GPIB/RS232
@@ -374,6 +380,75 @@ REVISION HISTORY
                    The simulator can emulate an FSW without option 2
                    (power_control=False) and firmware that ignores SCPI POW
                    (scpi_power=False), and answers the native 03xxxx and 0D.
+0.0.8  2026-10-12  FIRST HARDWARE SESSION (FSL-0020, serial 1530200407,
+                   firmware 0008, USB, Python 3.12.0 on Windows). Fixed:
+                   (1) Choosing External (or Internal) reference raised
+                   "'str' object has no attribute 'value'": PySide6 hands
+                   back a StrEnum stored as combo data as a plain str. The
+                   driver now converts its enum arguments (reference source,
+                   FM mode, trigger, direction) from whatever form arrives.
+                   (2) Typed frequencies below 1 GHz were lost: with all nine
+                   decimal places shown, QDoubleSpinBox refuses any digit
+                   typed after the point, and text it judged incomplete was
+                   silently reverted, so Set frequency re-sent the OLD value.
+                   Every numeric box is now an EntrySpinBox: any number can
+                   be typed (rounded to the box's resolution on commit), and
+                   a value outside the model's range is refused with a
+                   message instead of being replaced by the old one.
+                   (3) *IDN? field order corrected (ambiguity note 2): the
+                   serial number had been shown as the firmware version. The
+                   option word is decoded into option numbers, and the
+                   firmware-100 rule no longer raises a dialog.
+                   (4) Timing on Windows with Python 3.12: time.perf_counter()
+                   ticks in 15.6 ms steps there (GetTickCount64; Python 3.13
+                   moved it to QueryPerformanceCounter), so every exchange
+                   showed 0.0 ms and the sample intervals were quantised.
+                   Latency, intervals and the sampler clock now use
+                   time.perf_counter().
+                   (5) 10 MHz reference output: OUTP:ROSC:STAT OFF was sent,
+                   STAT? kept bit 5 set, and nothing checked. The switch now
+                   reads back OUTP:ROSC:STAT? and STAT?, falls back to the
+                   native Reference Output command (08xx) [R1, Table 2a],
+                   and warns if the unit still reports the output on. The
+                   reference source is read back the same way (native 06xx).
+                   Added: Internal / External 10 MHz reference LEDs (from
+                   ROSC:SOUR?, STAT? and the reference lock); "Auto-read all
+                   settings every N s" on the Main tab (a box being edited
+                   is not overwritten; stops after three failed reads); the
+                   power read-back says when the RF output is off (POW? is
+                   the level setting, not a measurement); a temperature step
+                   of 10 C or more within a minute is flagged as suspect (on
+                   the FSL-0020, DIAG:MEAS? 21 read twice its value after a
+                   POW command until the next OUTP:STAT).
+                   Hardware finding, not a code change: on the FSL-0020, POW
+                   is accepted and read back by POW? and 0D, but a power
+                   meter shows no change, with NI's panel as well; the GUI's
+                   fixed-output gating for that model was right.
+                   Simulator: *IDN? in the confirmed order, STAT? and
+                   DIAG:MOD? replies in the 0x.. form the hardware uses, an
+                   external-reference input, the native 06/08/0F switches,
+                   and flags to emulate firmware that ignores OUTP:ROSC:STAT.
+0.0.9  2026-10-12  10 MHz REFERENCE OUTPUT. Confirmed by the user: the
+                   FSL-0020's REF OUT does switch off, with NI's soft front
+                   panel and a power meter. NI's panel sends native commands
+                   (its command window shows "09 00", "0A 00", "0B 04" ...),
+                   so the fault is the SCPI path: OUTP:ROSC:STAT OFF was sent
+                   three times and STAT? kept bit 5 set. Changes:
+                   (1) OUTP:ROSC:STAT? had never been seen to answer on that
+                   unit, and 0.0.8 depended on it: a time-out would have
+                   aborted the switch before the native fallback and made
+                   every "Read all settings" (and so auto-read) fail. The
+                   query is now optional: one failure marks it unsupported
+                   for the session and STAT? bit 5 is used alone.
+                   (2) Once the native 08xx command has worked where the
+                   SCPI form did not, it is used directly for the rest of
+                   the session (reference_output_command "native"), as the
+                   power command already does; the status line says so.
+                   (3) The warning no longer suggests the hardware cannot
+                   switch; it names the commands tried and asks for a check
+                   of REF OUT on a power meter or counter.
+                   Simulator: refout_query_supported=False emulates firmware
+                   without OUTP:ROSC:STAT?.
 ===============================================================================
 """
 
@@ -492,7 +567,7 @@ except ImportError:  # pragma: no cover - export still runs if the file exists
 # %% ===========================================================================
 #    MODULE CONSTANTS
 # =============================================================================
-__version__ = "0.0.7"                 # Semantic Versioning 2.0.0
+__version__ = "0.0.9"                 # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO/GBO"
@@ -600,6 +675,23 @@ NATIVE_QUERY_CODES: tuple[str, ...] = ("01", "02", "04", "07", "0D", "10", "47",
 #: Native Get Power query [R1, Table 4]: the reply is 4 ASCII-hex characters,
 #: the level in tenths of a dBm.
 NATIVE_GET_POWER: str = "0D"
+#: Native one-byte switch commands [R1, Table 2a]: header + 00 (off / internal)
+#: or 01 (on / external), sent as ASCII hex like every native command.
+NATIVE_REF_SOURCE: str = "06"
+NATIVE_REF_OUTPUT: str = "08"
+NATIVE_RF_OUTPUT: str = "0F"
+#: "Auto-read all settings" default period and failure limit (Main tab).
+DEFAULT_AUTO_SYNC_S: float = 5.0
+AUTO_SYNC_MAX_FAILURES: int = 3
+#: A temperature reading that moves this much from the previous one within
+#: TEMP_STEP_WINDOW_S is flagged as suspect: the case cannot change that fast.
+TEMP_STEP_SUSPECT_C: float = 10.0
+TEMP_STEP_WINDOW_S: float = 60.0
+
+
+def native_switch_command(header: str, on: bool) -> str:
+    """Native one-byte switch command, e.g. ``0800`` = reference output off."""
+    return f"{header}{1 if on else 0:02X}"
 
 
 def decode_native_power(reply: str) -> float:
@@ -626,7 +718,7 @@ def expects_reply(command: str) -> bool:
 
 
 #: Companion export script run by the GUI to write the session .vszh5.
-COMPANION_EXPORT_SCRIPT: str = "quicksyn_veusz_export_v0_0_7.py"
+COMPANION_EXPORT_SCRIPT: str = "quicksyn_veusz_export_v0_0_9.py"
 #: File name of the session document written by the export script.
 SESSION_VSZH5_NAME: str = "quicksyn_session.vszh5"
 
@@ -963,13 +1055,10 @@ FALLBACK_CAPABILITY = ModelCapability(
 class Identity:
     """Decoded ``*IDN?`` response.
 
-    The SCPI field order is NOT documented. [R1] Table 5 gives only the
-    example response ``Phase Matrix,FSW-0010,0000007f,0,300a``, and [R1]
-    Table 4 gives the native Get ID field order as Model#, Option#,
-    Soft.ver., Serial#. Prepending the manufacturer to that order yields
-    the labelling used here, which is an inference and not a specification
-    (see ambiguity note 2 in the module header). ``fields`` preserves every
-    raw field so the operator can read the response for themselves.
+    Field order manufacturer, model, option word (hex), serial number,
+    firmware version: undocumented in [R1], confirmed against NI's soft
+    front panels on an FSL-0020 (ambiguity note 2 in the module header).
+    ``fields`` preserves every raw field.
 
     Attributes
     ----------
@@ -989,15 +1078,30 @@ class Identity:
     firmware_base: str = ""
     serial: str = ""
 
-    #: Labels applied to the comma-separated fields, in order, after the
-    #: [R1] Table 4 native Get ID order.
+    #: Labels applied to the comma-separated fields, in order (confirmed on
+    #: hardware in 0.0.8; see ambiguity note 2).
     FIELD_LABELS: ClassVar[tuple[str, ...]] = (
         "Manufacturer",
         "Model #",
-        "Option # (inferred)",
-        "Software version (inferred)",
-        "Serial # (inferred)",
+        "Option word (hex)",
+        "Serial #",
+        "Firmware version",
     )
+
+    @property
+    def option_numbers(self) -> list[int]:
+        """Option numbers set in the option word (bit n = option n+1).
+
+        This is how NI's calibration soft front panel decodes it: option word
+        017F is shown as options 1, 2, 3, 4, 5, 6, 7, 9. The word describes
+        what the firmware believes is fitted; on the FSL-0020 it lists
+        option 2 although the level does not change (README section 3.3).
+        """
+        try:
+            word = int(self.options, 16)
+        except ValueError:
+            return []
+        return [bit + 1 for bit in range(word.bit_length()) if (word >> bit) & 1]
 
     @property
     def scpi_supported(self) -> bool | None:
@@ -1467,11 +1571,14 @@ class SerialTransport:
             self._port = None
 
     # --- Low-level exchange -------------------------------------------------
+    # Timing uses time.perf_counter() throughout. On Windows before Python
+    # 3.13, time.monotonic() ticks in 15.6 ms steps (GetTickCount64), which
+    # made every latency read 0.0 ms on the first hardware session (0.0.8).
     def _enforce_gap(self) -> None:
         """Sleep so that consecutive transactions are not back-to-back."""
         if self.intercommand_gap_s <= 0.0:
             return
-        elapsed = time.monotonic() - self._last_tx_time
+        elapsed = time.perf_counter() - self._last_tx_time
         if elapsed < self.intercommand_gap_s:
             time.sleep(self.intercommand_gap_s - elapsed)
 
@@ -1510,9 +1617,9 @@ class SerialTransport:
         responses, so any of CR, LF or CRLF is accepted. See ambiguity
         note 3 in the module header.
         """
-        deadline = time.monotonic() + timeout_s
+        deadline = time.perf_counter() + timeout_s
         chunks = bytearray()
-        while time.monotonic() < deadline:
+        while time.perf_counter() < deadline:
             byte = self._port.read(1)
             if not byte:
                 continue
@@ -1551,7 +1658,7 @@ class SerialTransport:
             if not self.is_open:
                 raise TransportError("Serial port is not open.")
             self._enforce_gap()
-            t0 = time.monotonic()
+            t0 = time.perf_counter()
             t_unix = time.time()
             try:
                 self._port.reset_input_buffer()
@@ -1563,7 +1670,7 @@ class SerialTransport:
                         t_unix=t_unix,
                         command=command,
                         response=None,
-                        latency_s=time.monotonic() - t0,
+                        latency_s=time.perf_counter() - t0,
                         ok=False,
                         error=str(exc),
                         is_query=False,
@@ -1572,7 +1679,7 @@ class SerialTransport:
                 raise TransportError(f"Write of {command!r} failed: {exc}") from exc
             if settle_s > 0.0:
                 time.sleep(settle_s)
-            self._last_tx_time = time.monotonic()
+            self._last_tx_time = time.perf_counter()
             self._record(
                 Transaction(
                     t_unix=t_unix,
@@ -1619,7 +1726,7 @@ class SerialTransport:
             if not self.is_open:
                 raise TransportError("Serial port is not open.")
             self._enforce_gap()
-            t0 = time.monotonic()
+            t0 = time.perf_counter()
             t_unix = time.time()
             response = ""
             try:
@@ -1637,14 +1744,14 @@ class SerialTransport:
                         t_unix=t_unix,
                         command=command,
                         response=None,
-                        latency_s=time.monotonic() - t0,
+                        latency_s=time.perf_counter() - t0,
                         ok=False,
                         error=str(exc),
                         is_query=True,
                     )
                 )
                 raise TransportError(f"Query {command!r} failed: {exc}") from exc
-            self._last_tx_time = time.monotonic()
+            self._last_tx_time = time.perf_counter()
             self._record(
                 Transaction(
                     t_unix=t_unix,
@@ -1690,6 +1797,15 @@ class SimulatedTransport(SerialTransport):
         #: False emulates firmware that ignores SCPI POW but obeys the native
         #: 03xxxx command (exercises the "auto" fallback).
         self.scpi_power = True
+        #: True when a 10 MHz signal is present at REF IN (STAT? bit 0 is
+        #: presence, independent of the source selected).
+        self.ext_ref_connected = False
+        #: False emulates firmware that ignores SCPI OUTP:ROSC:STAT but obeys
+        #: the native 08xx command; refout_control=False ignores both.
+        self.scpi_refout = True
+        self.refout_control = True
+        #: False emulates firmware that does not answer OUTP:ROSC:STAT? (0.0.9).
+        self.refout_query_supported = True
         self._state: dict[str, Any] = {
             "freq_mlhz": 10_000_000_000_000,   # 10 GHz default [R1/R2]
             "power_dbm": 13.0,
@@ -1706,7 +1822,7 @@ class SimulatedTransport(SerialTransport):
             "lock_recovery": True,
             "ref_dac": 30000,
         }
-        self._t_start = time.monotonic()
+        self._t_start = time.perf_counter()
 
     @property
     def is_open(self) -> bool:
@@ -1743,6 +1859,18 @@ class SimulatedTransport(SerialTransport):
             return None
         if text == NATIVE_GET_POWER:                # native Get Power
             return f"{int(round(self._state['power_dbm'] * 10)) & 0xFFFF:04X}"
+        if re.fullmatch(r"(06|08|0F)0[01]", text):  # native one-byte switches
+            on = text.endswith("1")
+            if text.startswith(NATIVE_REF_SOURCE):
+                self._state["ref_source"] = "EXT" if on else "INT"
+            elif text.startswith(NATIVE_REF_OUTPUT):
+                if self.refout_control:
+                    self._state["ref_out"] = on
+            else:
+                self._state["rf_out"] = on
+            return None
+        if text == "07":                            # native Ref Source query
+            return "01" if self._state["ref_source"] == "EXT" else "00"
         return self._apply_scpi(command)
 
     def _apply_scpi(self, command: str) -> str | None:
@@ -1755,11 +1883,10 @@ class SimulatedTransport(SerialTransport):
 
         match head_u:
             case "*IDN?":
-                # Self-consistent under the inferred [R1] Table 4 field
-                # order: manufacturer, model, option #, software version,
-                # serial #. Firmware 0106 -> 106 decimal, which clears the
-                # documented SCPI minimum of 100.
-                return f"Phase Matrix,{self._model},00000007,0106,300A"
+                # The order confirmed on hardware (0.0.8): manufacturer,
+                # model, option word, serial, firmware. Option word 007F =
+                # options 1-7; firmware 0008 as on the FSL-0020 tested.
+                return f"Phase Matrix,{self._model},0000007f,1530200001,0008"
             case "*RST":
                 # Factory defaults per [R1] Table 2a: RF output off, 10 GHz,
                 # +15 dBm (FSW-0010) / +13 dBm (FSW-0020), internal
@@ -1803,9 +1930,12 @@ class SimulatedTransport(SerialTransport):
             case "OUTP:BLAN?":
                 return "1" if self._state["blanking"] else "0"
             case "OUTP:ROSC:STAT":
-                self._state["ref_out"] = arg.upper() == "ON"
+                if self.scpi_refout and self.refout_control:
+                    self._state["ref_out"] = arg.upper() == "ON"
                 return None
             case "OUTP:ROSC:STAT?":
+                if not self.refout_query_supported:
+                    return None                  # no reply: the query times out
                 return "1" if self._state["ref_out"] else "0"
             case "ROSC:SOUR":
                 self._state["ref_source"] = arg.upper()
@@ -1853,15 +1983,17 @@ class SimulatedTransport(SerialTransport):
             case "DIAG:CAL:REF:DAC?":
                 return str(self._state["ref_dac"])
             case "STAT?":
-                return f"{self._status_byte():04X}"
+                # The hardware replies "0xA1" (first session, 0.0.8), not the
+                # "00A8" form of the [R1] Table 5 example.
+                return f"0x{self._status_byte():X}"
             case "DIAG:MOD?":
-                return f"{self._mod_byte():02X}"
+                return f"0x{self._mod_byte():X}"
             case "DIAG:BAUD?":
                 return str(self.baudrate)
 
         if upper.startswith("DIAG:MEAS?"):
             # Lazy thermal ramp towards 40 C plus a little noise.
-            age = time.monotonic() - self._t_start
+            age = time.perf_counter() - self._t_start
             temp = 29.0 + 11.0 * (1.0 - math.exp(-age / 900.0))
             temp += 0.05 * math.sin(age / 7.0)
             return f"{temp:.1f}"
@@ -1883,8 +2015,10 @@ class SimulatedTransport(SerialTransport):
     def _status_byte(self) -> int:
         """Assemble a plausible ``STAT?`` low byte from simulated state."""
         value = 0
-        if self._state["ref_source"] == "EXT":
+        if self.ext_ref_connected:
             value |= 1 << StatusBit.EXT_REF
+        if self._state["ref_source"] == "EXT" and not self.ext_ref_connected:
+            value |= 1 << StatusBit.REF_UNLOCKED   # nothing to lock to
         # Locked: leave RF_UNLOCKED and REF_UNLOCKED clear.
         if self._state["rf_out"]:
             value |= 1 << StatusBit.RF_OUTPUT_ON
@@ -1921,7 +2055,7 @@ class SimulatedTransport(SerialTransport):
         with self._lock:
             if not self._open:
                 raise TransportError("Simulated port is not open.")
-            t0 = time.monotonic()
+            t0 = time.perf_counter()
             t_unix = time.time()
             self._apply(command)
             time.sleep(max(settle_s, 0.0005))
@@ -1930,7 +2064,7 @@ class SimulatedTransport(SerialTransport):
                     t_unix=t_unix,
                     command=command,
                     response=None,
-                    latency_s=time.monotonic() - t0,
+                    latency_s=time.perf_counter() - t0,
                     ok=True,
                     is_query=False,
                 )
@@ -1947,7 +2081,7 @@ class SimulatedTransport(SerialTransport):
         with self._lock:
             if not self._open:
                 raise TransportError("Simulated port is not open.")
-            t0 = time.monotonic()
+            t0 = time.perf_counter()
             t_unix = time.time()
             response = ""
             for _ in range(max(1, repeat)):
@@ -1958,7 +2092,7 @@ class SimulatedTransport(SerialTransport):
                     t_unix=t_unix,
                     command=command,
                     response=response,
-                    latency_s=time.monotonic() - t0,
+                    latency_s=time.perf_counter() - t0,
                     ok=bool(response),
                     error="" if response else "empty response (timeout)",
                     is_query=True,
@@ -2001,6 +2135,12 @@ class QuickSyn:
         #: Mirrors whether FM is believed to be on, so that frequency
         #: changes can honour the 1 ms FM settling requirement [R1].
         self._fm_active: bool = False
+        #: None until OUTP:ROSC:STAT? has been tried; False once it has failed
+        #: (then STAT? bit 5 alone reports the 10 MHz output) (0.0.9).
+        self.refout_query_supported: bool | None = None
+        #: "auto" tries OUTP:ROSC:STAT first; "native" once the native 08xx
+        #: command has worked where the SCPI form did not (0.0.9).
+        self.reference_output_command: str = "auto"
 
     # --- Event plumbing -----------------------------------------------------
     def _emit_state(self, parameter: str, value: Any, source: str = "gui") -> None:
@@ -2023,11 +2163,11 @@ class QuickSyn:
         Notes
         -----
         [R1] Table 5 shows the response as five comma-separated fields but
-        does not define them. The native Get ID order in [R1] Table 4 is
-        Model#, Option#, Soft.ver., Serial#, so fields 2 to 4 are labelled
-        option, software version and serial respectively. The firmware field
-        is not documented as decimal or hexadecimal, so both are attempted.
-        Every raw field is retained in ``Identity.fields`` regardless.
+        does not define them. The order manufacturer, model, option word,
+        serial, firmware was confirmed on hardware (ambiguity note 2); up to
+        0.0.7 fields 4 and 5 were swapped. The firmware field is not
+        documented as decimal or hexadecimal, so both are attempted. Every
+        raw field is retained in ``Identity.fields`` regardless.
         """
         raw = self.io.query("*IDN?")
         parts = [f.strip() for f in raw.split(",")]
@@ -2035,8 +2175,8 @@ class QuickSyn:
         ident.manufacturer = parts[0] if len(parts) > 0 else ""
         ident.model = parts[1] if len(parts) > 1 else ""
         ident.options = parts[2] if len(parts) > 2 else ""
-        ident.firmware = parts[3] if len(parts) > 3 else ""
-        ident.serial = parts[4] if len(parts) > 4 else ""
+        ident.serial = parts[3] if len(parts) > 3 else ""
+        ident.firmware = parts[4] if len(parts) > 4 else ""
 
         token = ident.firmware.strip()
         if token:
@@ -2236,12 +2376,15 @@ class QuickSyn:
         """Read the blanking state with ``OUTP:BLAN?``."""
         return parse_bool_response(self.io.query("OUTP:BLAN?"))
 
-    def set_reference_source(self, source: RefSource) -> None:
+    def set_reference_source(self, source: RefSource | str) -> None:
         """Select internal or external reference with ``ROSC:SOUR``.
 
         The external reference must be 10 MHz within +/-2 ppm, at
-        +5 dBm +/-5 dBm into 50 ohm [R2, Step 5-2; R3].
+        +5 dBm +/-5 dBm into 50 ohm [R2, Step 5-2; R3]. ``source`` may be
+        a :class:`RefSource` or its text ("INT"/"EXT"): PySide6 returns a
+        StrEnum stored as combo-box data as a plain str (0.0.8 fix).
         """
+        source = RefSource(str(source).strip().upper())
         self.io.write(f"ROSC:SOUR {source.value}")
         self._emit_state("reference_source", source.value)
 
@@ -2258,6 +2401,89 @@ class QuickSyn:
     def get_reference_output(self) -> bool:
         """Read the reference output state with ``OUTP:ROSC:STAT?``."""
         return parse_bool_response(self.io.query("OUTP:ROSC:STAT?"))
+
+    def get_reference_output_optional(self) -> bool | None:
+        """``OUTP:ROSC:STAT?``, or None where the unit does not answer it.
+
+        The query is in [R1, Table 5] but was never seen to answer on the
+        FSL-0020 tested, so the first failure (time-out or unparsable reply)
+        marks it unsupported for the session instead of failing every read.
+        """
+        if self.refout_query_supported is False:
+            return None
+        try:
+            state = self.get_reference_output()
+        except (TransportError, ValueError):
+            self.refout_query_supported = False
+            return None
+        self.refout_query_supported = True
+        return state
+
+    def _reference_output_followed(self, enabled: bool) -> tuple[bool | None, StatusWord, bool]:
+        """Read the 10 MHz output state back: (query state or None, STAT?, followed)."""
+        reported = self.get_reference_output_optional()
+        status = self.get_status()
+        followed = status.ref_output_on == enabled and reported in (None, enabled)
+        return reported, status, followed
+
+    def set_reference_output_checked(self, enabled: bool) -> tuple[bool | None, StatusWord, str]:
+        """Switch the 10 MHz reference output and read it back.
+
+        Sends ``OUTP:ROSC:STAT`` (unless the native command has already been
+        found to be the one that works), then reads ``STAT?`` bit 5 and, where
+        the unit answers it, ``OUTP:ROSC:STAT?``. If the output did not
+        follow, sends the native Reference Output command (``0800``/``0801``
+        [R1, Table 2a]) and reads again; if that worked, the native command
+        is used directly from then on. On the FSL-0020 tested the SCPI form
+        left STAT? bit 5 set, while NI's panel (native commands) and a power
+        meter showed REF OUT switching off (0.0.8/0.0.9).
+
+        Returns
+        -------
+        tuple
+            (``OUTP:ROSC:STAT?`` state or None if unsupported, decoded
+            ``STAT?``, command used last: "scpi" or "native").
+        """
+        native = native_switch_command(NATIVE_REF_OUTPUT, enabled)
+        if self.reference_output_command == "native":
+            self.io.write(native)
+            self._emit_state("reference_output", enabled)
+            reported, status, _ = self._reference_output_followed(enabled)
+            return reported, status, "native"
+        self.set_reference_output(enabled)
+        reported, status, followed = self._reference_output_followed(enabled)
+        if followed:
+            return reported, status, "scpi"
+        self.io.write(native)
+        reported, status, followed = self._reference_output_followed(enabled)
+        if followed:
+            self.reference_output_command = "native"
+        return reported, status, "native"
+
+    def set_reference_source_checked(
+        self, source: RefSource | str
+    ) -> tuple[RefSource, StatusWord, str]:
+        """Select the reference and read it back with ``ROSC:SOUR?``.
+
+        Falls back to the native Select Ref. Source command (``0600`` /
+        ``0601`` [R1, Table 2a]) if the SCPI form is not reflected.
+
+        Returns
+        -------
+        tuple
+            (source reported by ``ROSC:SOUR?``, decoded ``STAT?``, command
+            set used last).
+        """
+        source = RefSource(str(source).strip().upper())
+        self.set_reference_source(source)
+        reported = self.get_reference_source()
+        used = "scpi"
+        if reported != source:
+            self.io.write(native_switch_command(NATIVE_REF_SOURCE,
+                                                source is RefSource.EXTERNAL))
+            used = "native"
+            reported = self.get_reference_source()
+        return reported, self.get_status(), used
 
     def set_lock_recovery(self, enabled: bool) -> None:
         """Enable or disable automatic lock recovery (``FREQ:LRSTAT``).
@@ -2350,6 +2576,7 @@ class QuickSyn:
 
     def set_fm_mode(self, mode: FMMode) -> None:
         """Select the FM/phase mode with ``FM:MODE``."""
+        mode = FMMode(int(mode))           # accept a plain int from a combo box
         self.io.write(f"FM:MODE {int(mode)}")
         self._emit_state("fm_mode", mode.name)
 
@@ -2540,8 +2767,8 @@ class QuickSyn:
             {
                 "dwell_us": dwell_us,
                 "run_count": run_count,
-                "trigger": trigger.name,
-                "direction": direction.name,
+                "trigger": TriggerMode(int(trigger)).name,
+                "direction": SweepDirection(int(direction)).name,
                 "run_now": run_now,
             },
         )
@@ -3246,7 +3473,7 @@ class TelemetrySampler(QtCore.QThread):
         """Acquire until stopped, honouring the configured sample period."""
         self._running = True
         self._index = 0
-        self._t0_mono = time.monotonic()
+        self._t0_mono = time.perf_counter()
         period = self.config.period_s
         last_report = self._t0_mono
         samples_in_window = 0
@@ -3254,7 +3481,7 @@ class TelemetrySampler(QtCore.QThread):
 
         while self._running:
             deadline = self._t0_mono + (self._index + 1) * period
-            t_poll_start = time.monotonic()
+            t_poll_start = time.perf_counter()
             try:
                 record, row = self._poll_once(t_poll_start)
             except Exception as exc:
@@ -3265,7 +3492,7 @@ class TelemetrySampler(QtCore.QThread):
                 self._sleep_until(deadline)
                 continue
 
-            busy = time.monotonic() - t_poll_start
+            busy = time.perf_counter() - t_poll_start
             busy_in_window += busy
             samples_in_window += 1
 
@@ -3275,7 +3502,7 @@ class TelemetrySampler(QtCore.QThread):
 
             self._index += 1
 
-            now = time.monotonic()
+            now = time.perf_counter()
             if now - last_report >= 1.0:
                 elapsed = now - last_report
                 self.rateReport.emit(
@@ -3291,7 +3518,7 @@ class TelemetrySampler(QtCore.QThread):
     def _sleep_until(self, deadline: float) -> None:
         """Sleep in short slices so a stop request is honoured promptly."""
         while self._running:
-            remaining = deadline - time.monotonic()
+            remaining = deadline - time.perf_counter()
             if remaining <= 0.0:
                 return
             time.sleep(min(remaining, 0.05))
@@ -3330,8 +3557,8 @@ class TelemetrySampler(QtCore.QThread):
             self._last_temp_c = self.driver.get_temperature()
         temp_c = self._last_temp_c
 
-        latency = time.monotonic() - t_poll_start
-        t_mono = time.monotonic() - self._t0_mono
+        latency = time.perf_counter() - t_poll_start
+        t_mono = time.perf_counter() - self._t0_mono
         rate_hz = 1.0 / latency if latency > 0 else 0.0
 
         record = (
@@ -3536,6 +3763,141 @@ def labelled_row(*widgets: QtWidgets.QWidget) -> QtWidgets.QWidget:
     return container
 
 
+class EntrySpinBox(QtWidgets.QDoubleSpinBox):
+    """A QDoubleSpinBox that lets any number be typed, then range-checks it.
+
+    The stock box refuses a keystroke that would exceed its decimals. With
+    nine decimals shown ("1.000000000 GHz") every digit typed after the point
+    is refused, so 0.8 GHz could not be typed by editing the text, and text
+    the box judged incomplete was reverted when focus moved, after which the
+    Set button sent the OLD value (first hardware session, 0.0.8).
+
+    Here any partial or complete number may be typed (extra decimals are
+    rounded on commit), a unit suffix that is whole, partly deleted or absent
+    is tolerated, and a typed value that cannot be accepted (not a number, or
+    outside the range) is announced with :attr:`entryRejected` and kept for
+    :meth:`take_rejected_text`, so the caller can refuse to act instead of
+    sending the old value.
+    """
+
+    #: Text the user typed that could not be accepted (emitted on commit).
+    entryRejected = QtCore.Signal(str)
+
+    _NUMBER_RE = re.compile(r"[+-]?(?:\d+\.?\d*|\.\d*)?")
+    #: A rejection older than this is stale and no longer blocks an action.
+    REJECTION_TTL_S = 1.0
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._typed: str | None = None
+        self._rejected: tuple[str, float] | None = None
+        self.lineEdit().textEdited.connect(self._remember_typed)
+        self.valueChanged.connect(self._forget_typed)
+
+    def _remember_typed(self, text: str) -> None:
+        """Keep the latest text typed by the user (not set by the program)."""
+        self._typed = text
+        self._rejected = None
+
+    def _forget_typed(self, *_args: Any) -> None:
+        """A new value is in force; nothing typed is pending."""
+        self._typed = None
+
+    def _number_part(self, text: str) -> str | None:
+        """The numeric part of ``text``, or None if it cannot become a number."""
+        core = text.strip()
+        prefix = self.prefix().strip()
+        if prefix and core.startswith(prefix):
+            core = core[len(prefix):].strip()
+        unit = self.suffix().strip()
+        for cut in range(len(unit), 0, -1):     # whole unit, or partly deleted
+            if core.endswith(unit[:cut]):
+                core = core[:-cut].strip()
+                break
+        core = core.replace(self.locale().decimalPoint(), ".")
+        return core if self._NUMBER_RE.fullmatch(core) else None
+
+    def _parse(self, text: str) -> float | None:
+        """The value ``text`` stands for, rounded to the box's decimals."""
+        core = self._number_part(text)
+        if core is None:
+            return None
+        try:
+            return round(float(core), self.decimals())
+        except ValueError:                       # "", "+", "-", "."
+            return None
+
+    def _in_range(self, value: float | None) -> bool:
+        """True when ``value`` is a number inside the box's range."""
+        return value is not None and self.minimum() <= value <= self.maximum()
+
+    def validate(self, text: str, pos: int) -> tuple:  # noqa: D102 (Qt API)
+        state = QtGui.QValidator.State
+        if self._number_part(text) is None:
+            return state.Invalid, text, pos
+        if self._in_range(self._parse(text)):
+            return state.Acceptable, text, pos
+        return state.Intermediate, text, pos
+
+    def valueFromText(self, text: str) -> float:  # noqa: N802 (Qt API)
+        value = self._parse(text)
+        return self.value() if value is None else value
+
+    def _check_typed_on_commit(self) -> None:
+        """On Enter or focus-out: report typed text that cannot be accepted."""
+        typed = self._typed
+        if typed is None or self._in_range(self._parse(typed)):
+            return
+        self._typed = None
+        self._rejected = (typed, time.perf_counter())
+        self.lineEdit().setText(self.prefix() + self.textFromValue(self.value()) + self.suffix())
+        self.entryRejected.emit(typed)
+
+    def _editable_span(self) -> tuple[int, int]:
+        """Cursor limits of the number: after the prefix, before the suffix."""
+        text = self.lineEdit().text()
+        low = len(self.prefix()) if text.startswith(self.prefix()) else 0
+        high = len(text) - len(self.suffix()) if text.endswith(self.suffix()) else len(text)
+        return low, max(low, high)
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:  # noqa: N802 (Qt API)
+        key = event.key()
+        keys = QtCore.Qt.Key
+        edit = self.lineEdit()
+        low, high = self._editable_span()
+        if key in (keys.Key_Return, keys.Key_Enter):
+            self._check_typed_on_commit()
+        elif key == keys.Key_End and not event.modifiers() & QtCore.Qt.KeyboardModifier.ShiftModifier:
+            edit.setCursorPosition(high)        # End = end of the number, not of the unit
+            event.accept()
+            return
+        elif not edit.hasSelectedText() and (key == keys.Key_Backspace or event.text().isprintable()):
+            # Typing or Backspace with the cursor inside the unit acts at the
+            # end of the number instead of being refused.
+            edit.setCursorPosition(min(max(edit.cursorPosition(), low), high))
+            point = self.locale().decimalPoint()
+            pos = edit.cursorPosition()
+            if event.text() in (".", point) and edit.text()[pos:pos + 1] == point:
+                # Typing the decimal point just before the existing one steps
+                # over it, so "0", ".", "8" after deleting the "1" of
+                # "1.000000000" gives 0.8, not 08 or a refused keystroke.
+                edit.setCursorPosition(pos + 1)
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
+    def focusOutEvent(self, event: QtGui.QFocusEvent) -> None:  # noqa: N802 (Qt API)
+        self._check_typed_on_commit()
+        super().focusOutEvent(event)
+
+    def take_rejected_text(self) -> str | None:
+        """The text just refused (within REJECTION_TTL_S), then forget it."""
+        rejected, self._rejected = self._rejected, None
+        if rejected is None or time.perf_counter() - rejected[1] > self.REJECTION_TTL_S:
+            return None
+        return rejected[0]
+
+
 def make_double_spin(
     minimum: float,
     maximum: float,
@@ -3544,8 +3906,8 @@ def make_double_spin(
     suffix: str = "",
     value: float = 0.0,
 ) -> QtWidgets.QDoubleSpinBox:
-    """Construct a configured :class:`QDoubleSpinBox`."""
-    spin = QtWidgets.QDoubleSpinBox()
+    """Construct a configured :class:`EntrySpinBox` (free typing, range-checked)."""
+    spin = EntrySpinBox()
     spin.setRange(minimum, maximum)
     spin.setDecimals(decimals)
     spin.setSingleStep(step)
@@ -3645,6 +4007,7 @@ class ConnectionTab(QtWidgets.QWidget):
         )
         self.model_label = QtWidgets.QLabel("-")
         self.firmware_label = QtWidgets.QLabel("-")
+        self.firmware_label.setWordWrap(True)     # long since 0.0.8 (option list)
         self.caps_label = QtWidgets.QLabel("-")
         self.caps_label.setWordWrap(True)
         # The SCPI *IDN? field order is undocumented, so every field is
@@ -3652,7 +4015,7 @@ class ConnectionTab(QtWidgets.QWidget):
         # behind this application's interpretation of it.
         self.fields_table = QtWidgets.QTableWidget(0, 2)
         self.fields_table.setHorizontalHeaderLabels(
-            ["Field (inferred meaning)", "Raw value"]
+            ["Field", "Raw value"]
         )
         self.fields_table.horizontalHeader().setStretchLastSection(True)
         self.fields_table.verticalHeader().setVisible(False)
@@ -3671,8 +4034,9 @@ class ConnectionTab(QtWidgets.QWidget):
         notice = QtWidgets.QLabel(
             "Link parameters are fixed by the vendor at 115200 baud, 8 data "
             "bits, no parity, 1 stop bit, no flow control, CR terminator, "
-            "64-byte command buffer including the terminator. SCPI requires "
-            "firmware 100 or higher; the SPI port accepts native commands "
+            "64-byte command buffer including the terminator. [R1] says SCPI "
+            "needs firmware 100 or higher, but an FSL-0020 with firmware 0008 "
+            "answers SCPI; the SPI port accepts native commands "
             "only and is not supported here. Leave the baud rate at 115200 "
             "for a USB connection: DIAG:BAUD retargets the debug port used "
             "by RS232, GPIB and Ethernet, not the USB virtual COM port."
@@ -3767,11 +4131,17 @@ class ConnectionTab(QtWidgets.QWidget):
         else:
             fw_text = (
                 f"{ident.firmware} = {ident.firmware_value} "
-                f"({ident.firmware_base}); below the documented firmware "
-                f"{MIN_SCPI_FIRMWARE} minimum for SCPI. Advisory only - the "
-                f"field order is inferred, and the unit did answer *IDN?."
+                f"({ident.firmware_base}). [R1] says SCPI needs firmware "
+                f"{MIN_SCPI_FIRMWARE} or higher, but this unit answers SCPI, so that "
+                f"rule evidently uses another numbering (an FSL-0020 with "
+                f"firmware 0008 answers SCPI). Informational only."
             )
-            colour = "#c58a00"
+            colour = "#8a8d93"
+        options = ident.option_numbers
+        if options:
+            fw_text += (f"<br>Option word {ident.options}: options "
+                        f"{', '.join(str(n) for n in options)} (bit n = option n+1, "
+                        f"as NI's calibration panel decodes it).")
         self.firmware_label.setText(f'<span style="color:{colour};">{fw_text}</span>')
 
         lower = cap.f_min_opt1_hz if cap.f_min_opt1_hz is not None else cap.f_min_hz
@@ -3800,6 +4170,13 @@ class MainControlTab(QtWidgets.QWidget):
     ) -> None:
         super().__init__(parent)
         self.ctl = controller
+        #: Last reference source read (ROSC:SOUR?) and last decoded STAT?.
+        self._ref_source: RefSource | None = None
+        self._last_status: StatusWord | None = None
+        #: True while OUTP:ROSC:STAT? and STAT? bit 5 disagree (warned once).
+        self._refout_mismatch = False
+        #: (perf_counter time, value) of the previous temperature reading.
+        self._last_temp: tuple[float, float] | None = None
         root = QtWidgets.QHBoxLayout(self)
 
         # --- Left column: carrier and level ---------------------------------
@@ -3908,9 +4285,14 @@ class MainControlTab(QtWidgets.QWidget):
         self.led_ref_out = LEDIndicator("Reference output")
         self.led_blanking = LEDIndicator("Blanking")
         self.led_lockrec = LEDIndicator("Lock recovery")
+        #: Which 10 MHz reference is in use (ROSC:SOUR?, with presence and lock).
+        self.led_ref_int = LEDIndicator("Internal 10 MHz reference")
+        self.led_ref_ext = LEDIndicator("External 10 MHz reference")
         for led in (
             self.led_rf_lock,
             self.led_ref_lock,
+            self.led_ref_int,
+            self.led_ref_ext,
             self.led_ext_ref,
             self.led_rf_out,
             self.led_voltage,
@@ -3962,6 +4344,16 @@ class MainControlTab(QtWidgets.QWidget):
 
         self.sync_button = QtWidgets.QPushButton("Read all settings from instrument")
         right.addWidget(self.sync_button)
+        auto_row = QtWidgets.QHBoxLayout()
+        self.auto_sync_check = QtWidgets.QCheckBox("Auto-read all settings every")
+        self.auto_sync_check.setToolTip(
+            "Repeats 'Read all settings' on this interval while connected. A box you "
+            "are typing in is not overwritten; stops after three failed reads.")
+        self.auto_sync_spin = make_double_spin(1.0, 3600.0, 1, 1.0, " s", DEFAULT_AUTO_SYNC_S)
+        auto_row.addWidget(self.auto_sync_check)
+        auto_row.addWidget(self.auto_sync_spin)
+        auto_row.addStretch(1)
+        right.addLayout(auto_row)
         right.addStretch(1)
 
         root.addLayout(left, 3)
@@ -3991,12 +4383,13 @@ class MainControlTab(QtWidgets.QWidget):
         )
         self.read_power_button.clicked.connect(
             lambda: c.guard(lambda: self.power_readback.setText(
-                f"POW? reports {c.driver.get_power():+.1f} dBm"
+                f"POW? reports {c.driver.get_power():+.1f} dBm" + self._rf_note()
             ))
         )
         self.read_power_native_button.clicked.connect(
             lambda: c.guard(lambda: self.power_readback.setText(
                 f"native Get Power (0D) reports {c.driver.get_power_native():+.1f} dBm"
+                + self._rf_note()
             ))
         )
         self.rf_check.clicked.connect(
@@ -4007,17 +4400,13 @@ class MainControlTab(QtWidgets.QWidget):
             lambda v: c.guard(lambda: c.driver.set_blanking(v))
         )
         self.refout_check.clicked.connect(
-            lambda v: c.guard(lambda: c.driver.set_reference_output(v))
+            lambda v: c.guard(lambda: self._apply_reference_output(v))
         )
         self.lockrec_check.clicked.connect(
             lambda v: c.guard(lambda: c.driver.set_lock_recovery(v))
         )
         self.refsrc_combo.activated.connect(
-            lambda _: c.guard(
-                lambda: c.driver.set_reference_source(
-                    self.refsrc_combo.currentData()
-                )
-            )
+            lambda _: c.guard(self._apply_reference_source)
         )
         self.refresh_status_button.clicked.connect(
             lambda: c.guard(lambda: self.update_status(c.driver.get_status()))
@@ -4044,13 +4433,26 @@ class MainControlTab(QtWidgets.QWidget):
             lambda: c.guard(lambda: c.driver.recall_state(2))
         )
         self.sync_button.clicked.connect(lambda: c.guard(c.sync_from_instrument))
+        self.auto_sync_check.toggled.connect(
+            lambda on: c.set_auto_sync(on, self.auto_sync_spin.value()))
+        self.auto_sync_spin.valueChanged.connect(
+            lambda v: c.set_auto_sync(self.auto_sync_check.isChecked(), v))
 
     def _show_readback(self, label: QtWidgets.QLabel, ok: bool, text: str) -> None:
         """Readback line: plain when the instrument followed, red otherwise."""
         label.setText(text if ok else f'<span style="color:#d9483b;">{html.escape(text)}</span>')
 
+    def _rf_note(self) -> str:
+        """Reminder for read-backs: POW? is the level setting, not a measurement."""
+        status = self._last_status
+        if status is not None and not status.rf_output_on:
+            return " (the level setting; the RF output is OFF)"
+        return ""
+
     def _apply_frequency(self) -> None:
         """Command the frequency, read it back with FREQ? and compare."""
+        if self.freq_spin.take_rejected_text() is not None:
+            return                      # refused typed value, already reported
         commanded, reported = self.ctl.driver.set_frequency_checked(self.freq_spin.value() * 1e9)
         ok = hz_to_mlhz(reported) == hz_to_mlhz(commanded)
         text = (f"set {commanded / 1e9:.9f} GHz; instrument reports {reported / 1e9:.9f} GHz"
@@ -4067,13 +4469,15 @@ class MainControlTab(QtWidgets.QWidget):
         rated level, and *IDN? does not say whether option 2 is fitted, so
         the read-back is the only way to tell.
         """
+        if self.power_spin.take_rejected_text() is not None:
+            return                      # refused typed value, already reported
         mode = self.power_cmd_combo.currentData()
         commanded, reported, used = self.ctl.driver.set_power_checked(
             self.power_spin.value(), command_set=mode)
         ok = abs(reported - commanded) <= POWER_READBACK_TOL_DB
         how = "SCPI POW" if used == "scpi" else f"native {native_power_command(commanded)}"
         text = (f"set {commanded:+.1f} dBm ({how}); instrument reports {reported:+.1f} dBm"
-                + ("" if ok else " - the level did not change"))
+                + ("" if ok else " - the level did not change") + self._rf_note())
         self._show_readback(self.power_readback, ok, text)
         if ok and mode == "auto" and used == "native":
             # SCPI POW was ignored but the native command worked: use it
@@ -4088,6 +4492,80 @@ class MainControlTab(QtWidgets.QWidget):
                 f"{reported:+.1f} dBm. This unit may not have power-control option 2, or "
                 f"the level is outside what it can produce at this frequency."
             )
+
+    def _apply_reference_output(self, enabled: bool) -> None:
+        """Switch the 10 MHz output, read it back, fall back to native 08xx.
+
+        On the FSL-0020 tested, OUTP:ROSC:STAT OFF left STAT? bit 5 set, while
+        NI's panel (native commands) switched REF OUT off on a power meter.
+        STAT? bit 5 is checked (and OUTP:ROSC:STAT? where the unit answers it);
+        if the output did not follow, the native command is tried, and once it
+        works it is used for the rest of the session (0.0.9).
+        """
+        driver = self.ctl.driver
+        state = "ON" if enabled else "OFF"
+        native = native_switch_command(NATIVE_REF_OUTPUT, enabled)
+        was_native = driver.reference_output_command == "native"
+        reported, status, used = driver.set_reference_output_checked(enabled)
+        self.update_status(status)
+        if was_native:
+            how = f"native {native}"
+        elif used == "scpi":
+            how = "OUTP:ROSC:STAT"
+        else:
+            how = f"OUTP:ROSC:STAT, then the native {native}"
+        checks = "STAT?" + (" and OUTP:ROSC:STAT?" if reported is not None else "")
+        followed = status.ref_output_on == enabled and reported in (None, enabled)
+        if followed:
+            self.ctl.status_message(f"10 MHz reference output {state} ({how}; confirmed by {checks}).")
+            if used == "native" and not was_native:
+                self.ctl.warn("OUTP:ROSC:STAT did not change the 10 MHz output, the native "
+                              f"{native} did; the native command is used for the rest of this "
+                              "session.")
+            return
+        query_text = (f"OUTP:ROSC:STAT? reports {'ON' if reported else 'OFF'} and "
+                      if reported is not None else "")
+        self.ctl.warn(
+            f"{how} {state} sent, but {query_text}STAT? bit 5 still reports "
+            f"{'ON' if status.ref_output_on else 'OFF'}. Check REF OUT on a power meter or counter: "
+            f"if it did switch, only the status bit is wrong.")
+
+    def _apply_reference_source(self) -> None:
+        """Select the reference, read it back with ROSC:SOUR?, then re-check the lock."""
+        wanted = RefSource(str(self.refsrc_combo.currentData()))
+        reported, status, used = self.ctl.driver.set_reference_source_checked(wanted)
+        self.update_status(status)
+        self.update_reference(reported, status)
+        if reported != wanted:
+            self.ctl.warn(f"ROSC:SOUR {wanted.value} (and the native 06 command) sent, but "
+                          f"ROSC:SOUR? reports {reported.value}.")
+            return
+        self.ctl.status_message(
+            f"Reference source {wanted.value} (confirmed by ROSC:SOUR?"
+            + (", native 06 command" if used == "native" else "") + ").")
+        # The reference loop needs a moment to lock; look again shortly.
+        QtCore.QTimer.singleShot(1500, lambda: self.ctl.guard(self._recheck_reference))
+
+    def _recheck_reference(self) -> None:
+        """After a source change: refresh the LEDs and warn if not locked."""
+        status = self.ctl.driver.get_status()
+        source = self.ctl.driver.get_reference_source()
+        self.update_status(status)
+        self.update_reference(source, status)
+        if source is RefSource.EXTERNAL and not status.ext_ref_present:
+            self.ctl.warn("External reference selected, but no 10 MHz signal is detected at "
+                          "REF IN (STAT? bit 0). The unit cannot lock to it.")
+        elif not status.ref_locked:
+            self.ctl.warn(f"Reference source {source.value}: the reference is NOT LOCKED.")
+
+    def note_reference_output(self, query_on: bool, status: StatusWord) -> None:
+        """Compare OUTP:ROSC:STAT? with STAT? bit 5 and warn once when they part."""
+        mismatch = query_on != status.ref_output_on
+        if mismatch and not self._refout_mismatch:
+            self.ctl.warn(
+                f"OUTP:ROSC:STAT? reports {'ON' if query_on else 'OFF'} but STAT? bit 5 reports "
+                f"{'ON' if status.ref_output_on else 'OFF'} for the 10 MHz reference output.")
+        self._refout_mismatch = mismatch
 
     def _do_reset(self) -> None:
         """Reset and immediately read back, rather than assume defaults.
@@ -4143,6 +4621,8 @@ class MainControlTab(QtWidgets.QWidget):
             "Lock recovery on" if status.lock_recovery_on else "Lock recovery off",
         )
         self.status_raw_label.setText(f"raw: 0x{status.raw:02X}")
+        self._last_status = status
+        self.update_reference(None, status)
 
         # Reflect state in the checkboxes without re-emitting commands.
         for widget, value in (
@@ -4155,9 +4635,59 @@ class MainControlTab(QtWidgets.QWidget):
             widget.setChecked(value)
             widget.blockSignals(False)
 
+    def update_reference(self, source: RefSource | str | None,
+                         status: StatusWord | None = None) -> None:
+        """Set the Internal / External 10 MHz reference LEDs.
+
+        ``source`` comes from ROSC:SOUR? (None keeps the last one known);
+        ``status`` supplies presence at REF IN (bit 0) and the reference lock.
+        """
+        if source is not None:
+            self._ref_source = RefSource(str(source).strip().upper())
+        if status is not None:
+            self._last_status = status
+        src, st = self._ref_source, self._last_status
+        if src is None:
+            self.led_ref_int.set_state(None, "Internal 10 MHz reference")
+            self.led_ref_ext.set_state(None, "External 10 MHz reference")
+            return
+        present = st.ext_ref_present if st is not None else None
+        locked = st.ref_locked if st is not None else None
+        if src is RefSource.INTERNAL:
+            self.led_ref_int.set_state(
+                locked is not False,
+                "Internal 10 MHz reference IN USE" + ("" if locked is not False else " - NOT LOCKED"))
+            self.led_ref_ext.set_state(
+                None, "External 10 MHz reference not selected"
+                + (" (signal present at REF IN)" if present else ""))
+        else:
+            ok = bool(present) and locked is not False
+            self.led_ref_ext.set_state(
+                ok, "External 10 MHz reference IN USE" if ok else
+                ("External 10 MHz selected - NO SIGNAL at REF IN" if not present
+                 else "External 10 MHz selected - NOT LOCKED"))
+            self.led_ref_int.set_state(None, "Internal 10 MHz reference not selected")
+
     def update_temperature(self, celsius: float) -> None:
-        """Refresh the temperature display and colour-code the margin."""
-        self.temp_label.setText(f"{celsius:.1f} \u00b0C")
+        """Refresh the temperature display and colour-code the margin.
+
+        A change of TEMP_STEP_SUSPECT_C or more since a reading less than
+        TEMP_STEP_WINDOW_S ago is flagged: the case cannot change that fast.
+        On the FSL-0020 tested, DIAG:MEAS? 21 read twice its value after a POW
+        command until the next OUTP:STAT (0.0.8).
+        """
+        now = time.perf_counter()
+        suspect = False
+        previous = self._last_temp
+        if previous is not None and now - previous[0] <= TEMP_STEP_WINDOW_S \
+                and abs(celsius - previous[1]) >= TEMP_STEP_SUSPECT_C:
+            suspect = True
+            self.ctl.warn(
+                f"Temperature reading changed from {previous[1]:.1f} to {celsius:.1f} C within "
+                f"{now - previous[0]:.0f} s; a real case temperature cannot step like that, so "
+                f"treat the reading as suspect.")
+        self._last_temp = (now, celsius)
+        self.temp_label.setText(f"{celsius:.1f} \u00b0C" + ("  (suspect step)" if suspect else ""))
         if celsius >= 75.0:
             colour = "#d14545"
         elif celsius >= 65.0:
@@ -5349,6 +5879,11 @@ class AppController(QtCore.QObject):
             lambda: self.export_vszh5(render=False, quiet=True)
         )
 
+        #: "Auto-read all settings every N s" (Main tab switch).
+        self._auto_sync_timer = QtCore.QTimer(self)
+        self._auto_sync_timer.timeout.connect(self._auto_sync_tick)
+        self._auto_sync_failures = 0
+
     # --- Error funnel -------------------------------------------------------
     def guard(self, action: Callable[[], Any]) -> Any:
         """Run an action, routing any failure to the status bar and log.
@@ -5458,18 +5993,9 @@ class AppController(QtCore.QObject):
             self._apply_capability_limits()
             self.sync_from_instrument()
 
-            if ident.scpi_supported is False:
-                QtWidgets.QMessageBox.warning(
-                    self.window,
-                    "Firmware below the SCPI minimum",
-                    f"This unit reports firmware {ident.firmware} "
-                    f"({ident.firmware_value}), which is below the documented "
-                    f"minimum of {MIN_SCPI_FIRMWARE} for SCPI support. "
-                    f"Commands may be rejected. The native hexadecimal command "
-                    f"set would be required instead; this application does not "
-                    f"implement it.",
-                )
-            elif ident.scpi_supported is None:
+            # No dialog for firmware below the [R1] figure of 100: the
+            # FSL-0020 tested reports firmware 0008 and answers SCPI (0.0.8).
+            if ident.scpi_supported is None:
                 self.status_message(
                     f"Connected. Firmware field {ident.firmware!r} could not be "
                     f"parsed, so SCPI support was not confirmed."
@@ -5492,6 +6018,8 @@ class AppController(QtCore.QObject):
             self.transport.close()
         self.transport = None
         self.driver = None
+        self.window.tab_main.auto_sync_check.setChecked(False)
+        self._auto_sync_timer.stop()
         self.window.tab_connection.set_connected(False)
         self.window.set_connected(False)
         self.status_message("Disconnected.")
@@ -5550,9 +6078,13 @@ class AppController(QtCore.QObject):
             f"option 2; without it the output stays at {cap.p_default_dbm:+.1f} dBm) [R4]"
             if not fixed else f"fixed at {cap.p_default_dbm:+.1f} dBm typical ({cap.model})")
         main.power_note.setVisible(fixed)
+        listed = 2 in self.driver.identity.option_numbers
         main.power_note.setText(
             f"The {cap.model} has a fixed output level ({cap.p_default_dbm:+.1f} dBm "
             f"typical) and no power-control option [R4], so the level cannot be set."
+            + (" Its option word lists option 2, but on the FSL-0020 tested POW was "
+               "accepted and read back while a power meter showed no change (README 3.3)."
+               if listed else "")
             if fixed else "")
         main.power_spin.setToolTip(
             "POW. Quantised to 0.1 dB. Needs power-control option 2; the level is "
@@ -5566,17 +6098,50 @@ class AppController(QtCore.QObject):
             return
         d = self.driver
         main = self.window.tab_main
-        main.freq_spin.setValue(d.get_frequency() / 1e9)
-        main.power_spin.setValue(d.get_power())
-        main.update_status(d.get_status())
+        # A box the user is typing in is left alone (auto-read, 0.0.8).
+        if not main.freq_spin.hasFocus():
+            main.freq_spin.setValue(d.get_frequency() / 1e9)
+        if not main.power_spin.hasFocus():
+            main.power_spin.setValue(d.get_power())
+        status = d.get_status()
+        main.update_status(status)
         main.update_temperature(d.get_temperature())
         source = d.get_reference_source()
-        index = main.refsrc_combo.findData(source)
+        index = main.refsrc_combo.findData(source.value)
         if index >= 0:
             main.refsrc_combo.blockSignals(True)
             main.refsrc_combo.setCurrentIndex(index)
             main.refsrc_combo.blockSignals(False)
+        main.update_reference(source, status)
+        refout = d.get_reference_output_optional()
+        if refout is not None:
+            main.note_reference_output(refout, status)
         self.window.tab_modulation.update_modulation(d.get_modulation_status())
+
+    def set_auto_sync(self, enabled: bool, interval_s: float) -> None:
+        """Start, retime or stop the periodic "Read all settings"."""
+        self._auto_sync_failures = 0
+        if enabled:
+            self._auto_sync_timer.start(max(100, int(round(interval_s * 1000.0))))
+            self.status_message(f"Auto-read of all settings every {interval_s:g} s.")
+        elif self._auto_sync_timer.isActive():
+            self._auto_sync_timer.stop()
+            self.status_message("Auto-read of all settings stopped.")
+
+    def _auto_sync_tick(self) -> None:
+        """One periodic read of every setting; three failures in a row stop it."""
+        if self.driver is None:
+            return
+        try:
+            self.sync_from_instrument()
+            self._auto_sync_failures = 0
+        except (QuickSynError, ValueError) as exc:
+            self._auto_sync_failures += 1
+            self.status_message(
+                f"Auto-read failed ({self._auto_sync_failures}/{AUTO_SYNC_MAX_FAILURES}): {exc}")
+            if self._auto_sync_failures >= AUTO_SYNC_MAX_FAILURES:
+                self.window.tab_main.auto_sync_check.setChecked(False)
+                self.warn(f"Auto-read stopped after {AUTO_SYNC_MAX_FAILURES} failed reads.")
 
     # --- Acquisition --------------------------------------------------------
     def start_logging(self) -> None:
@@ -5727,7 +6292,7 @@ class AppController(QtCore.QObject):
             return
         if self.ring is not None and self.writer is not None:
             self.ring.flush()
-            self._wait_for_writer(folder, render, quiet, deadline=time.monotonic() + 15.0)
+            self._wait_for_writer(folder, render, quiet, deadline=time.perf_counter() + 15.0)
         else:
             self._launch_export(folder, render, quiet=quiet)
 
@@ -5735,7 +6300,7 @@ class AppController(QtCore.QObject):
                          deadline: float) -> None:
         """Poll (without blocking the GUI) until the writer queue is empty."""
         writer = self.writer
-        if writer is None or writer.queue.unfinished_tasks == 0 or time.monotonic() > deadline:
+        if writer is None or writer.queue.unfinished_tasks == 0 or time.perf_counter() > deadline:
             self._launch_export(folder, render, quiet=quiet)
             return
         QtCore.QTimer.singleShot(
@@ -6474,6 +7039,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.resizeDocks([self.console_dock], [CONSOLE_DOCK_HEIGHT_PX],
                          QtCore.Qt.Orientation.Vertical)
         self.controller.transactionLogged.connect(self.console.add_transaction)
+        # A typed value that cannot be accepted is reported, not swapped for
+        # the old one in silence (0.0.8).
+        for spin in self.findChildren(EntrySpinBox):
+            spin.entryRejected.connect(
+                lambda text, box=spin: self.controller.warn(
+                    f"'{text.strip()}' is not a number from {box.minimum():g} to "
+                    f"{box.maximum():g}{box.suffix()}; the box keeps "
+                    f"{box.textFromValue(box.value())}{box.suffix()} and nothing was sent."))
         self.console.commandRequested.connect(self.controller.send_raw)
 
         self.statusBar().showMessage("Ready. Connect to an instrument.")

@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 William W. Wallace <wwallace@nrao.edu>
 """Typeset README_quicksyn_controller.md as a LuaLaTeX PDF with bookmarks.
 
-Part of the QuickSyn SCPI controller package, version 0.0.7.
+Part of the QuickSyn SCPI controller package, version 0.0.9.
 Author: William W. Wallace <wwallace@nrao.edu>, NRAO/GBO.
 Licence: GPL-3.0-or-later (see ../LICENSE).
 
@@ -32,7 +32,7 @@ from pathlib import Path
 
 PKG = Path(__file__).resolve().parents[1]
 README = PKG / "README_quicksyn_controller.md"
-VERSION = "0.0.7"
+VERSION = "0.0.9"
 
 FALLBACK = ('\\directlua{luaotfload.add_fallback("qsfallback", {"DejaVu Sans:mode=harf;", '
             '"DejaVu Sans Mono:mode=harf;", "DejaVu Math TeX Gyre:mode=harf;"})}\n')

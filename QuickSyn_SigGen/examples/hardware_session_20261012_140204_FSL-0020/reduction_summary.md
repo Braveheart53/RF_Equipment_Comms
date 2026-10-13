@@ -1,38 +1,39 @@
-# QuickSyn session reduction - 20261012_172921_FSW-0020_00000007
+# QuickSyn session reduction - session
 
-Produced by `quicksyn_veusz_export_v0_0_7.py` on 2026-10-12 17:30:11 UTC.
+Produced by `quicksyn_veusz_export_v0_0_9.py` on 2026-10-12 19:50:43 UTC.
 
 ## Instrument
 
 | Field | Value |
 | --- | --- |
-| `*IDN?` | `Phase Matrix,FSW-0020,00000007,0106,300A` |
-| Model | FSW-0020 |
-| Option field | `00000007` |
-| Software version field | `0106` (= 106, decimal) |
-| Serial field | `300A` |
-| Datasheet coverage | 0.5 - 20 GHz |
-| Transport | SIM at 115200 baud (SIMULATED) |
+| `*IDN?` | `Phase Matrix,FSL-0020,0000017f,1530200407,0008` |
+| Model | FSL-0020 |
+| Option word | `0000017f` (options 1, 2, 3, 4, 5, 6, 7, 9) |
+| Serial number | `1530200407` |
+| Firmware version | `0008` |
+| Datasheet coverage | 0.65 - 20 GHz |
+| Transport | COM5 at 115200 baud |
 
-> The `*IDN?` field order is inferred from the native Get ID order in
-> [R1] Table 4; it is not specified for the SCPI form.
+> `*IDN?` fields: manufacturer, model, option word, serial, firmware.
+> [R1] does not define the order; it was confirmed against NI's soft
+> front panels on an FSL-0020 (option bit n = option n+1).
 
 ## Acquisition timing
 
 | Quantity | Value | Unit |
 | --- | --- | --- |
-| Samples | 411 |  |
+| Samples | 1201 |  |
 | Loaded from | chunks |  |
-| Duration | 40.9987 | s |
-| Requested sample rate | 10 | Hz |
-| Achieved sample rate | 10.0003 | Hz |
-| Mean sample interval | 99.9967 | ms |
-| Interval std (jitter) | 3.13743 | ms |
-| Interval min / max | 68.880 / 131.124 | ms |
-| Jitter relative to period | 31375.3 | ppm |
-| Device I/O latency, mean | 6.00259 | ms |
-| Device I/O latency, p95 | 8.77772 | ms |
-| Device I/O latency, max | 13.0153 | ms |
+| Duration | 600 | s |
+| Requested sample rate | 2 | Hz |
+| Achieved sample rate | 2 | Hz |
+| Mean sample interval | 500 | ms |
+| Interval std (jitter) | 14.8413 | ms |
+| Interval min / max | 312.000 / 688.000 | ms |
+| Jitter relative to period | 29682.7 | ppm |
+| Device I/O latency, mean | 11.7086 | ms |
+| Device I/O latency, p95 | 16 | ms |
+| Device I/O latency, max | 188 | ms |
 
 The sample period is the reciprocal of the requested rate,
 
@@ -53,12 +54,12 @@ $t_q \approx 8$ ms gives $f_{s,\max} \approx 21$ Hz.
 
 | Quantity | Value | Unit |
 | --- | --- | --- |
-| Distinct frequencies observed | 4 |  |
-| Frequency min | 8.250000000 | GHz |
-| Frequency max | 19.500000000 | GHz |
-| Power min | -3.0 | dBm |
-| Power max | +8.0 | dBm |
-| RF output on, fraction of samples | 0.976 | - |
+| Distinct frequencies observed | 1 |  |
+| Frequency min | 1.000000000 | GHz |
+| Frequency max | 1.000000000 | GHz |
+| Power min | -10.0 | dBm |
+| Power max | +5.0 | dBm |
+| RF output on, fraction of samples | 0.127 | - |
 | Samples with RF unlocked | 0 |  |
 | Samples with reference unlocked | 0 |  |
 | Samples with voltage error | 0 |  |
@@ -67,10 +68,10 @@ $t_q \approx 8$ ms gives $f_{s,\max} \approx 21$ Hz.
 
 | Quantity | Value | Unit |
 | --- | --- | --- |
-| Internal temperature min | 29.0 | degC |
-| Internal temperature max | 29.5 | degC |
-| Rise over session | +0.5 | degC |
-| Margin to the +75 degC limit | 45.5 | degC |
+| Internal temperature min | 26.8 | degC |
+| Internal temperature max | 57.5 | degC |
+| Rise over session | +2.1 | degC |
+| Margin to the +75 degC limit | 17.5 | degC |
 
 ## Stability of the reported carrier
 
@@ -89,19 +90,21 @@ with phase residuals $x_k = \tau_0 \sum_{i<k} y_i$.
 
 | Averaging time tau (s) | ADEV |
 | --- | --- |
-| 0.1 | 1.574e-02 |
-| 0.2 | 1.932e-02 |
-| 0.4 | 2.629e-02 |
-| 0.8 | 3.713e-02 |
-| 1.6 | 5.344e-02 |
-| 3.2 | 7.892e-02 |
-| 6.4 | 1.245e-01 |
-| 12.8 | 2.301e-01 |
+| 0.5 | 0.000e+00 |
+| 1 | 0.000e+00 |
+| 2 | 0.000e+00 |
+| 4 | 0.000e+00 |
+| 8 | 0.000e+00 |
+| 16 | 0.000e+00 |
+| 32 | 0.000e+00 |
+| 64 | 0.000e+00 |
+| 128 | 0.000e+00 |
+| 256 | 0.000e+00 |
 
 ## Reduction
 
 | Quantity | Value |
 | --- | --- |
 | Compute backend | numpy |
-| Reduction wall time | 15.6 ms |
-| Script revision | 0.0.7 |
+| Reduction wall time | 13.6 ms |
+| Script revision | 0.0.9 |

@@ -1,5 +1,5 @@
 % !TeX program = lualatex
-% README for the QuickSyn SCPI controller package 0.0.7, typeset with LuaLaTeX.
+% README for the QuickSyn SCPI controller package 0.0.9, typeset with LuaLaTeX.
 % Generated from README_quicksyn_controller.md by tools/build_readme_pdf.py
 % (pandoc); compile twice:  lualatex README_quicksyn_controller.tex
 % Options for packages loaded elsewhere
@@ -124,7 +124,7 @@
 \fancyhf{}
 \lhead{\small QuickSyn SCPI Controller and Telemetry Logger}
 \rhead{\small\thepage}
-\lfoot{\scriptsize README\_quicksyn\_controller, version 0.0.7, GPL-3.0-or-later}
+\lfoot{\scriptsize README\_quicksyn\_controller, version 0.0.9, GPL-3.0-or-later}
 \setlength{\headheight}{14pt}
 \sloppy
 \ifLuaTeX
@@ -147,7 +147,7 @@
 
 \title{QuickSyn SCPI Controller and Telemetry Logger}
 \author{William W. Wallace, NRAO/GBO}
-\date{Version 0.0.7}
+\date{Version 0.0.9}
 
 \begin{document}
 \maketitle
@@ -157,7 +157,7 @@
 \setcounter{tocdepth}{2}
 \tableofcontents
 }
-\textbf{Version 0.0.7} · Python 3.12 · Qt.py → PySide6 · 2026-10-12
+\textbf{Version 0.0.9} · Python 3.12 · Qt.py → PySide6 · 2026-10-12
 
 \begin{longtable}[]{@{}
   >{\raggedright\arraybackslash}p{(\columnwidth - 2\tabcolsep) * \real{0.5000}}
@@ -173,8 +173,8 @@ Email &
 Licence & GPL-3.0-or-later --- see \texttt{LICENSE} and §14 \\
 Versioning & Semantic Versioning 2.0.0 {[}15{]}; \texttt{0.y.z} means
 initial development \\
-Status & Internal draft --- \textbf{not yet verified against
-hardware} \\
+Status & Internal draft --- \textbf{first hardware session 2026-10-12}
+(FSL-0020, §10.1); FSW not yet tested \\
 \end{longtable}
 
 SCPI control of the NI / Phase Matrix QuickSyn® microwave frequency
@@ -203,46 +203,51 @@ Purpose
 \endhead
 \bottomrule\noalign{}
 \endlastfoot
-\texttt{quicksyn\_scpi\_gui\_v0\_0\_7.py} & 0.0.7 & Controller, logger
+\texttt{quicksyn\_scpi\_gui\_v0\_0\_9.py} & 0.0.9 & Controller, logger
 and GUI with the live SCPI console (single file, Spyder
 \texttt{\#\ \%\%} cells); output-power fix and RF OUTPUT OFF (§3.3,
-§3.4) \\
-\texttt{quicksyn\_veusz\_export\_v0\_0\_7.py} & 0.0.7 & Reduction and
+§3.4); hardware-session fixes, reference LEDs, auto-read, free typing
+(§3.5--§3.6, §5.5, §10.1) \\
+\texttt{quicksyn\_veusz\_export\_v0\_0\_9.py} & 0.0.9 & Reduction and
 statistics; \texttt{export\_veusz()} writes the session \texttt{.vszh5};
 renders PDF (with bookmarks) and PNG from it; writes and compiles the
 LuaLaTeX session report \\
-\texttt{vszh5\_writer.py} & 0.0.7 & \textbf{Veusz HDF5 writer}
+\texttt{vszh5\_writer.py} & 0.0.9 & \textbf{Veusz HDF5 writer}
 (\texttt{VeuszWriter}, \texttt{VszDoc}, \texttt{vz\_text}, \ldots) from
 \texttt{isp\_speed\_monitor.py}: h5py only, no Veusz needed to write;
 \texttt{render\_pages()} and \texttt{add\_pdf\_bookmarks()}; reusable in
 other programs \\
-\texttt{environment\_quicksyn.yml} & 0.0.7 & Mamba environment
+\texttt{environment\_quicksyn.yml} & 0.0.9 & Mamba environment
 definition \\
-\texttt{README\_quicksyn\_controller.md} & 0.0.7 & This file \\
-\texttt{README\_quicksyn\_controller.pdf} / \texttt{.tex} & 0.0.7 & This
+\texttt{README\_quicksyn\_controller.md} & 0.0.9 & This file \\
+\texttt{README\_quicksyn\_controller.pdf} / \texttt{.tex} & 0.0.9 & This
 file typeset with LuaLaTeX (bookmark hierarchy of the sections, outline
 pane opens); the \texttt{.tex} is the editable LaTeX source \\
 \texttt{LICENSE} & --- & Full GNU GPL version 3 text, unmodified \\
-\texttt{tests/check\_release\_metadata.py} & 0.0.7 & Headers, SemVer,
+\texttt{tests/check\_release\_metadata.py} & 0.0.9 & Headers, SemVer,
 SPDX, history entries, \texttt{LICENSE} hash, \texttt{-\/-version},
 About dialog, every file at one version \\
-\texttt{tests/check\_smoke.py} & 0.0.7 & Driver, simulator, logging,
+\texttt{tests/check\_smoke.py} & 0.0.9 & Driver, simulator, logging,
 sampler and full-GUI checks, including the controller's own
 \texttt{.vszh5} export; output power (native and SCPI forms, read-back,
-fallback, model gating), Enter-to-apply, RF OFF, console Send line \\
-\texttt{tests/check\_reduction.py} & 0.0.7 & Rate, jitter, ADEV and
+fallback, model gating), Enter-to-apply, RF OFF, console Send line;
+0.0.8 hardware-session fixes (typed entries, combo-box enums, reference
+read-backs and LEDs, auto-read, temperature flag, *IDN? order); 0.0.9 10
+MHz output path (native command kept, unanswered
+\texttt{OUTP:ROSC:STAT?}) \\
+\texttt{tests/check\_reduction.py} & 0.0.9 & Rate, jitter, ADEV and
 moving-statistics maths \\
-\texttt{tests/check\_vszh5.py} & 0.0.7 & Writer and
+\texttt{tests/check\_vszh5.py} & 0.0.9 & Writer and
 \texttt{export\_veusz()}: layout, types, tags, escaping, DST, bit-exact
 data, pages; render plumbing (Windows paths, broken or unstartable
 Veusz, fallback); PDF page scale, bookmarks, re-render; LuaLaTeX report;
 real-Veusz load, re-save comparison and renders when Veusz is
 available \\
-\texttt{tests/check\_console.py} & 0.0.7 & The live SCPI console: line
+\texttt{tests/check\_console.py} & 0.0.9 & The live SCPI console: line
 format and alignment, thread safety, a simulated session against
 \texttt{transactions.csv}, a 200 000-exchange pause (memory and Resume
 time), filter, clear, save \\
-\texttt{tests/run\_all.py} & 0.0.7 & Runs the five checks in parallel
+\texttt{tests/run\_all.py} & 0.0.9 & Runs the five checks in parallel
 and prints a summary \\
 \texttt{upstream/veusz-4.2.1-vszh5-load-quit-pdfdpi.patch} & --- & Patch
 for Veusz itself (not needed by this package): \texttt{.vszh5} in
@@ -250,29 +255,43 @@ for Veusz itself (not needed by this package): \texttt{.vszh5} in
 PDF page scale (§6.5) \\
 \texttt{upstream/VEUSZ\_UPSTREAM\_ISSUE.md} & --- & Ready-to-file issue
 text for the Veusz project, with the test results \\
-\texttt{upstream/check\_veusz\_patch.py} & 0.0.7 & Reproduces the three
+\texttt{upstream/check\_veusz\_patch.py} & 0.0.9 & Reproduces the three
 Veusz limits and checks the patch, for any set of Veusz programs \\
-\texttt{tools/build\_readme\_pdf.py} & 0.0.7 & Rebuilds the README PDF
+\texttt{tools/build\_readme\_pdf.py} & 0.0.9 & Rebuilds the README PDF
 and \texttt{.tex} (pandoc + LuaLaTeX) \\
-\texttt{examples/simulated\_session\_20261012\_172921/} & 0.0.7 & Output
-of a 41 s \textbf{simulated} session recorded with 0.0.7 (four commanded
-frequency and power steps, each level read back with \texttt{POW?}, RF
-OFF at the end, 10 Hz): \texttt{quicksyn\_session.vszh5}, the bookmarked
+\texttt{examples/simulated\_session\_20261012\_194954/} & 0.0.9 & Output
+of a 41 s \textbf{simulated} session recorded with 0.0.9 (four commanded
+frequency and power steps, each read back, RF OFF at the end, 10 Hz):
+\texttt{quicksyn\_session.vszh5}, the bookmarked
 \texttt{quicksyn\_session.pdf}, the overview PNG,
 \texttt{quicksyn\_session\_report.tex} and \texttt{.pdf} (LuaLaTeX),
 \texttt{reduction\_summary.md}. No instrument was connected \\
+\texttt{examples/hardware\_session\_20261012\_140204\_FSL-0020/} & 0.0.9
+& The \textbf{first hardware session} (FSL-0020, 600 s at 2 Hz, recorded
+with 0.0.7) re-exported with the 0.0.9 export script: plots PDF,
+overview PNG, LuaLaTeX report, \texttt{reduction\_summary.md} (§10.1).
+Shows the temperature artefact and the 15.6 ms latency quantisation \\
 \end{longtable}
 
-0.0.7 fixes the output level that could not be changed in 0.0.6 (§3.3)
-and adds an RF OUTPUT OFF button (§3.4). 0.0.5 was never released as an
-archive; its changes first shipped in 0.0.6 (§11).
+0.0.9 corrects the 10 MHz output switch for the FSL-0020: its REF OUT
+does switch (confirmed with NI's panel and a power meter), but not with
+the SCPI command, so the native command is used once it has been seen to
+work, and a unit that does not answer \texttt{OUTP:ROSC:STAT?} no longer
+breaks the switch or \emph{Read all settings} (§3.5).
+
+0.0.8 fixes what the first hardware session found (§10.1): the reference
+source crash, frequencies below 1 GHz that could not be typed, the *IDN?
+field order, the 15.6 ms timing on Windows with Python 3.12, and an
+unchecked 10 MHz output switch. It adds Internal/External reference LEDs
+(§3.5) and an auto-read of all settings (§5.5). 0.0.7 fixed the
+output-level entry (§3.3) and added RF OUTPUT OFF (§3.4).
 
 \begin{Shaded}
 \begin{Highlighting}[]
 \ExtensionTok{mamba}\NormalTok{ env create }\AttributeTok{{-}f}\NormalTok{ environment\_quicksyn.yml}
 \ExtensionTok{mamba}\NormalTok{ activate quicksyn}
-\ExtensionTok{python}\NormalTok{ quicksyn\_scpi\_gui\_v0\_0\_7.py            }\CommentTok{\# Help \textgreater{} About shows author, company, email, licence}
-\ExtensionTok{python}\NormalTok{ quicksyn\_scpi\_gui\_v0\_0\_7.py }\AttributeTok{{-}{-}version}  \CommentTok{\# prints the same identity block, no display needed}
+\ExtensionTok{python}\NormalTok{ quicksyn\_scpi\_gui\_v0\_0\_9.py            }\CommentTok{\# Help \textgreater{} About shows author, company, email, licence}
+\ExtensionTok{python}\NormalTok{ quicksyn\_scpi\_gui\_v0\_0\_9.py }\AttributeTok{{-}{-}version}  \CommentTok{\# prints the same identity block, no display needed}
 \ExtensionTok{python}\NormalTok{ tests/run\_all.py                       }\CommentTok{\# no instrument or display required}
 \end{Highlighting}
 \end{Shaded}
@@ -522,6 +541,9 @@ After & Wait \\
   option 2); fixed-output models refuse \texttt{POW} and power sweeps
   (§3.3).
 \item
+  A typed value outside the model's range is refused with a message and
+  nothing is sent (§3.6).
+\item
   Every command is pre-flighted against the 64-byte buffer.
 \item
   The Modulation tab is hidden for models with no PULSE/AM/FM inputs.
@@ -535,9 +557,9 @@ the application, one ambiguity in {[}1{]}, and one property of the
 hardware:
 
 \begin{longtable}[]{@{}
-  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}
-  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}
-  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}@{}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.0435}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.4783}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.4783}}@{}}
 \toprule\noalign{}
 \begin{minipage}[b]{\linewidth}\raggedright
 \#
@@ -666,6 +688,60 @@ report it, and still put out its rated level, so the read-back can catch
 firmware that ignores the command but not missing hardware. Only a power
 meter or spectrum analyser at the RF output settles that (§13).
 
+\textbf{On hardware (0.0.8).} The FSL-0020 of §10.1 accepted
+\texttt{POW\ 5.0}, \texttt{POW\ +0.0}, \texttt{POW\ -3.0} and
+\texttt{POW\ -10}; \texttt{POW?} and \texttt{0D} reported each level
+(\texttt{0D} replies \texttt{0032}, \texttt{0000}, \texttt{FFE2},
+\texttt{FF9C}, which confirms the two's-complement reading), yet a power
+meter showed no change, and NI's own soft front panel could not change
+it either. The output does change with frequency, as an unlevelled
+source does. This is the blind spot described above, seen for real: the
+firmware stores the level, the hardware does not follow. It agrees with
+the datasheet, which lists only option 8 for the Lite models {[}4{]},
+and 0.0.7 already disabled the power box for the FSL-0020.
+
+The unit's option word (\texttt{0000017f}) nevertheless lists option 2,
+and NI's calibration panel shows ``1, 2, 3, 4, 5, 6, 7, 9''. The
+calibration manual offers one documented mechanism for ``option present
+but no control'': power calibration can be written with the \emph{Fixed
+Power Option}, in which case ``control of power is disabled and the
+power is set to the specified fixed power'' {[}3, §2-2{]}. Whether that,
+or simply missing levelling hardware, applies to this unit cannot be
+told from here. Two checks, in order of risk:
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Check
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+What it shows
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Risk
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+NI calibration panel, \emph{Max/Min Pwr Sweep} with \emph{Check Min
+(−25) and Max (+15)} {[}3, §3-3{]} & Whether min and max traces differ
+at all, i.e.~whether the hardware can vary the level & None stated: a
+measurement sweep (power meter on GPIB, about 10 min) \\
+\emph{Start Cal} → \emph{Write Cal to UUT} (variable power) →
+\emph{Verify Cal} & Whether a variable-power calibration makes
+\texttt{POW} work & Write Cal to UUT goes to \textbf{volatile} memory
+and a power cycle restores the stored calibration {[}3, §2-2{]};
+\textbf{do not press Store in Flash} \\
+Ask NI with serial 1530200407 & Whether this FSL-0020 was built with
+power control & None \\
+\end{longtable}
+
+{[}3{]} sets calibration frequencies and levels ``based on the QuickSyn
+synthesizer model, FSW-0010 or FSW-0020'', so the panel may not support
+an FSL at all; stop if it refuses.
+
 \textbf{Console Send line.} For bring-up, the SCPI console has a
 \emph{Send} line: any SCPI or native command, sent as typed through the
 same port, 64-byte check and log as everything else. Enter sends it as a
@@ -707,6 +783,130 @@ The status bar says ``RF output OFF (confirmed by STAT?)'', or warns if
 every model. Off means muted, not disconnected: −65 dBm max on the FSW
 (``Power Mute''), a 60 dB minimum on/off ratio on the Lite models
 {[}4{]}.
+
+\hypertarget{mhz-reference-source-output-and-leds}{%
+\subsection{3.5 10 MHz reference: source, output and
+LEDs}\label{mhz-reference-source-output-and-leds}}
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Control
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Commands (0.0.8)
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Checked with
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\emph{Reference source} combo & \texttt{ROSC:SOUR\ INT/EXT}; native
+\texttt{0600}/\texttt{0601} {[}1, Table 2a{]} if \texttt{ROSC:SOUR?}
+disagrees & \texttt{ROSC:SOUR?}, \texttt{STAT?}, and again 1.5 s later
+for the lock \\
+\emph{10 MHz reference output} switch & \texttt{OUTP:ROSC:STAT\ ON/OFF};
+native \texttt{0800}/\texttt{0801} if the output did not follow. Once
+the native command has worked where the SCPI one did not, it is sent
+directly for the rest of the session (0.0.9) & \texttt{STAT?} bit 5, and
+\texttt{OUTP:ROSC:STAT?} where the unit answers it \\
+\end{longtable}
+
+Two LEDs in the status box show which reference is \textbf{in use}:
+\emph{Internal 10 MHz reference IN USE}, or \emph{External 10 MHz
+reference IN USE} when \texttt{ROSC:SOUR?} says EXT, a signal is present
+at REF IN (\texttt{STAT?} bit 0) and the reference is locked. External
+selected with no signal shows \emph{NO SIGNAL at REF IN} in red;
+selected but unlocked shows \emph{NOT LOCKED}. The existing
+\emph{External reference detected} LED is presence only: on the FSL-0020
+it was lit while the internal reference was in use.
+
+The 0.0.7 crash on choosing External (``\,`str' object has no attribute
+`value'\,'') came from PySide6 returning a \texttt{StrEnum} stored as
+combo-box data as a plain \texttt{str}; \texttt{IntEnum} data survives.
+The driver now converts every enum argument itself.
+
+\textbf{The FSL-0020's REF OUT does switch off}: confirmed by the user
+with NI's soft front panel and a power meter. NI's panel uses the native
+command set (its command window lists entries such as
+\texttt{Pulse\ Mod\ {[}2{]}\ \textbar{}\ 09\ 00\ \textbar{}} and
+\texttt{FM\ Mode\ {[}2{]}\ \textbar{}\ 0B\ 04\ \textbar{}}, the native
+headers of {[}1, Table 2a{]}). From this program,
+\texttt{OUTP:ROSC:STAT\ OFF} was sent three times and \texttt{STAT?}
+kept bit 5 set, so the SCPI form is the part that does not act on that
+unit (firmware 0008), or does not update the status bit; which of the
+two is open until REF OUT is measured while this program switches it.
+
+0.0.9 therefore:
+
+\begin{itemize}
+\tightlist
+\item
+  checks \texttt{STAT?} bit 5 and, only if the unit answers it,
+  \texttt{OUTP:ROSC:STAT?}. That query was never seen to answer on the
+  FSL-0020, and in 0.0.8 a time-out there would have stopped the switch
+  before the native fallback and failed every \emph{Read all settings},
+  and with it auto-read. One failure now marks it unsupported for the
+  session;
+\item
+  falls back to the native \texttt{0800}/\texttt{0801} if the output did
+  not follow, and once that works, sends it directly for the rest of the
+  session (the status bar says so), as the power command already does;
+\item
+  if neither form changes \texttt{STAT?} bit 5, warns and asks for a
+  check of REF OUT on a power meter or counter: if REF OUT did switch,
+  only the status bit is wrong.
+\end{itemize}
+
+\hypertarget{typing-values}{%
+\subsection{3.6 Typing values}\label{typing-values}}
+
+Frequencies below 1 GHz could not be typed in 0.0.7. With nine decimals
+shown (\texttt{1.000000000\ GHz}), the stock spin box refuses any digit
+typed after the point, so editing the text could not produce 0.8; text
+it judged incomplete or out of range was silently put back when focus
+moved, and \emph{Set frequency} then re-sent the old value. Reproduced
+with Qt 6.12:
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 4\tabcolsep) * \real{0.3333}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Keys, starting from \texttt{1.000000000\ GHz}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+0.0.7
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+0.0.8
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+Home, Delete, \texttt{0.800}, Enter & \texttt{0.000000000} → reverted →
+\textbf{1 GHz re-sent} & 0.8 GHz \\
+End, Backspace ×15, \texttt{0.800}, Enter or \emph{Set} & nothing
+deleted → 1 GHz re-sent & 0.8 GHz \\
+Home, Delete ×2, \texttt{0.8}, Enter & reverted → 1 GHz re-sent & 0.8
+GHz \\
+Select all, \texttt{0.800}, Enter & 0.8 GHz & 0.8 GHz \\
+Select all, \texttt{0.8123456789123}, Enter & refused (too many
+decimals) & 0.812345679 GHz (rounded to 1 mHz) \\
+Select all, \texttt{0.1} (below range), Enter or \emph{Set} & reverted,
+old value sent & \textbf{refused with a message, nothing sent} \\
+\end{longtable}
+
+Every numeric box is now an \texttt{EntrySpinBox}: any number may be
+typed, extra decimals are rounded on commit, End and Backspace work on
+the number rather than the unit, typing \texttt{.} just before the
+existing point steps over it, and a value that is not a number in range
+is reported (``\,`0.1 GHz' is not a number from 0.2 to 20 GHz; the box
+keeps \ldots{} and nothing was sent'') instead of being replaced in
+silence. The arrows and wheel work as before.
 
 \begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
 
@@ -799,6 +999,15 @@ rename) \\
 plot pages (§6) --- written by the controller at stop, on demand, or
 every N minutes \\
 \end{longtable}
+
+The log root is set on the \emph{Monitor and log} tab and defaults to
+\texttt{quicksyn\_logs} in the home folder --- on the hardware PC,
+\texttt{C:\textbackslash{}Users\textbackslash{}wwallace\textbackslash{}quicksyn\_logs\textbackslash{}20261012\_140204\_FSL-0020\_0000017f\textbackslash{}}
+(the path is also the second line of \texttt{session.log}). NI's
+QuickSyn soft front panel keeps no log file: its command window only
+displays the commands of the session {[}2{]}; only \emph{Save List to
+File} (List Mode) and the calibration panel's \emph{Save Data to File}
+write files, to wherever their file dialog points {[}2{]}, {[}3{]}.
 
 \texttt{transactions.csv} is the audit trail of \emph{what was sent};
 \texttt{state\_events.csv} is the readable record of \emph{what was
@@ -1056,13 +1265,28 @@ an RF OFF that \texttt{STAT?} does not confirm) appear in it as red
 
 \begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
 
+\hypertarget{auto-read-of-all-settings}{%
+\subsection{5.5 Auto-read of all
+settings}\label{auto-read-of-all-settings}}
+
+\emph{Auto-read all settings every N s} (Main tab, under \emph{Read all
+settings from instrument}; 1--3600 s, default 5 s) repeats the full
+read-back on a timer while connected: frequency, level, \texttt{STAT?},
+temperature, reference source, \texttt{OUTP:ROSC:STAT?} (where answered)
+and modulation. A box being typed in is not overwritten. Three failed
+reads in a row stop it with a warning, and it stops on disconnect. It
+runs on the GUI thread and shares the port lock with the telemetry
+sampler, so each read costs about nine exchanges; at 5 s that is under 2
+exchanges per second. It updates the display only; the telemetry log is
+still the sampler's.
+
 \hypertarget{veusz-documents-reduction-and-plots}{%
 \section{6. Veusz documents, reduction and
 plots}\label{veusz-documents-reduction-and-plots}}
 
 \begin{Shaded}
 \begin{Highlighting}[]
-\ExtensionTok{python}\NormalTok{ quicksyn\_veusz\_export\_v0\_0\_7.py }\OperatorTok{\textless{}}\NormalTok{session\_dir}\OperatorTok{\textgreater{}}
+\ExtensionTok{python}\NormalTok{ quicksyn\_veusz\_export\_v0\_0\_9.py }\OperatorTok{\textless{}}\NormalTok{session\_dir}\OperatorTok{\textgreater{}}
     \ExtensionTok{{-}{-}time{-}axis}\NormalTok{ A      local }\ErrorTok{(}\ExtensionTok{default}\KeywordTok{)}\ExtensionTok{,}\NormalTok{ utc or elapsed}
     \ExtensionTok{{-}{-}no{-}render}\NormalTok{        write the .vszh5 but skip the PDF/PNG render}
     \ExtensionTok{{-}{-}png{-}pages}\NormalTok{ P      first }\ErrorTok{(}\ExtensionTok{default,}\NormalTok{ the overview}\KeywordTok{)}\ExtensionTok{,}\NormalTok{ all or none}
@@ -1635,7 +1859,9 @@ fixed & none & no & no \\
 Only the FSW models list option 2; the Lite models list option 8 only
 and the mmW models options 3 and 8 {[}4{]}. Up to 0.0.6 the mmW min/max
 output specification was put in the control-range column and offered in
-the power box; 0.0.7 corrects that (§3.3).
+the power box; 0.0.7 corrects that (§3.3). The one FSL-0020 tested
+reports an option word with options 1--7 and 9, modulation included; the
+GUI follows the datasheet, not the option word (§3.3, §10.1).
 
 {[}1{]} names only the FSW-0010 and FSW-0020. The other models are
 offered with the same commands but flagged \textbf{unverified} in the
@@ -1709,9 +1935,10 @@ Handling
 back after every reset and the observed value reported \\
 2 & SCPI \texttt{*IDN?} field order undefined; the {[}1{]} example puts
 \texttt{0} in the version position, below the firmware-100 gate it
-requires & Labelled per the native order in {[}1, Table 4{]},
-\textbf{all five raw fields displayed verbatim}, gate is advisory and
-never blocks \\
+requires & \textbf{Resolved on hardware (0.0.8):} manufacturer, model,
+option word, serial, firmware --- NI's panels show the FSL-0020 as
+serial 1530200407, firmware 0008, options 017F. 0.0.7 had serial and
+firmware swapped. Raw fields still shown verbatim \\
 3 & Query double-issue required on SPI, temperature-only on native,
 unstated for SCPI & \texttt{TEMPERATURE\_DOUBLE\_QUERY}, default
 \texttt{True}, recorded in the session metadata \\
@@ -1742,9 +1969,21 @@ not report the options & Power is assumed to need option 2 in both forms
 (as {[}4{]} states); the level is read back after every change and a
 mismatch names option 2 \\
 13 & Native Get Power (\texttt{0D}) reply format for negative levels not
-stated in {[}1, Table 4{]} & Decoded as 16-bit two's complement, like
-the Set Output Power examples; to be confirmed against \texttt{POW?} on
-hardware \\
+stated in {[}1, Table 4{]} & Two's complement \textbf{confirmed on
+hardware}: \texttt{FFE2} = −3.0, \texttt{FF9C} = −10.0 dBm \\
+14 & {[}1{]} says SCPI needs firmware 100 or higher & The FSL-0020
+reports firmware 0008 and answers SCPI; the rule is shown as
+information, no dialog \\
+15 & \texttt{STAT?} example \texttt{00A8} in {[}1, Table 5{]} & The
+hardware replies \texttt{0xA1} (and \texttt{DIAG:MOD?} \texttt{0x0});
+both forms are parsed, the simulator now uses the hardware form \\
+16 & Option word lists option 2 on an FSL-0020; {[}4{]} lists only
+option 8 for the Lite & The datasheet decides the GUI's gating; a power
+meter agreed (§3.3) \\
+17 & \texttt{OUTP:ROSC:STAT} in {[}1, Table 5{]}; on the FSL-0020 it did
+not change \texttt{STAT?} bit 5, while REF OUT switches with NI's panel
+(native commands) & Native \texttt{08xx} fallback, kept once it works;
+\texttt{OUTP:ROSC:STAT?} optional (§3.5) \\
 \end{longtable}
 
 \begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
@@ -1753,11 +1992,12 @@ hardware \\
 \section{10. Verification status}\label{verification-status}}
 
 Validated headlessly against the built-in simulator, with Qt on the
-offscreen platform. \textbf{Nothing in 0.0.7 has been run against a
-QuickSyn}: the power fix is verified against the simulator only (§13
-item 7). The first table was run for \textbf{this build} (0.0.7,
-2026-10-12) on Python 3.12.3 (the declared target) and Python 3.13.16,
-PySide6 6.12.0. The environment had:
+offscreen platform, and once against hardware: the 0.0.7 controller on
+an FSL-0020 (§10.1), whose findings 0.0.8 fixes. \textbf{The 0.0.8 fixes
+themselves have not yet been run on the instrument.} The first table was
+run for \textbf{this build} (0.0.8, 2026-10-12) on Python 3.12.3 (the
+declared target) and Python 3.13.16, PySide6 6.12.0. The environment
+had:
 
 \begin{itemize}
 \tightlist
@@ -1781,6 +2021,75 @@ code; the rows that \texttt{check\_vszh5.py} and
 table). The third table lists older results. Rows marked † are
 measurements from 0.0.4/0.0.5 that were not repeated. Counts vary by a
 few samples with timing.
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 2\tabcolsep) * \real{0.5000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 2\tabcolsep) * \real{0.5000}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Check (0.0.9 build, 2026-10-12)
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Result
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{tests/run\_all.py}, Python 3.12.3 with Veusz 4.2.1, and Python
+3.13.16 & 5 / 5 checks pass on both, also from the extracted archive \\
+10 MHz output, SCPI ignored & \texttt{OUTP:ROSC:STAT\ OFF}, then native
+\texttt{0800}; output follows; next switch sends \texttt{0801} first;
+status bar says the native command is kept \\
+10 MHz output, both ignored & warning asks for a power-meter check; the
+native command is \textbf{not} kept \\
+\texttt{OUTP:ROSC:STAT?} unanswered & one attempt, then skipped for the
+session; the switch is confirmed by \texttt{STAT?} alone; \emph{Read all
+settings} completes without error and without re-sending the query \\
+\end{longtable}
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 2\tabcolsep) * \real{0.5000}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 2\tabcolsep) * \real{0.5000}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Check (0.0.8 build, 2026-10-12)
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Result
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\texttt{tests/run\_all.py}, Python 3.12.3 with Veusz 4.2.1, and Python
+3.13.16 & 5 / 5 checks pass on both, also from the extracted archive \\
+\emph{IDN?} of the FSL-0020 & parsed as model FSL-0020, option word
+0000017f → options 1--7, 9, serial 1530200407, firmware 0008 \\
+Enum arguments as combo boxes return them &
+\texttt{set\_reference\_source("EXT")}, \texttt{set\_fm\_mode(3)},
+\texttt{setup\_list(…,\ 2,\ 0)} all send the right command; the
+reference combo, FM-mode combo, \emph{Configure sweep} and \emph{Set up
+and run list} driven through the GUI without error \\
+Typing (§3.6) & 0.8 GHz typed five different ways →
+\texttt{FREQ\ 800000000000}; 13 decimals rounded to 1 mHz; 0.1 GHz
+refused by Enter and by \emph{Set}, nothing sent, message shown \\
+Reference output & confirmed (SCPI); SCPI ignored → native \texttt{0800}
+used and confirmed; ignored by both → warning; checkbox follows
+\texttt{STAT?} \\
+Reference source and LEDs & EXT with signal → \emph{External \ldots{} IN
+USE}; signal removed → \emph{NO SIGNAL at REF IN} and a warning after
+the 1.5 s re-check; back to INT → \emph{Internal \ldots{} IN USE} \\
+Auto-read & 1 s interval: ≥ 2 full reads in 2.4 s, typing in the
+frequency box not overwritten, stops when unticked \\
+Temperature flag & 27.0 → 54.2 °C flagged \emph{suspect} with a warning;
+54.2 → 54.3 not \\
+Timing & no \texttt{time.monotonic} call left (AST check); simulated
+latencies 1.6 ms (0.0.7 on Windows/3.12 logged 0 or 16 ms) \\
+The hardware session re-exported with the 0.0.8 export script &
+\emph{IDN?} table now reads serial 1530200407, firmware 0008, options
+1--7, 9 (the 0.0.7 summary showed the serial as the software version) \\
+Example session & 41 s simulated, 0.0.8; bookmarked plots PDF and
+LuaLaTeX report built with Veusz 4.2.1 \\
+\end{longtable}
 
 \begin{longtable}[]{@{}
   >{\raggedright\arraybackslash}p{(\columnwidth - 2\tabcolsep) * \real{0.5000}}
@@ -1994,10 +2303,79 @@ Telemetry writer shutdown on Python 3.12 & thread exits cleanly after
 \texttt{os.cpu\_count()} fallback \\
 \end{longtable}
 
-\textbf{Not yet verified:} anything about output power on a real unit
---- whether yours has option 2, which command form its firmware obeys,
-whether \texttt{POW?} follows the real output, the \texttt{0D} reply
-format, the muted level after RF OFF (§3.3, §13 item 7); the LuaLaTeX
+\hypertarget{first-hardware-session-fsl-0020-2026-10-12}{%
+\subsection{10.1 First hardware session (FSL-0020,
+2026-10-12)}\label{first-hardware-session-fsl-0020-2026-10-12}}
+
+NI/Phase Matrix FSL-0020, serial 1530200407, firmware 0008, option word
+017F; COM5 over USB; the 0.0.7 controller on Python 3.12.0 (Windows),
+Qt.py not installed (the PySide6 fallback worked); 600 s logged at 2 Hz,
+5194 exchanges, 0 transport errors; a power meter on RF OUT.
+
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.0385}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.3462}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.3462}}
+  >{\raggedright\arraybackslash}p{(\columnwidth - 6\tabcolsep) * \real{0.2692}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+\#
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Observed
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Cause
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+0.0.8
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+1 & Choosing External reference: ``\,`str' object has no attribute
+`value'\,'' (three times) & PySide6 returns \texttt{StrEnum} combo data
+as \texttt{str} & Driver converts enum arguments (§3.5) \\
+2 & 0.800 GHz could not be typed; the arrows worked & Stock spin-box
+validation (§3.6) & \texttt{EntrySpinBox} \\
+3 & 10 MHz output switch ``does not work'' after \emph{Read all} &
+\texttt{OUTP:ROSC:STAT\ OFF} sent three times; \texttt{STAT?} kept bit 5
+set; never read back. REF OUT \textbf{does} switch with NI's panel
+(native commands) on a power meter & 0.0.8: read-back and native
+fallback; 0.0.9: native kept once it works, \texttt{OUTP:ROSC:STAT?}
+optional (§3.5) \\
+4 & Level unchanged on the power meter, also with NI's panel; changes
+with frequency & No working power control on this FSL-0020 (§3.3) & None
+needed: 0.0.7 already disabled it; documented \\
+5 & \texttt{POW?} unchanged by RF on/off & \texttt{POW?} is the stored
+setting & Read-back says ``(the level setting; the RF output is
+OFF)'' \\
+6 & Every exchange 0.0 ms in the console; latencies only 0, 15 or 16 ms;
+intervals 312--688 ms around 500 ms & Python 3.12 on Windows:
+\texttt{time.monotonic()} ticks at 15.6 ms (GetTickCount64); 3.13 moved
+it to QueryPerformanceCounter {[}33{]} & \texttt{time.perf\_counter()}
+throughout (§10) \\
+7 & Temperature 27.0 → 54.2 °C right after \texttt{POW\ 5.0}, back to
+27.6 °C after \texttt{OUTP:STAT\ OFF}; again 28.4 → 57.0 °C after
+\texttt{POW\ -10} & Reporting artefact: the ratio is 2.00 each time and
+a case cannot step 27 °C in 2.5 s & Steps ≥ 10 °C within 60 s flagged
+\emph{suspect}; the logged values are left as reported \\
+8 & \emph{IDN?} serial shown as ``software version 1530200407'' & Fields
+4 and 5 swapped (§9 \#2) & Fixed in GUI and export \\
+9 & \texttt{STAT?} \texttt{0xA1}: external reference \emph{detected}
+while internal in use & Bit 0 is presence at REF IN, not the source in
+use & Two new LEDs (§3.5) \\
+10 & \texttt{0D} replies \texttt{0032}, \texttt{0000}, \texttt{FFE2},
+\texttt{FF9C} & Two's complement confirmed & §9 \#13 \\
+\end{longtable}
+
+Reduction of that session (export 0.0.8): 1201 samples, 2.000 Hz
+achieved, latency mean 11.7 ms / p95 16 ms / max 188 ms (quantised, item
+6), temperature 26.8--57.5 °C (item 7), frequency fixed at 1 GHz, so the
+ADEV is zero at every τ and has no log-scale plot.
+
+\textbf{Not yet verified:} the 0.0.8 and 0.0.9 fixes on the instrument;
+output power on an FSW with option 2; whether the FSL-0020's REF OUT
+follows the native \texttt{08xx} sent by this program (it does with NI's
+panel) and whether \texttt{STAT?} bit 5 then changes; the LuaLaTeX
 report with TeX Live 2025 or MiKTeX on Windows (verified with TeX Live
 2023 on Linux; the packages it uses are standard in both); anything
 requiring hardware --- real round-trip latencies, the actual response
@@ -2151,6 +2529,34 @@ OFF:} red button on the Main tab and on a \emph{Safety} toolbar,
 confirmed with \texttt{STAT?} (§3.4). \textbf{Documentation:} §2.1
 pyserial vs PyVISA; §3.3, §3.4; conflicts 11--13; model table corrected.
 \textbf{Tests:} \texttt{check\_smoke.py} covers all of the above. \\
+0.0.8 & 2026-10-12 & \textbf{First hardware session} (FSL-0020, §10.1).
+\textbf{Fixed:} reference-source crash (PySide6 returns \texttt{StrEnum}
+combo data as \texttt{str}; the driver now converts all enum arguments);
+frequencies below 1 GHz could not be typed and the old value was re-sent
+(new \texttt{EntrySpinBox} for every numeric box, out-of-range typing
+refused with a message); \emph{IDN?} serial and firmware swapped (order
+confirmed on hardware, option word decoded, no firmware dialog); 15.6 ms
+timing on Windows/Python 3.12 (\texttt{perf\_counter}); 10 MHz output
+switch unchecked (read-back of \texttt{OUTP:ROSC:STAT?} and
+\texttt{STAT?}, native \texttt{08xx} fallback; reference source likewise
+with \texttt{06xx}). \textbf{Added:} Internal/External 10 MHz reference
+LEDs; \emph{Auto-read all settings every N s}; ``RF output is OFF'' in
+power read-backs; suspect-temperature flag. \textbf{Export:} \emph{IDN?}
+labels from the raw fields, so 0.0.7 sessions are labelled correctly.
+\textbf{Simulator:} hardware reply forms (\texttt{0xA1}), REF IN
+presence, native switches. \textbf{Documentation:} §3.3 hardware result
+and the calibration-panel checks, §3.5, §3.6, §5.5, §10.1, conflicts 2
+and 13--16. \\
+0.0.9 & 2026-10-12 & \textbf{10 MHz reference output.} The user
+confirmed that the FSL-0020's REF OUT switches off (NI's panel, power
+meter), so the fault is the SCPI path, not the hardware.
+\texttt{OUTP:ROSC:STAT?}, never seen to answer on that unit, is now
+optional: in 0.0.8 a time-out there would have stopped the switch before
+the native fallback and failed every \emph{Read all settings} and
+auto-read. The native \texttt{08xx} command is kept for the session once
+it has worked where the SCPI form did not. The warning no longer
+suggests the output cannot be switched. README §3.5, §9 \#17, §10,
+§10.1, §13 corrected. \\
 \end{longtable}
 
 \begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
@@ -2288,6 +2694,16 @@ https://pypi.org/project/PyVISA-py/ \\
 {[}32{]} & C. Liechti, ``pySerial 3.5,'' Python Package Index, 23
 Nov.~2020 (BSD); documentation. & https://pypi.org/project/pyserial/ ;
 https://pyserial.readthedocs.io/ \\
+{[}33{]} & Python Software Foundation, ``What's New In Python 3.13,''
+section \emph{time}: on Windows \texttt{monotonic()} now uses
+\texttt{QueryPerformanceCounter()} (1 µs) instead of
+\texttt{GetTickCount64()} (15.6 ms), gh-88494; \texttt{time()} likewise,
+gh-63207. Accessed 12 Oct.~2026. &
+https://docs.python.org/3/whatsnew/3.13.html \\
+{[}34{]} & Python Software Foundation, ``time --- Time access and
+conversions'' (\texttt{perf\_counter}, \texttt{monotonic},
+\texttt{get\_clock\_info}), Python 3 documentation, accessed 12
+Oct.~2026. & https://docs.python.org/3/library/time.html \\
 \end{longtable}
 
 \hypertarget{sourcing-confidence}{%
@@ -2383,6 +2799,18 @@ requirements (§2.1) & \textbf{High} & Read from their PyPI pages and
 documentation {[}30{]}--{[}32{]} on 12 Oct.~2026 \\
 Ethernet port 10001, GPIB address 5, USB as a standard COM port &
 \textbf{High} & Stated in {[}1{]}, ``Communication Interfaces'' \\
+\emph{IDN?} field order and option-word decoding & \textbf{High} for the
+FSL-0020 tested & Raw reply compared with NI's soft front panels on the
+same unit; not yet seen on an FSW \\
+FSL-0020 output level does not follow \texttt{POW} & \textbf{High} for
+that unit & Power meter, with this program and with NI's panel; the
+cause (no hardware, or a fixed-power calibration {[}3{]}) is
+\textbf{unknown} \\
+Temperature doubling after \texttt{POW} & \textbf{Medium} & Seen four
+times in one session, ratio 2.00; cause unknown; not checked in NI's
+panel \\
+Windows 15.6 ms clock on Python 3.12 & \textbf{High} & {[}33{]}, and the
+logged latencies take only the values 0, 15 and 16 ms \\
 \end{longtable}
 
 \begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
@@ -2392,7 +2820,6 @@ Ethernet port 10001, GPIB address 5, USB as a standard COM port &
 
 \begin{enumerate}
 \def\labelenumi{\arabic{enumi}.}
-\tightlist
 \item
   \textbf{Header layout.} Author, company, email and licence are as you
   specified; there is deliberately no project field. The field layout
@@ -2432,13 +2859,14 @@ Ethernet port 10001, GPIB address 5, USB as a standard COM port &
   appears beside the plots. If \texttt{lualatex} is not on the PATH, set
   \texttt{QUICKSYN\_LUALATEX}.
 \item
-  \textbf{Output power on the real unit (0.0.7).} Not testable without
-  the instrument. With a power meter or spectrum analyser on RF OUT:
-  connect, note the \texttt{*IDN?} line and the reply to the native
-  \texttt{01} (Send line); set +13, 0, −10 dBm with \emph{Command} =
-  \emph{SCPI only}, then again with \emph{Native only}, reading
-  \texttt{POW?} and \emph{Read (0D)} each time and the measured level.
-  Then press RF OUTPUT OFF and measure. Send the
+  \textbf{Output power on the real unit (0.0.7).} Done for the FSL-0020
+  (§3.3, §10.1): no level control. Still open for an FSW. Original
+  procedure, not testable without the instrument. With a power meter or
+  spectrum analyser on RF OUT: connect, note the \texttt{*IDN?} line and
+  the reply to the native \texttt{01} (Send line); set +13, 0, −10 dBm
+  with \emph{Command} = \emph{SCPI only}, then again with \emph{Native
+  only}, reading \texttt{POW?} and \emph{Read (0D)} each time and the
+  measured level. Then press RF OUTPUT OFF and measure. Send the
   \texttt{transactions.csv} of that session. This settles whether option
   2 is fitted, whether the firmware accepts \texttt{POW\ +12.0} (sign)
   and \texttt{POW\ +0.0}, which command form works, whether
@@ -2449,7 +2877,36 @@ Ethernet port 10001, GPIB address 5, USB as a standard COM port &
   standard-library socket transport for the Ethernet adapter (port
   10001) and a PyVISA transport for GPIB (address 5) or any VISA
   resource. Not started; say if either is wanted.
+\item
+  \textbf{Run 0.0.9 on the FSL-0020.} Choose External with and without a
+  10 MHz signal at REF IN (LEDs and warnings); switch the 10 MHz output
+  off and on with the power meter on REF OUT and note the status-bar
+  message (SCPI confirmed, native kept, or the warning); type 0.800 GHz;
+  try auto-read at 5 s while logging; send \texttt{transactions.csv} and
+  \texttt{session.log}.
+\item
+  \textbf{Power on the FSL-0020.} If the level matters, run the
+  calibration panel's \emph{Max/Min Pwr Sweep} (§3.3) or ask NI about
+  serial 1530200407.
+\item
+  \textbf{Temperature artefact.} In NI's main panel, note the
+  temperature, change the power knob, and see whether its reading
+  doubles too. If it does, it is the firmware; if not, the SCPI
+  \texttt{DIAG:MEAS?\ 21} path.
+\item
+  \textbf{Qt.py.} Install it in the hardware PC's environment
+  (\texttt{mamba\ install\ -c\ conda-forge\ qt.py}, or create the
+  environment from \texttt{environment\_quicksyn.yml}); the session ran
+  on the direct PySide6 fallback.
 \end{enumerate}
+
+\textbf{Closed in 0.0.9.} \emph{Can the FSL-0020 switch REF OUT?} Yes
+(the user, with NI's panel and a power meter); the command path is item
+9.
+
+\textbf{Closed in 0.0.8.} \emph{IDN?} field order (§9 \#2).
+Reference-source crash. Typing below 1 GHz. Windows latency resolution.
+Unchecked 10 MHz output switch.
 
 \textbf{Closed in 0.0.7.} \emph{Output level could not be changed}
 (§3.3), as far as software can close it; the hardware part is item 7.

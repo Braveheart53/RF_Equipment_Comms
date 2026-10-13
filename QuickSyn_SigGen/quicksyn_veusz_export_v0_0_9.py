@@ -9,15 +9,15 @@
 
 ===============================================================================
  Title          : QuickSyn Session Reduction and Veusz Export
- Filename       : quicksyn_veusz_export_v0_0_7.py
- Version        : 0.0.7  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Filename       : quicksyn_veusz_export_v0_0_9.py
+ Version        : 0.0.9  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
  Author         : William W. Wallace
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
  Created        : 2026-10-09
  Modified       : 2026-10-12
  Language       : Python 3.12
- Companion to   : quicksyn_scpi_gui_v0_0_7.py
+ Companion to   : quicksyn_scpi_gui_v0_0_9.py
  Licence        : GPL-3.0-or-later (GNU General Public License v3.0 or later)
  Copyright      : Copyright (C) 2026 William W. Wallace
  Status         : Internal draft - NOT yet verified against hardware
@@ -105,7 +105,7 @@ OUTPUTS (written into the session directory)
 
 USAGE
 -----
-    python quicksyn_veusz_export_v0_0_7.py <session_dir> [options]
+    python quicksyn_veusz_export_v0_0_9.py <session_dir> [options]
 
         --no-gpu            force the NumPy host path
         --no-veusz          compute and tabulate only: no .vszh5, no plots
@@ -227,6 +227,14 @@ REVISION HISTORY
 0.0.7  2026-10-12  Released with controller 0.0.7 (output-power fix in the
                    GUI). No change to the reduction, the .vszh5, the PDF or
                    the LuaLaTeX report.
+0.0.8  2026-10-12  *IDN? fields in the report and summary labelled in the
+                   order confirmed on hardware (manufacturer, model, option
+                   word, serial, firmware), read from the raw fields so that
+                   sessions recorded by 0.0.7 and earlier, which stored the
+                   serial as the firmware, are labelled correctly too. The
+                   option word is decoded into option numbers.
+0.0.9  2026-10-12  Released with controller 0.0.9 (10 MHz output command
+                   path). No change to the reduction or the outputs.
 ===============================================================================
 """
 
@@ -298,7 +306,7 @@ try:
 except ImportError:  # pragma: no cover - reported by export_veusz()
     vw = None
 
-__version__ = "0.0.7"                 # Semantic Versioning 2.0.0
+__version__ = "0.0.9"                 # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO/GBO"
@@ -308,7 +316,7 @@ __status__ = "Internal draft - not yet verified against hardware"
 PROGRAM_NAME = "QuickSyn Session Reduction and Veusz Export"
 
 #: Record layout written by the controller. Kept in step with
-#: quicksyn_scpi_gui_v0_0_7.TELEMETRY_DTYPE.
+#: quicksyn_scpi_gui_v0_0_9.TELEMETRY_DTYPE.
 TELEMETRY_DTYPE = np.dtype(
     [
         ("idx", "i8"),
@@ -731,6 +739,30 @@ def reduce_session(
 # %% ===========================================================================
 #    REPORTING
 # =============================================================================
+def idn_fields(ident: dict) -> dict:
+    """*IDN? fields in the order confirmed on hardware (0.0.8).
+
+    Read from the raw fields, so a session recorded by the 0.0.7 controller
+    or earlier (which stored the serial number as the firmware) is labelled
+    correctly. Order: manufacturer, model, option word (hex), serial number,
+    firmware version; option bit n = option n+1, as NI's calibration soft
+    front panel decodes it.
+    """
+    fields = list(ident.get("fields") or [])
+    if len(fields) < 5:                       # no raw fields: use what is stored
+        fields = ["", ident.get("model", ""), ident.get("options", ""),
+                  ident.get("serial", ""), ident.get("firmware", "")]
+    options = str(fields[2])
+    try:
+        word = int(options, 16)
+        option_list = ", ".join(str(bit + 1) for bit in range(word.bit_length())
+                                if (word >> bit) & 1)
+    except ValueError:
+        option_list = ""
+    return {"options": options, "option_list": option_list,
+            "serial": str(fields[3]), "firmware": str(fields[4])}
+
+
 def write_markdown_summary(
     path: Path,
     stats: SessionStatistics,
@@ -743,6 +775,7 @@ def write_markdown_summary(
     Obsidian's MathJax preview without further processing.
     """
     ident = (metadata or {}).get("identity", {})
+    idn = idn_fields(ident)
     cap = (metadata or {}).get("capability", {})
 
     def row(label: str, value: Any, unit: str = "", fmt: str = "{:.6g}") -> str:
@@ -767,18 +800,18 @@ def write_markdown_summary(
         "| --- | --- |",
         f"| `*IDN?` | `{ident.get('raw', 'unknown')}` |",
         f"| Model | {ident.get('model', 'unknown')} |",
-        f"| Option field | `{ident.get('options', '')}` |",
-        f"| Software version field | `{ident.get('firmware', '')}` "
-        f"(= {ident.get('firmware_value')}, {ident.get('firmware_base', '')}) |",
-        f"| Serial field | `{ident.get('serial', '')}` |",
+        f"| Option word | `{idn['options']}` (options {idn['option_list'] or 'none'}) |",
+        f"| Serial number | `{idn['serial']}` |",
+        f"| Firmware version | `{idn['firmware']}` |",
         f"| Datasheet coverage | {cap.get('f_min_hz', 0) / 1e9:g} - "
         f"{cap.get('f_max_hz', 0) / 1e9:g} GHz |",
         f"| Transport | {(metadata or {}).get('transport', {}).get('port', '?')} "
         f"at {(metadata or {}).get('transport', {}).get('baudrate', '?')} baud"
         f"{' (SIMULATED)' if (metadata or {}).get('transport', {}).get('simulated') else ''} |",
         "",
-        "> The `*IDN?` field order is inferred from the native Get ID order in",
-        "> [R1] Table 4; it is not specified for the SCPI form.",
+        "> `*IDN?` fields: manufacturer, model, option word, serial, firmware.",
+        "> [R1] does not define the order; it was confirmed against NI's soft",
+        "> front panels on an FSL-0020 (option bit n = option n+1).",
         "",
         "## Acquisition timing",
         "",
@@ -1358,6 +1391,7 @@ def write_latex_report(session_dir: Path, records: np.ndarray, stats: SessionSta
     """
     meta = metadata or {}
     ident = meta.get("identity", {})
+    idn = idn_fields(ident)
     cap = meta.get("capability", {})
     transport = meta.get("transport", {})
     name = tex_escape(session_dir.name)
@@ -1422,18 +1456,19 @@ def write_latex_report(session_dir: Path, records: np.ndarray, stats: SessionSta
               r"\toprule", r"\textbf{Field} & \textbf{Value} \\", r"\midrule",
               rf"\texttt{{*IDN?}} reply & \texttt{{{tex_escape(ident.get('raw', 'unknown'))}}} \\",
               rf"Model & {tex_escape(ident.get('model', 'unknown'))} \\",
-              rf"Option field & \texttt{{{tex_escape(ident.get('options', ''))}}} \\",
-              rf"Software version field & \texttt{{{tex_escape(ident.get('firmware', ''))}}} "
-              rf"(= {tex_escape(ident.get('firmware_value'))}) \\",
-              rf"Serial field & \texttt{{{tex_escape(ident.get('serial', ''))}}} \\",
+              rf"Option word & \texttt{{{tex_escape(idn['options'])}}} "
+              rf"(options {tex_escape(idn['option_list'] or 'none')}) \\",
+              rf"Serial number & \texttt{{{tex_escape(idn['serial'])}}} \\",
+              rf"Firmware version & \texttt{{{tex_escape(idn['firmware'])}}} \\",
               rf"Datasheet coverage & {cap.get('f_min_hz', 0) / 1e9:g} to "
               rf"{cap.get('f_max_hz', 0) / 1e9:g} GHz \\",
               rf"Transport & {tex_escape(transport.get('port', '?'))} at "
               rf"{tex_escape(transport.get('baudrate', '?'))} baud"
               + (r" (simulated)" if transport.get("simulated") else "") + r" \\",
               r"\bottomrule", r"\end{tabular}", r"\end{center}", "",
-              r"The \texttt{*IDN?} field order is inferred from the native Get ID order in",
-              r"\cite{nicomms}; it is not specified for the SCPI form.", ""]
+              r"\texttt{*IDN?} fields: manufacturer, model, option word, serial, firmware.",
+              r"\cite{nicomms} does not define the order; it was confirmed against NI's",
+              r"soft front panels on an FSL-0020 (option bit $n$ = option $n+1$).", ""]
 
     # ---- timing -------------------------------------------------------------------
     def ms(value: float) -> float:
