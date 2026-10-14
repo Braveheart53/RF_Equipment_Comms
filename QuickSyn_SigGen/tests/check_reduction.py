@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 William W. Wallace <wwallace@nrao.edu>
 """Reduction maths checks.
 
-Part of the QuickSyn SCPI controller package, version 0.0.9.
+Part of the QuickSyn SCPI controller package, version 0.0.10.
 Author: William W. Wallace <wwallace@nrao.edu>, NRAO/GBO.
 Licence: GPL-3.0-or-later (see ../LICENSE).
 
@@ -26,7 +26,7 @@ sys.path.insert(0, str(PKG_ROOT))
 sys.dont_write_bytecode = True   # keep __pycache__ out of the package tree
 import numpy as np
 
-import quicksyn_veusz_export_v0_0_9 as red
+import quicksyn_veusz_export_v0_0_10 as red
 
 # ---- build a synthetic session ------------------------------------------
 n = 600

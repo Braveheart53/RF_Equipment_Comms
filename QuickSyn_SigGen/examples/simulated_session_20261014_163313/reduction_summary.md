@@ -1,6 +1,6 @@
-# QuickSyn session reduction - 20261012_194954_FSW-0020_0000007f
+# QuickSyn session reduction - 20261014_163313_FSW-0020_0000007f
 
-Produced by `quicksyn_veusz_export_v0_0_9.py` on 2026-10-12 19:50:36 UTC.
+Produced by `quicksyn_veusz_export_v0_0_10.py` on 2026-10-14 16:34:00 UTC.
 
 ## Instrument
 
@@ -22,18 +22,18 @@ Produced by `quicksyn_veusz_export_v0_0_9.py` on 2026-10-12 19:50:36 UTC.
 
 | Quantity | Value | Unit |
 | --- | --- | --- |
-| Samples | 411 |  |
+| Samples | 414 |  |
 | Loaded from | chunks |  |
-| Duration | 40.9993 | s |
+| Duration | 41.2965 | s |
 | Requested sample rate | 10 | Hz |
-| Achieved sample rate | 10.0002 | Hz |
-| Mean sample interval | 99.9984 | ms |
-| Interval std (jitter) | 2.41632 | ms |
-| Interval min / max | 90.947 / 108.624 | ms |
-| Jitter relative to period | 24163.6 | ppm |
-| Device I/O latency, mean | 6.03878 | ms |
-| Device I/O latency, p95 | 8.81754 | ms |
-| Device I/O latency, max | 14.3867 | ms |
+| Achieved sample rate | 10.0009 | Hz |
+| Mean sample interval | 99.9914 | ms |
+| Interval std (jitter) | 2.73932 | ms |
+| Interval min / max | 78.215 / 124.930 | ms |
+| Jitter relative to period | 27395.5 | ppm |
+| Device I/O latency, mean | 5.96576 | ms |
+| Device I/O latency, p95 | 8.72443 | ms |
+| Device I/O latency, max | 11.9666 | ms |
 
 The sample period is the reciprocal of the requested rate,
 
@@ -54,12 +54,12 @@ $t_q \approx 8$ ms gives $f_{s,\max} \approx 21$ Hz.
 
 | Quantity | Value | Unit |
 | --- | --- | --- |
-| Distinct frequencies observed | 4 |  |
+| Distinct frequencies observed | 5 |  |
 | Frequency min | 8.250000000 | GHz |
 | Frequency max | 19.500000000 | GHz |
 | Power min | -3.0 | dBm |
-| Power max | +8.0 | dBm |
-| RF output on, fraction of samples | 0.976 | - |
+| Power max | +13.0 | dBm |
+| RF output on, fraction of samples | 0.000 | - |
 | Samples with RF unlocked | 0 |  |
 | Samples with reference unlocked | 0 |  |
 | Samples with voltage error | 0 |  |
@@ -90,19 +90,19 @@ with phase residuals $x_k = \tau_0 \sum_{i<k} y_i$.
 
 | Averaging time tau (s) | ADEV |
 | --- | --- |
-| 0.1 | 1.574e-02 |
-| 0.2 | 1.932e-02 |
-| 0.4 | 2.629e-02 |
-| 0.8 | 3.713e-02 |
-| 1.6 | 5.344e-02 |
-| 3.2 | 7.892e-02 |
-| 6.4 | 1.245e-01 |
-| 12.8 | 2.301e-01 |
+| 0.09999 | 1.622e-02 |
+| 0.2 | 1.991e-02 |
+| 0.4 | 2.681e-02 |
+| 0.7999 | 3.710e-02 |
+| 1.6 | 5.325e-02 |
+| 3.2 | 7.859e-02 |
+| 6.399 | 1.239e-01 |
+| 12.8 | 2.292e-01 |
 
 ## Reduction
 
 | Quantity | Value |
 | --- | --- |
 | Compute backend | numpy |
-| Reduction wall time | 19.6 ms |
-| Script revision | 0.0.9 |
+| Reduction wall time | 8.7 ms |
+| Script revision | 0.0.10 |

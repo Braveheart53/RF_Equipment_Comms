@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 William W. Wallace <wwallace@nrao.edu>
 """Typeset README_quicksyn_controller.md as a LuaLaTeX PDF with bookmarks.
 
-Part of the QuickSyn SCPI controller package, version 0.0.9.
+Part of the QuickSyn SCPI controller package, version 0.0.10.
 Author: William W. Wallace <wwallace@nrao.edu>, NRAO/GBO.
 Licence: GPL-3.0-or-later (see ../LICENSE).
 
@@ -32,7 +32,7 @@ from pathlib import Path
 
 PKG = Path(__file__).resolve().parents[1]
 README = PKG / "README_quicksyn_controller.md"
-VERSION = "0.0.9"
+VERSION = "0.0.10"
 
 FALLBACK = ('\\directlua{luaotfload.add_fallback("qsfallback", {"DejaVu Sans:mode=harf;", '
             '"DejaVu Sans Mono:mode=harf;", "DejaVu Math TeX Gyre:mode=harf;"})}\n')
@@ -49,6 +49,9 @@ HEADER = r"""% Extra preamble for the README PDF (LuaLaTeX via pandoc)
 \lfoot{\scriptsize README\_quicksyn\_controller, version VERSION, GPL-3.0-or-later}
 \setlength{\headheight}{14pt}
 \sloppy
+% Figures stay where the README puts them (0.0.10: Calibration screenshots)
+\usepackage{float}
+\floatplacement{figure}{H}
 """.replace("VERSION", VERSION)
 
 

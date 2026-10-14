@@ -1,0 +1,181 @@
+{
+  "model": "FSL-0020",
+  "serial": "1530200001",
+  "firmware": "0008",
+  "created_iso": "2026-10-14T16:33:58.027Z",
+  "operator": "simulation",
+  "meter": "SIMULATED,power meter,0,0",
+  "sensor": "",
+  "path": {
+    "kind": "constant",
+    "constant_db": 1.5,
+    "freqs_hz": [],
+    "loss_db": [],
+    "source": ""
+  },
+  "notes": "SIMULATED: synthetic level 12 - 0.4 f/GHz dBm; not a measurement.",
+  "points": [
+    {
+      "freq_hz": 1000000000.0,
+      "set_dbm": null,
+      "reading_dbm": 10.1,
+      "path_loss_db": 1.5,
+      "t_unix": 1791995638.0281136,
+      "source": "GPIB0::13::INSTR"
+    },
+    {
+      "freq_hz": 2000000000.0,
+      "set_dbm": null,
+      "reading_dbm": 9.7,
+      "path_loss_db": 1.5,
+      "t_unix": 1791995638.070969,
+      "source": "GPIB0::13::INSTR"
+    },
+    {
+      "freq_hz": 3000000000.0,
+      "set_dbm": null,
+      "reading_dbm": 9.3,
+      "path_loss_db": 1.5,
+      "t_unix": 1791995638.1072474,
+      "source": "GPIB0::13::INSTR"
+    },
+    {
+      "freq_hz": 4000000000.0,
+      "set_dbm": null,
+      "reading_dbm": 8.9,
+      "path_loss_db": 1.5,
+      "t_unix": 1791995638.1609645,
+      "source": "GPIB0::13::INSTR"
+    },
+    {
+      "freq_hz": 5000000000.0,
+      "set_dbm": null,
+      "reading_dbm": 8.5,
+      "path_loss_db": 1.5,
+      "t_unix": 1791995638.2135177,
+      "source": "GPIB0::13::INSTR"
+    },
+    {
+      "freq_hz": 6000000000.0,
+      "set_dbm": null,
+      "reading_dbm": 8.1,
+      "path_loss_db": 1.5,
+      "t_unix": 1791995638.258162,
+      "source": "GPIB0::13::INSTR"
+    },
+    {
+      "freq_hz": 7000000000.0,
+      "set_dbm": null,
+      "reading_dbm": 7.7,
+      "path_loss_db": 1.5,
+      "t_unix": 1791995638.3128798,
+      "source": "GPIB0::13::INSTR"
+    },
+    {
+      "freq_hz": 8000000000.0,
+      "set_dbm": null,
+      "reading_dbm": 7.3,
+      "path_loss_db": 1.5,
+      "t_unix": 1791995638.3710308,
+      "source": "GPIB0::13::INSTR"
+    },
+    {
+      "freq_hz": 9000000000.0,
+      "set_dbm": null,
+      "reading_dbm": 6.9,
+      "path_loss_db": 1.5,
+      "t_unix": 1791995638.417004,
+      "source": "GPIB0::13::INSTR"
+    },
+    {
+      "freq_hz": 10000000000.0,
+      "set_dbm": null,
+      "reading_dbm": 6.5,
+      "path_loss_db": 1.5,
+      "t_unix": 1791995638.4628863,
+      "source": "GPIB0::13::INSTR"
+    },
+    {
+      "freq_hz": 11000000000.0,
+      "set_dbm": null,
+      "reading_dbm": 6.1,
+      "path_loss_db": 1.5,
+      "t_unix": 1791995638.5246875,
+      "source": "GPIB0::13::INSTR"
+    },
+    {
+      "freq_hz": 12000000000.0,
+      "set_dbm": null,
+      "reading_dbm": 5.7,
+      "path_loss_db": 1.5,
+      "t_unix": 1791995638.580576,
+      "source": "GPIB0::13::INSTR"
+    },
+    {
+      "freq_hz": 13000000000.0,
+      "set_dbm": null,
+      "reading_dbm": 5.3,
+      "path_loss_db": 1.5,
+      "t_unix": 1791995638.630836,
+      "source": "GPIB0::13::INSTR"
+    },
+    {
+      "freq_hz": 14000000000.0,
+      "set_dbm": null,
+      "reading_dbm": 4.9,
+      "path_loss_db": 1.5,
+      "t_unix": 1791995638.6795323,
+      "source": "GPIB0::13::INSTR"
+    },
+    {
+      "freq_hz": 15000000000.0,
+      "set_dbm": null,
+      "reading_dbm": 4.5,
+      "path_loss_db": 1.5,
+      "t_unix": 1791995638.7329705,
+      "source": "GPIB0::13::INSTR"
+    },
+    {
+      "freq_hz": 16000000000.0,
+      "set_dbm": null,
+      "reading_dbm": 4.1,
+      "path_loss_db": 1.5,
+      "t_unix": 1791995638.7863035,
+      "source": "GPIB0::13::INSTR"
+    },
+    {
+      "freq_hz": 17000000000.0,
+      "set_dbm": null,
+      "reading_dbm": 3.7,
+      "path_loss_db": 1.5,
+      "t_unix": 1791995638.8412464,
+      "source": "GPIB0::13::INSTR"
+    },
+    {
+      "freq_hz": 18000000000.0,
+      "set_dbm": null,
+      "reading_dbm": 3.3,
+      "path_loss_db": 1.5,
+      "t_unix": 1791995638.8889856,
+      "source": "GPIB0::13::INSTR"
+    },
+    {
+      "freq_hz": 19000000000.0,
+      "set_dbm": null,
+      "reading_dbm": 2.9,
+      "path_loss_db": 1.5,
+      "t_unix": 1791995638.9534135,
+      "source": "GPIB0::13::INSTR"
+    },
+    {
+      "freq_hz": 20000000000.0,
+      "set_dbm": null,
+      "reading_dbm": 2.5,
+      "path_loss_db": 1.5,
+      "t_unix": 1791995639.015928,
+      "source": "GPIB0::13::INSTR"
+    }
+  ],
+  "schema": 1,
+  "kind": "quicksyn_power_cal"
+}

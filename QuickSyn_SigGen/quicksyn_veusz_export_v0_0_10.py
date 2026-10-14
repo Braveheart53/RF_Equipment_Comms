@@ -9,15 +9,15 @@
 
 ===============================================================================
  Title          : QuickSyn Session Reduction and Veusz Export
- Filename       : quicksyn_veusz_export_v0_0_9.py
- Version        : 0.0.9  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Filename       : quicksyn_veusz_export_v0_0_10.py
+ Version        : 0.0.10 (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
  Author         : William W. Wallace
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
  Created        : 2026-10-09
  Modified       : 2026-10-12
  Language       : Python 3.12
- Companion to   : quicksyn_scpi_gui_v0_0_9.py
+ Companion to   : quicksyn_scpi_gui_v0_0_10.py
  Licence        : GPL-3.0-or-later (GNU General Public License v3.0 or later)
  Copyright      : Copyright (C) 2026 William W. Wallace
  Status         : Internal draft - NOT yet verified against hardware
@@ -105,7 +105,7 @@ OUTPUTS (written into the session directory)
 
 USAGE
 -----
-    python quicksyn_veusz_export_v0_0_9.py <session_dir> [options]
+    python quicksyn_veusz_export_v0_0_10.py <session_dir> [options]
 
         --no-gpu            force the NumPy host path
         --no-veusz          compute and tabulate only: no .vszh5, no plots
@@ -235,6 +235,8 @@ REVISION HISTORY
                    option word is decoded into option numbers.
 0.0.9  2026-10-12  Released with controller 0.0.9 (10 MHz output command
                    path). No change to the reduction or the outputs.
+0.0.10 2026-10-14  Released with controller 0.0.10 (Calibration tab, kept in
+                   the GUI). No change to the reduction or the outputs.
 ===============================================================================
 """
 
@@ -306,7 +308,7 @@ try:
 except ImportError:  # pragma: no cover - reported by export_veusz()
     vw = None
 
-__version__ = "0.0.9"                 # Semantic Versioning 2.0.0
+__version__ = "0.0.10"                 # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO/GBO"
@@ -316,7 +318,7 @@ __status__ = "Internal draft - not yet verified against hardware"
 PROGRAM_NAME = "QuickSyn Session Reduction and Veusz Export"
 
 #: Record layout written by the controller. Kept in step with
-#: quicksyn_scpi_gui_v0_0_9.TELEMETRY_DTYPE.
+#: quicksyn_scpi_gui_v0_0_10.TELEMETRY_DTYPE.
 TELEMETRY_DTYPE = np.dtype(
     [
         ("idx", "i8"),

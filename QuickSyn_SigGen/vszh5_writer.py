@@ -11,7 +11,7 @@
 ===============================================================================
  Title          : Veusz HDF5 Document Writer
  Filename       : vszh5_writer.py
- Version        : 0.0.9  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Version        : 0.0.10 (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
  Author         : William W. Wallace
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
@@ -171,6 +171,10 @@ REVISION HISTORY
                    fixes in the GUI). No change to this module's code.
 0.0.9  2026-10-12  Released with QuickSyn package 0.0.9 (10 MHz output command
                    path in the GUI). No change to this module's code.
+0.0.10 2026-10-14  Released with QuickSyn package 0.0.10. The GUI now also
+                   uses VszDoc/VeuszWriter in-process to export a power
+                   calibration table (Calibration tab). No change to this
+                   module's code.
 ===============================================================================
 """
 
@@ -199,7 +203,7 @@ try:
 except ImportError:  # pragma: no cover - reported when a writer is created
     h5py = None
 
-__version__ = "0.0.9"                 # Semantic Versioning 2.0.0
+__version__ = "0.0.10"                 # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO/GBO"

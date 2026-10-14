@@ -9,19 +9,19 @@
 
 ===============================================================================
  Title          : QuickSyn SCPI Controller and Telemetry Logger
- Filename       : quicksyn_scpi_gui_v0_0_9.py
- Version        : 0.0.9  (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Filename       : quicksyn_scpi_gui_v0_0_10.py
+ Version        : 0.0.10 (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
  Author         : William W. Wallace
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
  Created        : 2026-10-09
- Modified       : 2026-10-12
+ Modified       : 2026-10-14
  Language       : Python 3.12
  GUI toolkit    : Qt.py abstraction layer -> PySide6 (Qt 6)
  Environment    : mamba env "quicksyn" (see environment_quicksyn.yml)
  Licence        : GPL-3.0-or-later (GNU General Public License v3.0 or later)
  Copyright      : Copyright (C) 2026 William W. Wallace
- Status         : Internal draft - first hardware session 2026-10-12 (FSL-0020)
+ Status         : Internal draft - calibration tab; hardware sessions 2026-10-12/14 (FSL-0020)
 ===============================================================================
 
 LICENCE
@@ -103,6 +103,14 @@ FEATURE SUMMARY
   by vszh5_writer.py (no Veusz needed to write it): automatically when
   logging stops, on demand (Veusz menu, Ctrl+E), and optionally every N
   minutes while logging; optional PDF/PNG render and Open in Veusz.
+* Calibration tab (0.0.10), in place of NI's GPIB-only calibration panel:
+  power against frequency (and level, on power-control models) from typed
+  readings or any SCPI power meter through PyVISA, with path-loss
+  correction from a constant, CSV or Touchstone .s2p; and OCXO tuning with
+  DIAG:CAL:REF:DAC against a counter. Kept per unit in this program and
+  used for the expected level at RF OUT, level correction, and re-applying
+  the reference value on connect. Nothing undocumented is written to the
+  synthesizer.
 * Light / dark / system theme selector on the View menu.
 * Offline simulator so the whole GUI can be exercised with no hardware.
 
@@ -124,7 +132,7 @@ Every session creates <log_root>/<YYYYmmdd_HHMMSS>_<model>_<opts>/ holding:
     reduction_summary.{json,md}, telemetry_reduced.npz   From the export.
 
 The .vszh5 and the reduction are produced by the companion script
-quicksyn_veusz_export_v0_0_9.py (with vszh5_writer.py), which the GUI runs
+quicksyn_veusz_export_v0_0_10.py (with vszh5_writer.py), which the GUI runs
 as a separate process: the GUI's PySide6 never mixes with the Qt binding
 Veusz uses, a large session never stalls the window, and an export started
 by closing the window finishes after the window has gone.
@@ -156,10 +164,12 @@ REQUIREMENTS
     numpy >= 1.26         ring buffer
     pyqtgraph >= 0.13     live plotting (optional, degrades gracefully)
     psutil >= 5.9         process RAM reporting (optional)
+    pyvisa >= 1.13        power meter / counter reads (optional, Calibration)
+    pyvisa-py >= 0.7      pure-Python VISA back end (optional)
 
         mamba env create -f environment_quicksyn.yml
         mamba activate quicksyn
-        python quicksyn_scpi_gui_v0_0_9.py
+        python quicksyn_scpi_gui_v0_0_10.py
 
 REFERENCES
 ----------
@@ -178,6 +188,9 @@ REFERENCES
      Common Commands for Use With IEEE Std 488.1-1987."
 [R7] SCPI Consortium, "Standard Commands for Programmable Instruments
      (SCPI), Volume 1: Syntax and Style," Version 1999.0, May 1999.
+[R8] IBIS Open Forum, "Touchstone File Format Specification," Version 2.1,
+     ratified 26 Jan. 2024. https://www.ibis.org/touchstone_ver2.1/
+[R9] PyVISA Authors, "PyVISA," version 1.16, https://pyvisa.readthedocs.io/
 
 DOCUMENTATION AMBIGUITIES AND CONFLICTS HANDLED IN CODE
 -------------------------------------------------------
@@ -449,6 +462,43 @@ REVISION HISTORY
                    of REF OUT on a power meter or counter.
                    Simulator: refout_query_supported=False emulates firmware
                    without OUTP:ROSC:STAT?.
+0.0.10 2026-10-14  CALIBRATION TAB, program-side, in place of NI's
+                   calibration panel (which needs GPIB and an E4418B-class
+                   meter [R3]).
+                   (1) Power vs frequency: a point list (frequency x level;
+                   one level on fixed-output models), "Set synthesizer to
+                   this point", readings typed in (Enter records) or read
+                   from any SCPI power meter through PyVISA [R9] (GPIB, USB,
+                   LAN), with an automatic run. Path loss from a constant, a
+                   CSV table or a Touchstone .s2p (|S21|, v1 and v2 [R8]);
+                   the table holds the level at RF OUT. Table, plot against
+                   the datasheet minimum, JSON/CSV/.vszh5 export, and a per-
+                   unit active table (QUICKSYN_CAL_DIR, default
+                   ~/quicksyn_cal). The Main tab shows the level expected at
+                   RF OUT; on power-control models the commanded level can
+                   be corrected so that the typed level appears at RF OUT.
+                   (2) Reference: OCXO tuning with DIAG:CAL:REF:DAC [R1]
+                   against a counter, secant search to +/-20 Hz at 10 GHz as
+                   in [R3] Step 4-2, Restore, and a saved per-unit value that
+                   can be re-applied on every connect.
+                   NOT written to the synthesizer: power tables and flash
+                   storage. NI's panel does both ("Write Cal to UUT", "Store
+                   in Flash") with commands that are not published in [R1]
+                   or [R3]; guessing them could overwrite the factory
+                   calibration.
+                   (3) 10 MHz reference output (hardware, 2026-10-14): SCPI
+                   OUTP:ROSC:STAT OFF/ON does switch REF OUT (power meter),
+                   but STAT? bit 5 stays set. 0.0.9 therefore warned falsely
+                   and sent the native 08xx as well. Now OUTP:ROSC:STAT? is
+                   trusted when it answers; when it does not and bit 5
+                   follows neither command, the state is shown as "not
+                   reported" (grey LED, the checkbox keeps what was sent)
+                   and later switches send OUTP:ROSC:STAT alone.
+                   (4) Frequency floor: on the FSL-0020, 100 MHz requested
+                   (by NI's panel or this program) gives 656.062 MHz; the
+                   datasheet 0.65 GHz limit is kept (README 10).
+                   Simulator: refout_status_bit_follows=False holds STAT?
+                   bit 5 set, as on the FSL-0020.
 ===============================================================================
 """
 
@@ -567,7 +617,7 @@ except ImportError:  # pragma: no cover - export still runs if the file exists
 # %% ===========================================================================
 #    MODULE CONSTANTS
 # =============================================================================
-__version__ = "0.0.9"                 # Semantic Versioning 2.0.0
+__version__ = "0.0.10"                # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO/GBO"
@@ -718,7 +768,7 @@ def expects_reply(command: str) -> bool:
 
 
 #: Companion export script run by the GUI to write the session .vszh5.
-COMPANION_EXPORT_SCRIPT: str = "quicksyn_veusz_export_v0_0_9.py"
+COMPANION_EXPORT_SCRIPT: str = "quicksyn_veusz_export_v0_0_10.py"
 #: File name of the session document written by the export script.
 SESSION_VSZH5_NAME: str = "quicksyn_session.vszh5"
 
@@ -1806,6 +1856,9 @@ class SimulatedTransport(SerialTransport):
         self.refout_control = True
         #: False emulates firmware that does not answer OUTP:ROSC:STAT? (0.0.9).
         self.refout_query_supported = True
+        #: False holds STAT? bit 5 set whatever REF OUT does, as on the
+        #: FSL-0020 tested (0.0.10).
+        self.refout_status_bit_follows = True
         self._state: dict[str, Any] = {
             "freq_mlhz": 10_000_000_000_000,   # 10 GHz default [R1/R2]
             "power_dbm": 13.0,
@@ -2022,7 +2075,7 @@ class SimulatedTransport(SerialTransport):
         # Locked: leave RF_UNLOCKED and REF_UNLOCKED clear.
         if self._state["rf_out"]:
             value |= 1 << StatusBit.RF_OUTPUT_ON
-        if self._state["ref_out"]:
+        if self._state["ref_out"] or not self.refout_status_bit_follows:
             value |= 1 << StatusBit.REF_OUTPUT_ON
         if self._state["blanking"]:
             value |= 1 << StatusBit.BLANKING_ON
@@ -2141,6 +2194,13 @@ class QuickSyn:
         #: "auto" tries OUTP:ROSC:STAT first; "native" once the native 08xx
         #: command has worked where the SCPI form did not (0.0.9).
         self.reference_output_command: str = "auto"
+        #: None until known; False once STAT? bit 5 has been seen not to
+        #: follow the 10 MHz output (FSL-0020: REF OUT switches, bit 5 stays
+        #: set) (0.0.10).
+        self.refout_status_reliable: bool | None = None
+        #: Last 10 MHz output state sent, for display when the unit does not
+        #: report it.
+        self.refout_commanded: bool | None = None
 
     # --- Event plumbing -----------------------------------------------------
     def _emit_state(self, parameter: str, value: Any, source: str = "gui") -> None:
@@ -2420,11 +2480,32 @@ class QuickSyn:
         return state
 
     def _reference_output_followed(self, enabled: bool) -> tuple[bool | None, StatusWord, bool]:
-        """Read the 10 MHz output state back: (query state or None, STAT?, followed)."""
+        """Read the 10 MHz output state back: (query state or None, STAT?, followed).
+
+        OUTP:ROSC:STAT? decides when the unit answers it; a STAT? bit 5 that
+        disagrees with it marks the bit unreliable (0.0.10). Without the
+        query, bit 5 decides unless it is already known to be unreliable.
+        """
         reported = self.get_reference_output_optional()
         status = self.get_status()
-        followed = status.ref_output_on == enabled and reported in (None, enabled)
-        return reported, status, followed
+        if reported is not None:
+            if status.ref_output_on != reported:
+                self.refout_status_reliable = False
+            return reported, status, reported == enabled
+        return reported, status, status.ref_output_on == enabled
+
+    def reference_output_state(self, reported: bool | None,
+                               status: StatusWord) -> bool | None:
+        """Best knowledge of the 10 MHz output: the query, else bit 5, else None.
+
+        None means this unit does not report the state (no OUTP:ROSC:STAT?
+        and a STAT? bit 5 that does not follow).
+        """
+        if reported is not None:
+            return reported
+        if self.refout_status_reliable is False:
+            return None
+        return status.ref_output_on
 
     def set_reference_output_checked(self, enabled: bool) -> tuple[bool | None, StatusWord, str]:
         """Switch the 10 MHz reference output and read it back.
@@ -2445,11 +2526,17 @@ class QuickSyn:
             ``STAT?``, command used last: "scpi" or "native").
         """
         native = native_switch_command(NATIVE_REF_OUTPUT, enabled)
+        self.refout_commanded = enabled
         if self.reference_output_command == "native":
             self.io.write(native)
             self._emit_state("reference_output", enabled)
             reported, status, _ = self._reference_output_followed(enabled)
             return reported, status, "native"
+        if self.refout_status_reliable is False and self.refout_query_supported is False:
+            # Nothing on this unit reports the output (0.0.10): send the SCPI
+            # form, which switches REF OUT on the FSL-0020 tested, and stop.
+            self.set_reference_output(enabled)
+            return None, self.get_status(), "scpi"
         self.set_reference_output(enabled)
         reported, status, followed = self._reference_output_followed(enabled)
         if followed:
@@ -2458,6 +2545,11 @@ class QuickSyn:
         reported, status, followed = self._reference_output_followed(enabled)
         if followed:
             self.reference_output_command = "native"
+        elif reported is None:
+            # Neither command moved bit 5 and there is no query: on the
+            # FSL-0020 both switch REF OUT while bit 5 stays set (power meter,
+            # 2026-10-14), so the bit is taken as not reporting the output.
+            self.refout_status_reliable = False
         return reported, status, "native"
 
     def set_reference_source_checked(
@@ -2635,9 +2727,11 @@ class QuickSyn:
         Warnings
         --------
         This writes the reference calibration tuning value. [R1] notes the
-        hardware takes a few seconds to update, and [R2] Step 4-2 describes
-        the full OCXO calibration procedure against a 10 MHz standard.
-        Changing it outside that procedure will de-calibrate the unit.
+        hardware takes a few seconds to update, and [R3] Step 4-2 describes
+        the OCXO calibration against a 10 MHz standard, which the
+        Calibration tab follows (0.0.10). Changing it outside that procedure
+        de-calibrates the unit; [R3] says the value is volatile until NI's
+        panel stores it, so the tab can re-send a saved value on connect.
         """
         if not (REF_DAC_MIN <= counts <= REF_DAC_MAX):
             raise ParameterError(
@@ -3605,6 +3699,718 @@ class TelemetrySampler(QtCore.QThread):
 
 
 # %% ===========================================================================
+#    CALIBRATION (PROGRAM-SIDE)
+# =============================================================================
+# What can and cannot be written to the synthesizer (0.0.10)
+# ----------------------------------------------------------
+# [R1] documents one calibration write: DIAG:CAL:REF:DAC, the 16-bit tuning
+# word of the internal OCXO (Table 5). Neither [R1] nor the calibration
+# manual [R3] documents how NI's calibration soft front panel writes power
+# calibration tables ("Write Cal to UUT") or stores calibration in flash
+# ("Store in Flash", "Write Ref Cal to UUT"). Guessing those commands could
+# overwrite the factory calibration, so this program sends none of them.
+#
+# Instead:
+# * Power calibration is a measured table of the level at RF OUT against
+#   frequency (and against the commanded level on models with power
+#   control), kept in this program per unit (model + serial). It is used to
+#   show the level expected at RF OUT and, on power-control models, to
+#   correct the commanded level. The synthesizer itself is not changed.
+# * Reference calibration tunes the OCXO with the documented DIAG:CAL:REF:DAC
+#   against a frequency counter and keeps the result per unit; it can be
+#   re-applied on every connect. Whether a DIAG:CAL:REF:DAC value survives a
+#   power cycle is not documented ([R3] Step 4-2 says the value written while
+#   tuning is volatile until NI's panel stores it).
+#
+# Readings are typed in, or fetched from any SCPI power meter or counter
+# through PyVISA (optional; GPIB, USB or LAN), with an optional path-loss
+# correction from a constant, a CSV table or a Touchstone .s2p file.
+
+#: Where calibration files live (override with the QUICKSYN_CAL_DIR variable).
+CAL_DIR_DEFAULT: Path = Path.home() / "quicksyn_cal"
+POWER_CAL_SCHEMA: int = 1
+REF_CAL_SCHEMA: int = 1
+#: [R3] Step 4-2: NI's panel tunes the OCXO until RF OUT is within +/-20 Hz
+#: at 10 GHz; the same target and tolerance are the defaults here.
+DEFAULT_REF_CAL_FREQ_HZ: float = 10e9
+DEFAULT_REF_CAL_TOL_HZ: float = 20.0
+#: First probe step for the DAC slope (counts). An assumption, not a vendor
+#: figure: the slope is measured from the first two points, so this only
+#: needs to move the frequency measurably.
+DEFAULT_REF_TRIAL_STEP: int = 500
+#: Largest DAC change one secant step may make (guards against a noisy slope).
+REF_MAX_STEP_COUNTS: int = 8000
+#: Datasheet minimum output for fixed-output models [R4] (plotted as the
+#: specification line); power-control models are plotted against the level.
+SPEC_MIN_POWER_DBM: dict[str, float] = {
+    "FSL-0010": 15.0, "FSL-0020": 10.0, "FSL-E020": 10.0,
+}
+#: Unit prefixes accepted in path-loss and Touchstone files.
+_FREQ_UNITS: dict[str, float] = {"HZ": 1.0, "KHZ": 1e3, "MHZ": 1e6, "GHZ": 1e9}
+
+
+class CalibrationError(QuickSynError):
+    """A calibration input, plan or file could not be used."""
+
+
+def cal_dir() -> Path:
+    """Calibration root: QUICKSYN_CAL_DIR if set, else ~/quicksyn_cal."""
+    override = os.environ.get("QUICKSYN_CAL_DIR", "").strip()
+    return Path(override).expanduser() if override else CAL_DIR_DEFAULT
+
+
+def interp_or_none(x: float, xs: Sequence[float], ys: Sequence[float]) -> float | None:
+    """Linear interpolation inside [xs[0], xs[-1]]; None outside (no extrapolation).
+
+    ``xs`` must be increasing. A single point is returned only at its own x.
+    """
+    if len(xs) == 0:
+        return None
+    eps = 1e-9 * max(1.0, abs(xs[0]), abs(xs[-1]))
+    if x < xs[0] - eps or x > xs[-1] + eps:
+        return None
+    if len(xs) == 1:
+        return float(ys[0])
+    return float(np.interp(x, xs, ys))
+
+
+@dataclass
+class PathLoss:
+    """Loss between RF OUT and the meter, in dB (positive = loss).
+
+    The level at RF OUT is the meter reading plus this loss. ``kind`` is
+    "none", "constant" or "table" (from a CSV or Touchstone file).
+    """
+
+    kind: str = "none"
+    constant_db: float = 0.0
+    freqs_hz: list[float] = field(default_factory=list)
+    loss_db: list[float] = field(default_factory=list)
+    source: str = ""
+
+    def loss_at(self, freq_hz: float) -> float:
+        """Loss at ``freq_hz``; raises CalibrationError outside the table."""
+        if self.kind == "none":
+            return 0.0
+        if self.kind == "constant":
+            return float(self.constant_db)
+        value = interp_or_none(freq_hz, self.freqs_hz, self.loss_db)
+        if value is None:
+            raise CalibrationError(
+                f"{freq_hz / 1e9:.6g} GHz is outside the path-loss data "
+                f"({self.freqs_hz[0] / 1e9:.6g} to {self.freqs_hz[-1] / 1e9:.6g} GHz, {self.source}).")
+        return value
+
+    def describe(self) -> str:
+        """One line for the GUI and the saved table."""
+        if self.kind == "none":
+            return "no path correction"
+        if self.kind == "constant":
+            return f"constant {self.constant_db:.2f} dB"
+        return (f"{self.source}: {len(self.freqs_hz)} points, {self.freqs_hz[0] / 1e9:.6g}-"
+                f"{self.freqs_hz[-1] / 1e9:.6g} GHz, {min(self.loss_db):.2f} to "
+                f"{max(self.loss_db):.2f} dB loss")
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON-ready form (stored with each power calibration)."""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "PathLoss":
+        """Inverse of :meth:`to_dict`."""
+        return cls(**{k: data[k] for k in ("kind", "constant_db", "freqs_hz", "loss_db", "source")
+                      if k in data})
+
+    @classmethod
+    def _table(cls, freqs: list[float], loss: list[float], source: str) -> "PathLoss":
+        """Sorted, de-duplicated table (duplicate frequencies averaged)."""
+        if len(freqs) < 1:
+            raise CalibrationError(f"{source}: no data rows found.")
+        merged: dict[float, list[float]] = {}
+        for f, value in zip(freqs, loss):
+            if not (math.isfinite(f) and math.isfinite(value)) or f <= 0:
+                raise CalibrationError(f"{source}: invalid row ({f}, {value}).")
+            merged.setdefault(f, []).append(value)
+        keys = sorted(merged)
+        return cls(kind="table", freqs_hz=keys,
+                   loss_db=[float(np.mean(merged[k])) for k in keys], source=source)
+
+    @classmethod
+    def from_csv(cls, path: str | os.PathLike) -> "PathLoss":
+        """Two columns: frequency and loss in dB.
+
+        Separators: comma, semicolon, tab or spaces; "#" and "!" start comments.
+        The frequency unit comes from the header (Hz, kHz, MHz or GHz); with no
+        header unit, values below 1e3 are taken as GHz, below 1e6 as MHz,
+        otherwise Hz. If every loss value is zero or negative, the column is
+        taken as S21 in dB and negated; that choice is shown in the source text.
+        """
+        p = Path(path)
+        scale: float | None = None
+        freqs: list[float] = []
+        values: list[float] = []
+        for raw in p.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = raw.split("#")[0].split("!")[0].strip()
+            if not line:
+                continue
+            cells = [c for c in re.split(r"[,;\t ]+", line) if c]
+            if len(cells) < 2:
+                continue
+            try:
+                f, v = float(cells[0]), float(cells[1])
+            except ValueError:                      # a header row
+                head = line.upper()
+                for unit in ("GHZ", "MHZ", "KHZ", "HZ"):
+                    # "freq_GHz", "f (MHz)", "Frequency [Hz]": the unit, not
+                    # part of a longer word ("HZ" inside "GHZ" is not Hz).
+                    if re.search(rf"(?<![A-Z]){unit}(?![A-Z])", head):
+                        scale = _FREQ_UNITS[unit]
+                        break
+                continue
+            freqs.append(f)
+            values.append(v)
+        if not freqs:
+            raise CalibrationError(f"{p.name}: no numeric rows.")
+        note = ""
+        if scale is None:
+            top = max(freqs)
+            scale, note = ((1e9, "GHz assumed") if top < 1e3 else
+                           (1e6, "MHz assumed") if top < 1e6 else (1.0, "Hz assumed"))
+        if all(v <= 0 for v in values) and any(v < 0 for v in values):
+            values = [-v for v in values]
+            note = (note + ", " if note else "") + "S21 in dB, negated"
+        table = cls._table([f * scale for f in freqs], values, p.name)
+        if note:
+            table.source = f"{p.name} ({note})"
+        return table
+
+    @classmethod
+    def from_touchstone(cls, path: str | os.PathLike) -> "PathLoss":
+        """|S21| of a 2-port Touchstone file (v1.x or v2.0) as loss in dB.
+
+        Option line "# <unit> S <MA|DB|RI> R <z>" (defaults GHz, MA, as in the
+        Touchstone specification); 2-port order N11 N21 N12 N22 (v1, and v2
+        with [Two-Port Data Order] 21_12) or N11 N12 N21 N22 (v2 12_21).
+        Noise parameters after the network data are ignored.
+        """
+        p = Path(path)
+        scale, fmt, param, order_21_12, ports = 1e9, "MA", "S", True, 2
+        tokens: list[float] = []
+        for raw in p.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = raw.split("!")[0].strip()
+            if not line:
+                continue
+            if line.startswith("#"):
+                words = line[1:].upper().split()
+                for i, word in enumerate(words):
+                    if word in _FREQ_UNITS:
+                        scale = _FREQ_UNITS[word]
+                    elif word in ("MA", "DB", "RI"):
+                        fmt = word
+                    elif word in ("S", "Y", "Z", "H", "G") and (i == 0 or words[i - 1] != "R"):
+                        param = word
+                continue
+            if line.startswith("["):
+                keyword = line.upper()
+                if keyword.startswith("[NUMBER OF PORTS]"):
+                    ports = int(keyword.split("]")[1].split()[0])
+                elif keyword.startswith("[TWO-PORT DATA ORDER]"):
+                    order_21_12 = "21_12" in keyword
+                elif keyword.startswith(("[NOISE DATA]", "[END]")):
+                    break                               # v2: network data done
+                continue
+            try:
+                tokens.extend(float(t) for t in line.split())
+            except ValueError as exc:
+                raise CalibrationError(f"{p.name}: unreadable data line {raw!r}") from exc
+        if param != "S":
+            raise CalibrationError(f"{p.name}: {param}-parameters; S-parameters are needed.")
+        suffix = p.suffix.lower()
+        if ports != 2 or (re.fullmatch(r"\.s\d+p", suffix) and suffix != ".s2p"):
+            raise CalibrationError(f"{p.name}: a 2-port file (.s2p) is needed for S21.")
+        freqs: list[float] = []
+        loss: list[float] = []
+        index = 0
+        while index + 9 <= len(tokens):
+            row = tokens[index:index + 9]
+            if freqs and row[0] * scale <= freqs[-1]:
+                break                                   # noise data begins
+            a, b = (row[3], row[4]) if order_21_12 else (row[5], row[6])
+            if fmt == "DB":
+                mag_db = a
+            else:
+                mag = abs(a) if fmt == "MA" else math.hypot(a, b)
+                if mag <= 0:
+                    raise CalibrationError(f"{p.name}: |S21| = 0 at {row[0]} - no transmission.")
+                mag_db = 20.0 * math.log10(mag)
+            freqs.append(row[0] * scale)
+            loss.append(-mag_db)
+            index += 9
+        return cls._table(freqs, loss, f"{p.name} (|S21|)")
+
+
+@dataclass
+class PowerCalPoint:
+    """One measured point: what was commanded and what the meter showed."""
+
+    freq_hz: float
+    set_dbm: float | None          # None on fixed-output models
+    reading_dbm: float
+    path_loss_db: float = 0.0
+    t_unix: float = 0.0
+    source: str = "manual"         # "manual" or the meter that was read
+
+    @property
+    def output_dbm(self) -> float:
+        """Level at RF OUT: meter reading plus path loss."""
+        return self.reading_dbm + self.path_loss_db
+
+    @property
+    def error_db(self) -> float | None:
+        """Level at RF OUT minus the commanded level (None if none commanded)."""
+        return None if self.set_dbm is None else self.output_dbm - self.set_dbm
+
+
+@dataclass
+class PowerCalTable:
+    """A unit's measured output level against frequency (and level).
+
+    Interpolated linearly in frequency (dB) and, where several commanded
+    levels were measured, linearly in level; never extrapolated in frequency.
+    """
+
+    model: str = ""
+    serial: str = ""
+    firmware: str = ""
+    created_iso: str = ""
+    operator: str = ""
+    meter: str = ""
+    sensor: str = ""
+    path: dict[str, Any] = field(default_factory=dict)
+    notes: str = ""
+    points: list[PowerCalPoint] = field(default_factory=list)
+    schema: int = POWER_CAL_SCHEMA
+
+    def add(self, point: PowerCalPoint) -> None:
+        """Append a point."""
+        self.points.append(point)
+
+    def levels(self) -> list[float | None]:
+        """Commanded levels present (``[None]`` for a fixed-output table)."""
+        found = {p.set_dbm for p in self.points}
+        if found == {None}:
+            return [None]
+        return sorted(v for v in found if v is not None)
+
+    def curve(self, level: float | None) -> tuple[list[float], list[float]]:
+        """(frequencies, levels at RF OUT) for one commanded level, sorted;
+        repeated frequencies are averaged in dB."""
+        merged: dict[float, list[float]] = {}
+        for p in self.points:
+            same = (p.set_dbm is None and level is None) or (
+                p.set_dbm is not None and level is not None and abs(p.set_dbm - level) < 1e-6)
+            if same:
+                merged.setdefault(p.freq_hz, []).append(p.output_dbm)
+        keys = sorted(merged)
+        return keys, [float(np.mean(merged[k])) for k in keys]
+
+    def frequency_span(self) -> tuple[float, float] | None:
+        """(lowest, highest) calibrated frequency, or None if empty."""
+        if not self.points:
+            return None
+        freqs = [p.freq_hz for p in self.points]
+        return min(freqs), max(freqs)
+
+    def expected_output(self, freq_hz: float, set_dbm: float | None = None) -> float | None:
+        """Level expected at RF OUT, or None outside the calibrated band."""
+        levels = self.levels()
+        if not self.points:
+            return None
+        if levels == [None]:
+            f, out = self.curve(None)
+            return interp_or_none(freq_hz, f, out)
+        target = levels[0] if set_dbm is None else set_dbm
+        error = self._error_at(freq_hz, target)
+        return None if error is None else target + error
+
+    def _error_at(self, freq_hz: float, set_dbm: float) -> float | None:
+        """(RF OUT - commanded) at ``freq_hz``, interpolated across levels
+        (held constant beyond the lowest and highest level measured)."""
+        lv: list[float] = []
+        err: list[float] = []
+        for level in self.levels():
+            if level is None:
+                continue
+            f, out = self.curve(level)
+            value = interp_or_none(freq_hz, f, out)
+            if value is not None:
+                lv.append(level)
+                err.append(value - level)
+        if not lv:
+            return None
+        return float(np.interp(set_dbm, lv, err))
+
+    def command_for_target(self, freq_hz: float, target_dbm: float,
+                           p_min: float, p_max: float) -> float | None:
+        """Level to command so that ``target_dbm`` appears at RF OUT.
+
+        Solves set + error(f, set) = target by fixed-point iteration (the error
+        varies slowly with level) and clamps to [p_min, p_max]. None when the
+        table cannot answer (fixed-output table, or outside the band).
+        """
+        if self.levels() == [None]:
+            return None
+        command = target_dbm
+        for _ in range(12):
+            error = self._error_at(freq_hz, command)
+            if error is None:
+                return None
+            new = min(max(target_dbm - error, p_min), p_max)
+            if abs(new - command) < 0.005:
+                command = new
+                break
+            command = new
+        return quantise_power_dbm(command)
+
+    # --- files ----------------------------------------------------------------
+    def to_dict(self) -> dict[str, Any]:
+        """JSON-ready form."""
+        data = asdict(self)
+        data["kind"] = "quicksyn_power_cal"
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "PowerCalTable":
+        """Inverse of :meth:`to_dict`; refuses other file kinds and newer schemas."""
+        if data.get("kind") != "quicksyn_power_cal":
+            raise CalibrationError("Not a QuickSyn power calibration file.")
+        if int(data.get("schema", 0)) > POWER_CAL_SCHEMA:
+            raise CalibrationError(f"Power calibration schema {data.get('schema')} is newer than "
+                                   f"this program ({POWER_CAL_SCHEMA}).")
+        fields_ = {k: data[k] for k in ("model", "serial", "firmware", "created_iso", "operator",
+                                        "meter", "sensor", "path", "notes", "schema") if k in data}
+        table = cls(**fields_)
+        table.points = [PowerCalPoint(**p) for p in data.get("points", [])]
+        return table
+
+    def save(self, path: str | os.PathLike) -> Path:
+        """Write JSON atomically; returns the path."""
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        part = target.with_name(target.name + ".part")
+        part.write_text(json.dumps(self.to_dict(), indent=2), encoding="utf-8")
+        os.replace(part, target)
+        return target
+
+    @classmethod
+    def load(cls, path: str | os.PathLike) -> "PowerCalTable":
+        """Read a file written by :meth:`save`."""
+        try:
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise CalibrationError(f"Cannot read {path}: {exc}") from exc
+        return cls.from_dict(data)
+
+    def to_csv(self, path: str | os.PathLike) -> Path:
+        """One row per point, for spreadsheets."""
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("w", newline="", encoding="utf-8") as fh:
+            out = csv.writer(fh)
+            out.writerow(["freq_hz", "freq_ghz", "set_dbm", "reading_dbm", "path_loss_db",
+                          "rf_out_dbm", "error_db", "iso_utc", "source"])
+            for p in sorted(self.points, key=lambda q: (q.set_dbm or 0.0, q.freq_hz)):
+                out.writerow([f"{p.freq_hz:.3f}", f"{p.freq_hz / 1e9:.9f}",
+                              "" if p.set_dbm is None else f"{p.set_dbm:.2f}",
+                              f"{p.reading_dbm:.3f}", f"{p.path_loss_db:.3f}",
+                              f"{p.output_dbm:.3f}",
+                              "" if p.error_db is None else f"{p.error_db:.3f}",
+                              utc_iso(p.t_unix) if p.t_unix else "", p.source])
+        return target
+
+
+@dataclass
+class RefCalIteration:
+    """One step of the OCXO tuning: DAC written, frequency measured."""
+
+    dac: int
+    measured_hz: float
+    target_hz: float
+    t_unix: float = 0.0
+    source: str = "manual"
+
+    @property
+    def error_hz(self) -> float:
+        """Measured minus target, in Hz."""
+        return self.measured_hz - self.target_hz
+
+    @property
+    def error_ppb(self) -> float:
+        """Fractional error in parts per 10^9."""
+        return 1e9 * self.error_hz / self.target_hz
+
+
+class RefCalTuner:
+    """Secant search for the DAC word that puts RF OUT on frequency.
+
+    f(DAC) is taken as locally linear: after the first measurement the DAC
+    is moved by ``trial_step`` to measure the slope, then each step uses the
+    two most recent distinct DAC values. Steps are limited to
+    REF_MAX_STEP_COUNTS and the DAC range.
+    """
+
+    def __init__(self, target_hz: float, tolerance_hz: float, trial_step: int,
+                 original_dac: int) -> None:
+        if target_hz <= 0 or tolerance_hz <= 0 or trial_step == 0:
+            raise CalibrationError("Target, tolerance and trial step must be non-zero and positive.")
+        self.target_hz = float(target_hz)
+        self.tolerance_hz = float(tolerance_hz)
+        self.trial_step = int(trial_step)
+        self.original_dac = int(original_dac)
+        self.iterations: list[RefCalIteration] = []
+
+    def record(self, dac: int, measured_hz: float, source: str = "manual") -> RefCalIteration:
+        """Add a measurement taken with ``dac`` written."""
+        if not (measured_hz > 0 and math.isfinite(measured_hz)):
+            raise CalibrationError(f"Measured frequency {measured_hz!r} is not usable.")
+        it = RefCalIteration(int(dac), float(measured_hz), self.target_hz, time.time(), source)
+        self.iterations.append(it)
+        return it
+
+    def converged(self) -> bool:
+        """True when the latest measurement is within tolerance."""
+        return bool(self.iterations) and abs(self.iterations[-1].error_hz) <= self.tolerance_hz
+
+    def slope_hz_per_count(self) -> float | None:
+        """df/dDAC from the two most recent distinct DAC values."""
+        latest = self.iterations[-1] if self.iterations else None
+        if latest is None:
+            return None
+        for older in reversed(self.iterations[:-1]):
+            if older.dac != latest.dac:
+                slope = (latest.measured_hz - older.measured_hz) / (latest.dac - older.dac)
+                return slope if slope != 0 and math.isfinite(slope) else None
+        return None
+
+    def next_dac(self) -> int:
+        """DAC word to try next (the current one if already converged)."""
+        if not self.iterations:
+            return self.original_dac
+        last = self.iterations[-1]
+        if self.converged():
+            return last.dac
+        slope = self.slope_hz_per_count()
+        if slope is None:
+            step = self.trial_step
+        else:
+            step = -last.error_hz / slope
+            step = max(-REF_MAX_STEP_COUNTS, min(REF_MAX_STEP_COUNTS, step))
+            if abs(step) < 1.0:
+                step = math.copysign(1.0, step)
+        return int(min(REF_DAC_MAX, max(REF_DAC_MIN, round(last.dac + step))))
+
+    def best(self) -> RefCalIteration | None:
+        """The iteration with the smallest |error|."""
+        return min(self.iterations, key=lambda it: abs(it.error_hz)) if self.iterations else None
+
+
+@dataclass
+class RefCalRecord:
+    """A unit's saved reference calibration (re-applied on connect if asked)."""
+
+    model: str = ""
+    serial: str = ""
+    dac: int = 0
+    original_dac: int = 0
+    target_hz: float = DEFAULT_REF_CAL_FREQ_HZ
+    measured_hz: float = 0.0
+    created_iso: str = ""
+    apply_on_connect: bool = False
+    notes: str = ""
+    schema: int = REF_CAL_SCHEMA
+
+    @property
+    def error_hz(self) -> float:
+        """Residual error when it was saved."""
+        return self.measured_hz - self.target_hz
+
+
+class CalStore:
+    """Per-unit calibration files under cal_dir()/<model>_<serial>/.
+
+    Nothing is created until something is saved.
+    """
+
+    def __init__(self, root: Path | None = None) -> None:
+        self.root = Path(root) if root is not None else cal_dir()
+
+    @staticmethod
+    def _safe(text: str) -> str:
+        return re.sub(r"[^A-Za-z0-9._-]+", "_", text.strip()) or "unknown"
+
+    def unit_dir(self, model: str, serial: str) -> Path:
+        """Folder for one unit."""
+        return self.root / f"{self._safe(model)}_{self._safe(serial)}"
+
+    def save_power(self, table: PowerCalTable) -> tuple[Path, Path]:
+        """Save a dated copy (JSON + CSV) and make it the unit's active table."""
+        folder = self.unit_dir(table.model, table.serial)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        dated = table.save(folder / f"power_cal_{stamp}.json")
+        table.to_csv(folder / f"power_cal_{stamp}.csv")
+        table.save(folder / "active_power_cal.json")
+        return dated, folder / "active_power_cal.json"
+
+    def load_active_power(self, model: str, serial: str) -> PowerCalTable | None:
+        """The unit's active power table, or None."""
+        path = self.unit_dir(model, serial) / "active_power_cal.json"
+        return PowerCalTable.load(path) if path.exists() else None
+
+    def save_ref(self, record: RefCalRecord) -> Path:
+        """Write ref_cal.json and append to ref_cal_history.csv."""
+        folder = self.unit_dir(record.model, record.serial)
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / "ref_cal.json"
+        part = path.with_name(path.name + ".part")
+        part.write_text(json.dumps(asdict(record), indent=2), encoding="utf-8")
+        os.replace(part, path)
+        history = folder / "ref_cal_history.csv"
+        new = not history.exists()
+        with history.open("a", newline="", encoding="utf-8") as fh:
+            out = csv.writer(fh)
+            if new:
+                out.writerow(["created_iso", "dac", "original_dac", "target_hz", "measured_hz",
+                              "error_hz", "apply_on_connect", "notes"])
+            out.writerow([record.created_iso, record.dac, record.original_dac,
+                          f"{record.target_hz:.3f}", f"{record.measured_hz:.3f}",
+                          f"{record.error_hz:.3f}", record.apply_on_connect, record.notes])
+        return path
+
+    def load_ref(self, model: str, serial: str) -> RefCalRecord | None:
+        """The unit's saved reference calibration, or None."""
+        path = self.unit_dir(model, serial) / "ref_cal.json"
+        if not path.exists():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise CalibrationError(f"Cannot read {path}: {exc}") from exc
+        if int(data.get("schema", 0)) > REF_CAL_SCHEMA:
+            raise CalibrationError(f"{path.name}: schema {data.get('schema')} is newer than this program.")
+        return RefCalRecord(**{k: v for k, v in data.items() if k in RefCalRecord.__dataclass_fields__})
+
+
+@dataclass
+class MeterConfig:
+    """How to read one external instrument through PyVISA.
+
+    ``query`` must return one number (dBm for a power meter, Hz for a
+    counter). ``pre_command`` is written before each read; "{freq_hz}" and
+    "{freq_ghz}" are replaced, so a power meter can be told the frequency
+    for its sensor's calibration factor. The defaults follow common SCPI
+    usage and must be checked against the instrument's own manual.
+    """
+
+    resource: str = ""
+    backend: str = ""              # "" = the default VISA library, "@py" = pyvisa-py
+    query: str = "MEAS?"
+    pre_command: str = ""
+    timeout_ms: int = 10_000
+    termination: str = "\n"
+
+
+class InstrumentReader:
+    """Optional PyVISA link to a power meter or frequency counter.
+
+    PyVISA is imported only when a reader is opened, so the rest of the
+    program never depends on it. ``rm_factory`` lets tests supply a fake
+    resource manager.
+    """
+
+    def __init__(self, config: MeterConfig,
+                 rm_factory: Callable[[str], Any] | None = None) -> None:
+        self.config = config
+        self._rm_factory = rm_factory
+        self._rm: Any = None
+        self._inst: Any = None
+        self.idn: str = ""
+
+    @staticmethod
+    def available() -> bool:
+        """True when PyVISA can be imported."""
+        import importlib.util
+        return importlib.util.find_spec("pyvisa") is not None
+
+    def _manager(self) -> Any:
+        if self._rm_factory is not None:
+            return self._rm_factory(self.config.backend)
+        try:
+            import pyvisa  # noqa: PLC0415 (optional dependency, imported on use)
+        except ImportError as exc:
+            raise CalibrationError(
+                "PyVISA is not installed: mamba install -c conda-forge pyvisa pyvisa-py") from exc
+        return pyvisa.ResourceManager(self.config.backend) if self.config.backend else \
+            pyvisa.ResourceManager()
+
+    def list_resources(self) -> list[str]:
+        """VISA resources visible to the chosen back end."""
+        return list(self._manager().list_resources())
+
+    def open(self) -> str:
+        """Open the resource and return its *IDN? reply."""
+        if not self.config.resource.strip():
+            raise CalibrationError("No VISA resource given (for example GPIB0::13::INSTR).")
+        self.close()
+        try:
+            self._rm = self._manager()
+            inst = self._rm.open_resource(self.config.resource.strip())
+            inst.timeout = int(self.config.timeout_ms)
+            if self.config.termination:
+                inst.read_termination = self.config.termination
+                inst.write_termination = self.config.termination
+            self._inst = inst
+            self.idn = str(inst.query("*IDN?")).strip()
+        except CalibrationError:
+            raise
+        except Exception as exc:                       # VISA errors vary by back end
+            self.close()
+            raise CalibrationError(f"{self.config.resource}: {exc}") from exc
+        return self.idn
+
+    def close(self) -> None:
+        """Close the resource (safe to call twice)."""
+        for obj in (self._inst, self._rm):
+            try:
+                if obj is not None:
+                    obj.close()
+            except Exception:  # pragma: no cover - best effort
+                pass
+        self._inst = None
+        self._rm = None
+
+    @property
+    def is_open(self) -> bool:
+        """True while a resource is open."""
+        return self._inst is not None
+
+    def read(self, freq_hz: float | None = None) -> float:
+        """Send the pre-command (if any) and return the number the query gives."""
+        if self._inst is None:
+            self.open()
+        try:
+            if self.config.pre_command.strip():
+                f = 0.0 if freq_hz is None else float(freq_hz)
+                self._inst.write(self.config.pre_command.format(freq_hz=f, freq_ghz=f / 1e9))
+            reply = str(self._inst.query(self.config.query)).strip()
+        except Exception as exc:
+            raise CalibrationError(f"{self.config.resource}: {exc}") from exc
+        try:
+            return parse_float_response(reply)
+        except ValueError as exc:
+            raise CalibrationError(f"{self.config.resource} replied {reply!r}, not a number.") from exc
+
+
+# %% ===========================================================================
 #    THEMING
 # =============================================================================
 class ThemeManager:
@@ -4230,6 +5036,14 @@ class MainControlTab(QtWidgets.QWidget):
         self.power_readback = QtWidgets.QLabel("-")
         self.power_readback.setWordWrap(True)
         pow_form.addRow("Readback", self.power_readback)
+        #: Level expected at RF OUT from the active power calibration (0.0.10).
+        self.cal_output_label = QtWidgets.QLabel("no power calibration for this unit")
+        self.cal_output_label.setWordWrap(True)
+        self.cal_output_label.setToolTip(
+            "From the active table on the Calibration tab: the measured level at RF OUT, "
+            "interpolated in frequency. Not a live measurement.")
+        pow_form.addRow("At RF OUT (power cal)", self.cal_output_label)
+        self._cal_command: tuple[float, float] | None = None   # (target, commanded)
         #: Shown instead of the controls on fixed-output models.
         self.power_note = QtWidgets.QLabel("")
         self.power_note.setWordWrap(True)
@@ -4461,6 +5275,36 @@ class MainControlTab(QtWidgets.QWidget):
         if not ok:
             self.ctl.warn(f"FREQ {commanded / 1e9:.9f} GHz sent, but FREQ? reports "
                           f"{reported / 1e9:.9f} GHz.")
+        cal = getattr(self.ctl.window, "tab_cal", None)
+        if cal is not None and cal.correction_enabled():
+            self._apply_power()             # the correction depends on frequency
+        self.update_cal_output(reported)
+
+    def update_cal_output(self, freq_hz: float | None = None) -> None:
+        """Show the level the active power calibration expects at RF OUT."""
+        cal = getattr(self.ctl.window, "tab_cal", None)
+        table = cal.active_table if cal is not None else None
+        if table is None or not table.points:
+            self.cal_output_label.setText("no power calibration for this unit (Calibration tab)")
+            return
+        if not cal.show_expected_check.isChecked():
+            self.cal_output_label.setText("hidden (Calibration tab)")
+            return
+        f = self.freq_spin.value() * 1e9 if freq_hz is None else freq_hz
+        fixed = table.levels() == [None]
+        command = None if fixed else self.power_spin.value()
+        prefix = ""
+        if not fixed and self._cal_command is not None and cal.correction_enabled():
+            target, command = self._cal_command
+            prefix = f"target {target:+.1f} dBm, commanded {command:+.1f} dBm; "
+        expected = table.expected_output(f, command)
+        if expected is None:
+            lo, hi = table.frequency_span()
+            text = (f"{f / 1e9:.6f} GHz is outside the calibrated band "
+                    f"{lo / 1e9:.3f}-{hi / 1e9:.3f} GHz")
+        else:
+            text = f"{prefix}{expected:+.2f} dBm expected at {f / 1e9:.6f} GHz"
+        self.cal_output_label.setText(text + self._rf_note().replace("the level setting; ", ""))
 
     def _apply_power(self) -> None:
         """Command the level, read it back with POW? and compare.
@@ -4472,13 +5316,34 @@ class MainControlTab(QtWidgets.QWidget):
         if self.power_spin.take_rejected_text() is not None:
             return                      # refused typed value, already reported
         mode = self.power_cmd_combo.currentData()
+        target = self.power_spin.value()
+        command = target
+        self._cal_command = None
+        cal = getattr(self.ctl.window, "tab_cal", None)
+        if cal is not None and cal.correction_enabled():
+            # Level correction (0.0.10): command what the table says puts
+            # the typed level at RF OUT at the instrument's frequency.
+            cap = self.ctl.driver.capability
+            freq = self.ctl.driver.get_frequency()
+            corrected = cal.active_table.command_for_target(freq, target, cap.p_min_dbm,
+                                                            cap.p_max_dbm)
+            if corrected is None:
+                self.ctl.warn(f"Level correction: {freq / 1e9:.6f} GHz is outside the active "
+                              f"power calibration; {target:+.1f} dBm is sent uncorrected.")
+            else:
+                command = corrected
+                self._cal_command = (target, corrected)
         commanded, reported, used = self.ctl.driver.set_power_checked(
-            self.power_spin.value(), command_set=mode)
+            command, command_set=mode)
         ok = abs(reported - commanded) <= POWER_READBACK_TOL_DB
         how = "SCPI POW" if used == "scpi" else f"native {native_power_command(commanded)}"
-        text = (f"set {commanded:+.1f} dBm ({how}); instrument reports {reported:+.1f} dBm"
-                + ("" if ok else " - the level did not change") + self._rf_note())
+        corrected_text = (f" for {target:+.1f} dBm at RF OUT (power calibration)"
+                          if self._cal_command is not None else "")
+        text = (f"set {commanded:+.1f} dBm{corrected_text} ({how}); instrument reports "
+                f"{reported:+.1f} dBm" + ("" if ok else " - the level did not change")
+                + self._rf_note())
         self._show_readback(self.power_readback, ok, text)
+        self.update_cal_output()
         if ok and mode == "auto" and used == "native":
             # SCPI POW was ignored but the native command worked: use it
             # directly from now on, and say so.
@@ -4506,16 +5371,36 @@ class MainControlTab(QtWidgets.QWidget):
         state = "ON" if enabled else "OFF"
         native = native_switch_command(NATIVE_REF_OUTPUT, enabled)
         was_native = driver.reference_output_command == "native"
+        was_unreliable = driver.refout_status_reliable is False
         reported, status, used = driver.set_reference_output_checked(enabled)
         self.update_status(status)
+        if reported is not None:
+            self.show_reference_output(reported, "OUTP:ROSC:STAT?")
+        if reported is None and driver.refout_status_reliable is False:
+            # The unit does not report the 10 MHz output (FSL-0020: bit 5
+            # stays set while REF OUT switches) (0.0.10).
+            self.refout_check.setChecked(enabled)
+            self.show_reference_output(None)
+            if was_unreliable:
+                self.ctl.status_message(
+                    f"10 MHz reference output {state} sent (OUTP:ROSC:STAT). This unit does not "
+                    f"report the state; check REF OUT on a meter if in doubt.")
+            else:
+                self.ctl.warn(
+                    f"OUTP:ROSC:STAT {state} and the native {native} sent; STAT? bit 5 did not "
+                    f"change and OUTP:ROSC:STAT? does not answer. On the FSL-0020 tested REF OUT "
+                    f"does switch while bit 5 stays set, so the state is shown as 'not reported' "
+                    f"and OUTP:ROSC:STAT alone is sent from now on. Check REF OUT on a power "
+                    f"meter or counter.")
+            return
         if was_native:
             how = f"native {native}"
         elif used == "scpi":
             how = "OUTP:ROSC:STAT"
         else:
             how = f"OUTP:ROSC:STAT, then the native {native}"
-        checks = "STAT?" + (" and OUTP:ROSC:STAT?" if reported is not None else "")
-        followed = status.ref_output_on == enabled and reported in (None, enabled)
+        checks = "OUTP:ROSC:STAT?" if reported is not None else "STAT?"
+        followed = reported == enabled if reported is not None else status.ref_output_on == enabled
         if followed:
             self.ctl.status_message(f"10 MHz reference output {state} ({how}; confirmed by {checks}).")
             if used == "native" and not was_native:
@@ -4523,12 +5408,14 @@ class MainControlTab(QtWidgets.QWidget):
                               f"{native} did; the native command is used for the rest of this "
                               "session.")
             return
-        query_text = (f"OUTP:ROSC:STAT? reports {'ON' if reported else 'OFF'} and "
-                      if reported is not None else "")
-        self.ctl.warn(
-            f"{how} {state} sent, but {query_text}STAT? bit 5 still reports "
-            f"{'ON' if status.ref_output_on else 'OFF'}. Check REF OUT on a power meter or counter: "
-            f"if it did switch, only the status bit is wrong.")
+        if reported is not None:
+            self.ctl.warn(f"{how} {state} sent, but OUTP:ROSC:STAT? reports "
+                          f"{'ON' if reported else 'OFF'}. Check REF OUT on a power meter or "
+                          f"counter.")
+        else:
+            self.ctl.warn(f"{how} {state} sent, but STAT? bit 5 reports "
+                          f"{'ON' if status.ref_output_on else 'OFF'}. Check REF OUT on a power "
+                          f"meter or counter.")
 
     def _apply_reference_source(self) -> None:
         """Select the reference, read it back with ROSC:SOUR?, then re-check the lock."""
@@ -4559,13 +5446,33 @@ class MainControlTab(QtWidgets.QWidget):
             self.ctl.warn(f"Reference source {source.value}: the reference is NOT LOCKED.")
 
     def note_reference_output(self, query_on: bool, status: StatusWord) -> None:
-        """Compare OUTP:ROSC:STAT? with STAT? bit 5 and warn once when they part."""
+        """Show OUTP:ROSC:STAT? (trusted when it answers) and note a stale bit 5 once."""
+        self.show_reference_output(query_on, "OUTP:ROSC:STAT?")
         mismatch = query_on != status.ref_output_on
         if mismatch and not self._refout_mismatch:
-            self.ctl.warn(
-                f"OUTP:ROSC:STAT? reports {'ON' if query_on else 'OFF'} but STAT? bit 5 reports "
-                f"{'ON' if status.ref_output_on else 'OFF'} for the 10 MHz reference output.")
+            self.ctl.status_message(
+                f"OUTP:ROSC:STAT? reports {'ON' if query_on else 'OFF'} while STAT? bit 5 reports "
+                f"{'ON' if status.ref_output_on else 'OFF'}; the query is used for the 10 MHz "
+                f"output (bit 5 does not follow it on the FSL-0020 tested).")
         self._refout_mismatch = mismatch
+
+    def show_reference_output(self, state: bool | None, source: str = "") -> None:
+        """Set the reference-output LED and checkbox from a trusted source.
+
+        ``state`` None means the unit does not report it: grey LED naming
+        the state last sent, and the checkbox is left as the user set it.
+        """
+        if state is None:
+            sent = self.ctl.driver.refout_commanded if self.ctl.driver is not None else None
+            last = "" if sent is None else f" (last sent {'ON' if sent else 'OFF'})"
+            self.led_ref_out.set_state(None, f"Ref output: not reported{last}")
+            return
+        self.led_ref_out.set_state(
+            True if state else None,
+            ("Ref output on" if state else "Ref output off") + (f" ({source})" if source else ""))
+        self.refout_check.blockSignals(True)
+        self.refout_check.setChecked(state)
+        self.refout_check.blockSignals(False)
 
     def _do_reset(self) -> None:
         """Reset and immediately read back, rather than assume defaults.
@@ -4608,10 +5515,15 @@ class MainControlTab(QtWidgets.QWidget):
             not status.voltage_error,
             "Supply voltage OK" if not status.voltage_error else "VOLTAGE ERROR",
         )
-        self.led_ref_out.set_state(
-            True if status.ref_output_on else None,
-            "Ref output on" if status.ref_output_on else "Ref output off",
-        )
+        driver = self.ctl.driver
+        refout_known = driver is None or driver.refout_status_reliable is not False
+        if refout_known:
+            self.led_ref_out.set_state(
+                True if status.ref_output_on else None,
+                "Ref output on" if status.ref_output_on else "Ref output off",
+            )
+        else:
+            self.show_reference_output(None)
         self.led_blanking.set_state(
             True if status.blanking_on else None,
             "Blanking on" if status.blanking_on else "Blanking off",
@@ -4624,13 +5536,14 @@ class MainControlTab(QtWidgets.QWidget):
         self._last_status = status
         self.update_reference(None, status)
 
-        # Reflect state in the checkboxes without re-emitting commands.
-        for widget, value in (
-            (self.rf_check, status.rf_output_on),
-            (self.blank_check, status.blanking_on),
-            (self.refout_check, status.ref_output_on),
-            (self.lockrec_check, status.lock_recovery_on),
-        ):
+        # Reflect state in the checkboxes without re-emitting commands. The
+        # reference-output box is not taken from a bit 5 known to be stale.
+        boxes = [(self.rf_check, status.rf_output_on),
+                 (self.blank_check, status.blanking_on),
+                 (self.lockrec_check, status.lock_recovery_on)]
+        if refout_known:
+            boxes.append((self.refout_check, status.ref_output_on))
+        for widget, value in boxes:
             widget.blockSignals(True)
             widget.setChecked(value)
             widget.blockSignals(False)
@@ -5834,6 +6747,934 @@ class MemoryTab(QtWidgets.QWidget):
 
 
 # %% ===========================================================================
+#    TAB: CALIBRATION (PROGRAM-SIDE)
+# =============================================================================
+class CalibrationTab(QtWidgets.QWidget):
+    """Power and reference calibration without NI's GPIB-only panel (0.0.10).
+
+    Readings are typed in or read from any SCPI meter through PyVISA. The
+    results are kept in this program per unit (see the CALIBRATION cell):
+    nothing undocumented is written to the synthesizer.
+    """
+
+    POWER_COLUMNS = ("#", "Frequency (GHz)", "Set (dBm)", "Meter (dBm)", "Path loss (dB)",
+                     "At RF OUT (dBm)", "Error (dB)", "Source")
+    REF_COLUMNS = ("#", "DAC", "Measured (Hz)", "Error (Hz)", "Error (ppb)", "Source")
+
+    def __init__(self, controller: "AppController",
+                 parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.ctl = controller
+        self.store = CalStore()
+        self.table = PowerCalTable()                 # being measured or loaded
+        self.active_table: PowerCalTable | None = None
+        self.path = PathLoss()
+        self.plan: list[tuple[float, float | None]] = []
+        self.plan_index = 0
+        self.tuner: RefCalTuner | None = None
+        self.ref_record: RefCalRecord | None = None
+        self.readers: dict[str, InstrumentReader] = {}
+        self._auto_running = False
+        self.power_meter_cfg = MeterConfig(query="MEAS?", pre_command="SENS:FREQ {freq_hz:.0f}")
+        self.counter_cfg = MeterConfig(query="MEAS:FREQ?")
+
+        outer = QtWidgets.QVBoxLayout(self)
+        intro = QtWidgets.QLabel(
+            "Calibration kept in this program, per unit (model and serial), under "
+            f"{html.escape(str(self.store.root))}. Power: measured level at RF OUT against frequency, "
+            "used for the expected-output readout and, on power-control models, to correct the "
+            "commanded level. Reference: OCXO tuning with the documented DIAG:CAL:REF:DAC. "
+            "Power tables are <b>not</b> written into the synthesizer: the commands NI's panel "
+            "uses for that are not published [R1], [R3].")
+        intro.setWordWrap(True)
+        outer.addWidget(intro)
+        self.subtabs = QtWidgets.QTabWidget()
+        outer.addWidget(self.subtabs, 1)
+        self.subtabs.addTab(self._build_power(), "Power vs frequency")
+        self.subtabs.addTab(self._build_reference(), "Reference (10 MHz OCXO)")
+        self.subtabs.addTab(self._build_meters(), "Meters (optional, PyVISA)")
+        self._refresh_power_view()
+        self._refresh_ref_view()
+
+    # ------------------------------------------------------------------ power
+    def _build_power(self) -> QtWidgets.QWidget:
+        page = QtWidgets.QWidget()
+        layout = QtWidgets.QHBoxLayout(page)
+        left = QtWidgets.QVBoxLayout()
+
+        plan_box = QtWidgets.QGroupBox("Points")
+        plan_form = QtWidgets.QFormLayout(plan_box)
+        self.start_f = make_double_spin(0.0, 100.0, 6, 0.1, " GHz", 1.0)
+        self.stop_f = make_double_spin(0.0, 100.0, 6, 0.1, " GHz", 20.0)
+        self.step_f = make_double_spin(0.000001, 100.0, 6, 0.1, " GHz", 1.0)
+        self.levels_edit = QtWidgets.QLineEdit("")
+        self.levels_edit.setPlaceholderText("power-control models: e.g. -10, 0, 13 (dBm)")
+        self.settle_spin = make_double_spin(0.0, 60.0, 1, 0.5, " s", 1.0)
+        self.generate_button = QtWidgets.QPushButton("Make point list")
+        self.plan_label = QtWidgets.QLabel("No points yet.")
+        self.plan_label.setWordWrap(True)
+        plan_form.addRow("Start", self.start_f)
+        plan_form.addRow("Stop", self.stop_f)
+        plan_form.addRow("Step", self.step_f)
+        plan_form.addRow("Levels", self.levels_edit)
+        plan_form.addRow("Settle before reading", self.settle_spin)
+        plan_form.addRow("", self.generate_button)
+        plan_form.addRow(self.plan_label)
+        left.addWidget(plan_box)
+
+        path_box = QtWidgets.QGroupBox("Path loss (cable, adapters, pad) between RF OUT and meter")
+        path_form = QtWidgets.QFormLayout(path_box)
+        self.path_combo = QtWidgets.QComboBox()
+        for label, key in (("None", "none"), ("Constant", "constant"),
+                           ("CSV table (frequency, loss dB)", "csv"),
+                           ("Touchstone .s2p (|S21|)", "s2p")):
+            self.path_combo.addItem(label, key)
+        self.path_const = make_double_spin(-10.0, 60.0, 3, 0.1, " dB", 0.0)
+        self.path_file_button = QtWidgets.QPushButton("Load file...")
+        self.path_label = QtWidgets.QLabel(self.path.describe())
+        self.path_label.setWordWrap(True)
+        path_form.addRow("Correction", self.path_combo)
+        path_form.addRow("Constant loss", self.path_const)
+        path_form.addRow("", self.path_file_button)
+        path_form.addRow(self.path_label)
+        left.addWidget(path_box)
+
+        meas_box = QtWidgets.QGroupBox("Measure")
+        meas_form = QtWidgets.QFormLayout(meas_box)
+        self.point_label = QtWidgets.QLabel("-")
+        self.point_label.setWordWrap(True)
+        self.goto_button = QtWidgets.QPushButton("Set synthesizer to this point (RF on)")
+        self.prev_button = QtWidgets.QPushButton("< Previous")
+        self.next_button = QtWidgets.QPushButton("Next >")
+        self.reading_spin = make_double_spin(-120.0, 40.0, 3, 0.1, " dBm", 0.0)
+        self.reading_spin.setToolTip("Meter reading. Enter records it (and moves on if Auto-advance).")
+        self.record_button = QtWidgets.QPushButton("Record reading")
+        self.read_meter_button = QtWidgets.QPushButton("Read power meter")
+        self.auto_advance = QtWidgets.QCheckBox("Auto-advance and set the next point")
+        self.auto_advance.setChecked(True)
+        self.auto_run_button = QtWidgets.QPushButton("Run all points with the power meter")
+        self.abort_button = QtWidgets.QPushButton("Stop")
+        self.abort_button.setEnabled(False)
+        meas_form.addRow(self.point_label)
+        meas_form.addRow("", self.goto_button)
+        meas_form.addRow("", labelled_row(self.prev_button, self.next_button))
+        meas_form.addRow("Reading", self.reading_spin)
+        meas_form.addRow("", labelled_row(self.record_button, self.read_meter_button))
+        meas_form.addRow("", self.auto_advance)
+        meas_form.addRow("", labelled_row(self.auto_run_button, self.abort_button))
+        left.addWidget(meas_box)
+
+        use_box = QtWidgets.QGroupBox("Table")
+        use_layout = QtWidgets.QVBoxLayout(use_box)
+        self.save_button = QtWidgets.QPushButton("Save and make active for this unit")
+        self.load_button = QtWidgets.QPushButton("Load...")
+        self.export_csv_button = QtWidgets.QPushButton("Export CSV...")
+        self.export_vsz_button = QtWidgets.QPushButton("Export .vszh5...")
+        self.delete_button = QtWidgets.QPushButton("Delete selected rows")
+        self.clear_button = QtWidgets.QPushButton("New table")
+        self.show_expected_check = QtWidgets.QCheckBox("Show expected level at RF OUT on the Main tab")
+        self.show_expected_check.setChecked(True)
+        self.correct_check = QtWidgets.QCheckBox(
+            "Correct the commanded level with the active table (power-control models)")
+        self.active_label = QtWidgets.QLabel("Active table: none")
+        self.active_label.setWordWrap(True)
+        for row in ((self.save_button, self.load_button), (self.export_csv_button, self.export_vsz_button),
+                    (self.delete_button, self.clear_button)):
+            use_layout.addWidget(labelled_row(*row))
+        use_layout.addWidget(self.show_expected_check)
+        use_layout.addWidget(self.correct_check)
+        use_layout.addWidget(self.active_label)
+        left.addWidget(use_box)
+        left.addStretch(1)
+
+        right = QtWidgets.QVBoxLayout()
+        self.power_table = QtWidgets.QTableWidget(0, len(self.POWER_COLUMNS))
+        self.power_table.setHorizontalHeaderLabels(self.POWER_COLUMNS)
+        self.power_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.power_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.power_table.verticalHeader().setVisible(False)     # "#" column numbers rows
+        right.addWidget(self.power_table, 2)
+        if HAVE_PYQTGRAPH:
+            self.power_plot = pg.PlotWidget()
+            self.power_plot.setLabel("bottom", "Frequency", units="GHz")
+            self.power_plot.setLabel("left", "Level at RF OUT", units="dBm")
+            self.power_plot.showGrid(x=True, y=True, alpha=0.3)
+            self.power_plot.addLegend(offset=(-10, 10))          # top right
+            right.addWidget(self.power_plot, 3)
+        else:
+            self.power_plot = None
+            right.addWidget(QtWidgets.QLabel("pyqtgraph is not installed; the table has the data."))
+        layout.addLayout(left, 2)
+        layout.addLayout(right, 3)
+
+        c = self.ctl
+        self.generate_button.clicked.connect(lambda: c.guard(self._make_plan))
+        self.path_combo.activated.connect(lambda _i: c.guard(self._path_changed))
+        self.path_const.valueChanged.connect(lambda _v: c.guard(self._path_changed))
+        self.path_file_button.clicked.connect(lambda: c.guard(self._load_path_file))
+        self.goto_button.clicked.connect(lambda: c.guard(self._goto_point))
+        self.prev_button.clicked.connect(lambda: self._step_point(-1))
+        self.next_button.clicked.connect(lambda: self._step_point(+1))
+        self.record_button.clicked.connect(lambda: self._record_manual())
+        self._enter_filter = EnterApplies(self.reading_spin, self._record_manual)
+        self.read_meter_button.clicked.connect(lambda: c.guard(self._read_power_meter))
+        self.auto_run_button.clicked.connect(lambda: c.guard(self._start_auto_run))
+        self.abort_button.clicked.connect(self._stop_auto_run)
+        self.save_button.clicked.connect(lambda: self._guard_local(self._save_table))
+        self.load_button.clicked.connect(lambda: self._guard_local(self._load_table_dialog))
+        self.export_csv_button.clicked.connect(lambda: self._guard_local(self._export_csv_dialog))
+        self.export_vsz_button.clicked.connect(lambda: self._guard_local(self._export_vszh5_dialog))
+        self.delete_button.clicked.connect(self._delete_rows)
+        self.clear_button.clicked.connect(self._new_table)
+        self.show_expected_check.toggled.connect(lambda _on: self._main_tab_update())
+        self.correct_check.toggled.connect(lambda _on: self._main_tab_update())
+        return page
+
+    def _guard_local(self, action: Callable[[], Any]) -> Any:
+        """Like AppController.guard, but for file work that needs no instrument."""
+        try:
+            return action()
+        except (QuickSynError, OSError, ValueError) as exc:
+            self.ctl.status_message(f"Error: {exc}")
+            return None
+
+    def _unit(self) -> tuple[str, str, str]:
+        """(model, serial, firmware) of the connected unit, or blanks."""
+        driver = self.ctl.driver
+        if driver is None:
+            return "", "", ""
+        ident = driver.identity
+        return ident.model, ident.serial, ident.firmware
+
+    def _has_power_control(self) -> bool:
+        driver = self.ctl.driver
+        return bool(driver is not None and driver.capability.has_power_control)
+
+    def _make_plan(self) -> None:
+        """Frequency list x level list, clamped to the model's range."""
+        start, stop, step = (self.start_f.value() * 1e9, self.stop_f.value() * 1e9,
+                             self.step_f.value() * 1e9)
+        if stop < start:
+            raise CalibrationError("Stop is below start.")
+        count = int(math.floor((stop - start) / step + 1e-9)) + 1
+        if count > 5000:
+            raise CalibrationError(f"{count} points is too many; use a larger step.")
+        freqs = [start + i * step for i in range(count)]
+        if abs(freqs[-1] - stop) > 1e-3 * step:
+            freqs.append(stop)
+        driver = self.ctl.driver
+        dropped = 0
+        if driver is not None:
+            cap = driver.capability
+            low = cap.f_min_opt1_hz if cap.f_min_opt1_hz is not None else cap.f_min_hz
+            kept = [f for f in freqs if low - 1e-3 <= f <= cap.f_max_hz + 1e-3]
+            dropped = len(freqs) - len(kept)
+            freqs = kept
+        if not freqs:
+            raise CalibrationError("No points inside the model's frequency range.")
+        levels: list[float | None] = [None]
+        text = self.levels_edit.text().strip()
+        if text and self._has_power_control():
+            try:
+                levels = [quantise_power_dbm(float(v)) for v in re.split(r"[,; ]+", text) if v]
+            except ValueError as exc:
+                raise CalibrationError(f"Levels {text!r}: {exc}") from exc
+        elif text:
+            self.ctl.status_message("Levels ignored: this model has a fixed output level.")
+        self.plan = [(f, level) for level in levels for f in freqs]
+        self.plan_index = 0
+        self.plan_label.setText(
+            f"{len(self.plan)} points ({len(freqs)} frequencies x {len(levels)} level"
+            f"{'s' if len(levels) > 1 else ''})" + (f"; {dropped} outside the model's range dropped"
+                                                     if dropped else "") + ".")
+        self._refresh_point_label()
+
+    def _current_point(self) -> tuple[float, float | None] | None:
+        return self.plan[self.plan_index] if 0 <= self.plan_index < len(self.plan) else None
+
+    def _refresh_point_label(self) -> None:
+        point = self._current_point()
+        if point is None:
+            self.point_label.setText("Make a point list first." if not self.plan else "All points done.")
+            return
+        f, level = point
+        level_text = "fixed output" if level is None else f"set {level:+.1f} dBm"
+        try:
+            loss = self.path.loss_at(f)
+            loss_text = f"path loss {loss:.2f} dB"
+        except CalibrationError as exc:
+            loss_text = f"<span style='color:#d9483b;'>{html.escape(str(exc))}</span>"
+        self.point_label.setText(f"Point {self.plan_index + 1} of {len(self.plan)}: "
+                                 f"{f / 1e9:.6f} GHz, {level_text}; {loss_text}")
+
+    def _step_point(self, delta: int) -> None:
+        if self.plan:
+            self.plan_index = min(max(self.plan_index + delta, 0), len(self.plan))
+            self._refresh_point_label()
+
+    def _goto_point(self) -> None:
+        """Command the current point's frequency (and level) and switch RF on."""
+        point = self._current_point()
+        if point is None:
+            raise CalibrationError("No point to set; make a point list first.")
+        f, level = point
+        driver = self.ctl.driver
+        driver.set_frequency(f)
+        if level is not None:
+            driver.set_power(level)
+        driver.set_rf_output(True)
+        main = self.ctl.window.tab_main
+        main.freq_spin.setValue(f / 1e9)
+        if level is not None:
+            main.power_spin.setValue(level)
+        main.update_status(driver.get_status())        # RF on, read back
+        main.update_cal_output()
+        self.ctl.status_message(f"Calibration point set: {f / 1e9:.6f} GHz"
+                                + ("" if level is None else f", {level:+.1f} dBm") + ", RF on.")
+
+    def _record(self, reading_dbm: float, source: str) -> None:
+        """Store a reading for the current point and move on if asked."""
+        point = self._current_point()
+        if point is None:
+            raise CalibrationError("No current point; make a point list first.")
+        f, level = point
+        loss = self.path.loss_at(f)
+        model, serial, _ = self._unit()
+        if self.table.points and serial and self.table.serial and \
+                (self.table.model, self.table.serial) != (model, serial):
+            raise CalibrationError(
+                f"This table belongs to {self.table.model} {self.table.serial}, not the unit "
+                f"connected ({model} {serial}); press New table first.")
+        if not self.table.points:
+            model, serial, firmware = self._unit()
+            self.table.model, self.table.serial, self.table.firmware = model, serial, firmware
+            self.table.created_iso = utc_iso(time.time())
+            try:
+                import getpass
+                self.table.operator = getpass.getuser()
+            except Exception:  # pragma: no cover - platform specific
+                self.table.operator = ""
+        self.table.path = self.path.to_dict()
+        self.table.add(PowerCalPoint(f, level, float(reading_dbm), loss, time.time(), source))
+        self._refresh_power_view()
+        self.ctl.status_message(f"Recorded {reading_dbm:+.3f} dBm at {f / 1e9:.6f} GHz "
+                                f"(RF OUT {reading_dbm + loss:+.3f} dBm).")
+        if self.auto_advance.isChecked():
+            self.plan_index += 1
+            self._refresh_point_label()
+            if self._current_point() is not None and self.ctl.driver is not None and not self._auto_running:
+                self.ctl.guard(self._goto_point)
+        else:
+            self._refresh_point_label()
+
+    def _record_manual(self) -> None:
+        if self.reading_spin.take_rejected_text() is not None:
+            return
+        self._guard_local(lambda: self._record(self.reading_spin.value(), "manual"))
+
+    def _reader(self, key: str) -> InstrumentReader:
+        cfg = self.power_meter_cfg if key == "power" else self.counter_cfg
+        reader = self.readers.get(key)
+        if reader is None or reader.config is not cfg:
+            reader = InstrumentReader(cfg)
+            self.readers[key] = reader
+        return reader
+
+    def _read_power_meter(self) -> None:
+        point = self._current_point()
+        if point is None:
+            raise CalibrationError("No current point; make a point list first.")
+        self._apply_meter_fields()
+        reader = self._reader("power")
+        value = reader.read(point[0])
+        self.reading_spin.setValue(value)
+        if not self.table.meter and reader.idn:
+            self.table.meter = reader.idn
+        self._record(value, self.power_meter_cfg.resource or "meter")
+
+    # --- automatic run with a meter -----------------------------------------
+    def _start_auto_run(self) -> None:
+        if self._current_point() is None:
+            raise CalibrationError("No points left; make a point list first.")
+        self._apply_meter_fields()
+        self._reader("power").open()
+        self._auto_running = True
+        self.auto_run_button.setEnabled(False)
+        self.abort_button.setEnabled(True)
+        self._auto_step()
+
+    def _auto_step(self) -> None:
+        if not self._auto_running:
+            return
+        if self._current_point() is None or self.ctl.driver is None:
+            self._stop_auto_run("Automatic run finished.")
+            return
+        if self.ctl.guard(lambda: (self._goto_point(), True)[1]) is None:
+            self._stop_auto_run("Automatic run stopped: could not set the point.")
+            return
+        QtCore.QTimer.singleShot(int(self.settle_spin.value() * 1000), self._auto_read)
+
+    def _auto_read(self) -> None:
+        if not self._auto_running:
+            return
+        before = len(self.table.points)
+        self.ctl.guard(self._read_power_meter)
+        if len(self.table.points) == before:
+            self._stop_auto_run("Automatic run stopped: the meter read failed.")
+            return
+        if not self.auto_advance.isChecked():
+            self.plan_index += 1
+            self._refresh_point_label()
+        QtCore.QTimer.singleShot(0, self._auto_step)
+
+    def _stop_auto_run(self, message: str = "Automatic run stopped.") -> None:
+        was = self._auto_running
+        self._auto_running = False
+        self.auto_run_button.setEnabled(True)
+        self.abort_button.setEnabled(False)
+        if was:
+            self.ctl.status_message(message)
+
+    # --- path loss -------------------------------------------------------------
+    def _path_changed(self) -> None:
+        kind = self.path_combo.currentData()
+        if kind == "none":
+            self.path = PathLoss()
+        elif kind == "constant":
+            self.path = PathLoss(kind="constant", constant_db=self.path_const.value())
+        self.path_label.setText(self.path.describe())
+        self._refresh_point_label()
+
+    def _load_path_file(self, path: str | None = None) -> None:
+        kind = self.path_combo.currentData()
+        if kind not in ("csv", "s2p"):
+            self.path_combo.setCurrentIndex(self.path_combo.findData("s2p"))
+            kind = "s2p"
+        if path is None:
+            pattern = "Touchstone (*.s2p *.S2P)" if kind == "s2p" else "CSV (*.csv *.txt)"
+            path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Path-loss file", "", pattern)
+            if not path:
+                return
+        self.path = PathLoss.from_touchstone(path) if kind == "s2p" else PathLoss.from_csv(path)
+        self.path_label.setText(self.path.describe())
+        self._refresh_point_label()
+
+    # --- table views --------------------------------------------------------------
+    def _refresh_power_view(self) -> None:
+        rows = self.table.points
+        self.power_table.setRowCount(len(rows))
+        spec = SPEC_MIN_POWER_DBM.get(self.table.model or self._unit()[0])
+        for r, p in enumerate(rows):
+            if p.error_db is not None:
+                err = f"{p.error_db:+.2f}"
+            elif spec is not None:
+                err = f"{p.output_dbm - spec:+.2f} vs spec"
+            else:
+                err = ""
+            values = (str(r + 1), f"{p.freq_hz / 1e9:.6f}",
+                      "fixed" if p.set_dbm is None else f"{p.set_dbm:+.1f}",
+                      f"{p.reading_dbm:+.3f}", f"{p.path_loss_db:.3f}", f"{p.output_dbm:+.3f}",
+                      err, p.source)
+            for col, text in enumerate(values):
+                self.power_table.setItem(r, col, QtWidgets.QTableWidgetItem(text))
+        self.power_table.resizeColumnsToContents()
+        if self.power_plot is not None:
+            self._style_plot()
+            self.power_plot.clear()
+            colours = ("#3b7dd8", "#d9483b", "#2e9e5b", "#b07d2a", "#8a4fbf", "#4a9aa8")
+            for i, level in enumerate(self.table.levels() if rows else []):
+                f, out = self.table.curve(level)
+                name = "fixed output" if level is None else f"set {level:+.1f} dBm"
+                pen = pg.mkPen(colours[i % len(colours)], width=2)
+                self.power_plot.plot([x / 1e9 for x in f], out, pen=pen, symbol="o", symbolSize=6,
+                                     symbolBrush=colours[i % len(colours)], name=name)
+            if spec is not None and rows:
+                span = self.table.frequency_span()
+                self.power_plot.plot([span[0] / 1e9, span[1] / 1e9], [spec, spec],
+                                     pen=pg.mkPen("#8c8c8c", width=1, style=QtCore.Qt.PenStyle.DashLine),
+                                     name=f"datasheet minimum {spec:+.0f} dBm [R4]")
+
+    def _style_plot(self) -> None:
+        """Follow the current palette (pyqtgraph's own options only reach new plots)."""
+        palette = self.palette()
+        foreground = palette.color(QtGui.QPalette.ColorRole.Text)
+        self.power_plot.setBackground(palette.color(QtGui.QPalette.ColorRole.Base))
+        for name in ("left", "bottom"):
+            axis = self.power_plot.getAxis(name)
+            axis.setPen(foreground)
+            axis.setTextPen(foreground)
+
+    def changeEvent(self, event: QtCore.QEvent) -> None:  # noqa: N802 (Qt API)
+        """Re-colour the plot when View > Theme changes the palette."""
+        if event.type() == QtCore.QEvent.Type.PaletteChange \
+                and getattr(self, "power_plot", None) is not None:
+            self._style_plot()
+        super().changeEvent(event)
+
+    def _delete_rows(self) -> None:
+        rows = sorted({i.row() for i in self.power_table.selectedIndexes()}, reverse=True)
+        for r in rows:
+            if 0 <= r < len(self.table.points):
+                del self.table.points[r]
+        self._refresh_power_view()
+
+    def _new_table(self) -> None:
+        self.table = PowerCalTable()
+        self.plan_index = 0
+        self._refresh_power_view()
+        self._refresh_point_label()
+
+    def _save_table(self) -> None:
+        if not self.table.points:
+            raise CalibrationError("The table is empty.")
+        if not self.table.serial:
+            raise CalibrationError("No unit serial: connect to the synthesizer before saving.")
+        dated, active = self.store.save_power(self.table)
+        self.set_active_table(PowerCalTable.load(active))
+        self.ctl.status_message(f"Power calibration saved: {dated} (active for {self.table.model} "
+                                f"{self.table.serial}).")
+
+    def _load_table_dialog(self, path: str | None = None) -> None:
+        if path is None:
+            path, _ = QtWidgets.QFileDialog.getOpenFileName(
+                self, "Power calibration", str(self.store.root), "QuickSyn power cal (*.json)")
+            if not path:
+                return
+        self.table = PowerCalTable.load(path)
+        self._refresh_power_view()
+        model, serial, _ = self._unit()
+        if serial and self.table.serial == serial:
+            self.set_active_table(self.table)
+        self.ctl.status_message(f"Loaded {Path(path).name}: {len(self.table.points)} points, "
+                                f"{self.table.model} {self.table.serial}.")
+
+    def _export_csv_dialog(self, path: str | None = None) -> None:
+        if path is None:
+            path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Export CSV", "power_cal.csv",
+                                                            "CSV (*.csv)")
+            if not path:
+                return
+        self.table.to_csv(path)
+        self.ctl.status_message(f"Exported {path}")
+
+    def _export_vszh5_dialog(self, path: str | None = None) -> None:
+        if path is None:
+            path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Export Veusz document",
+                                                            "power_cal.vszh5", "Veusz HDF5 (*.vszh5)")
+            if not path:
+                return
+        written = export_power_cal_vszh5(self.table, path)
+        self.ctl.status_message(f"Exported {written}")
+
+    def set_active_table(self, table: PowerCalTable | None) -> None:
+        """Use ``table`` for the Main tab readout and level correction."""
+        self.active_table = table
+        if table is None:
+            self.active_label.setText("Active table: none")
+        else:
+            span = table.frequency_span()
+            band = "" if span is None else f", {span[0] / 1e9:.3f}-{span[1] / 1e9:.3f} GHz"
+            self.active_label.setText(
+                f"Active table: {table.model} {table.serial}, {len(table.points)} points{band}, "
+                f"{table.created_iso or 'undated'}; path: "
+                f"{PathLoss.from_dict(table.path).describe() if table.path else 'none'}")
+        self._main_tab_update()
+
+    def correction_enabled(self) -> bool:
+        """True when commanded levels should be corrected with the active table."""
+        return bool(self.correct_check.isChecked() and self.active_table is not None
+                    and self.active_table.levels() != [None] and self._has_power_control())
+
+    def _main_tab_update(self) -> None:
+        main = getattr(self.ctl.window, "tab_main", None)
+        if main is not None:
+            main.update_cal_output()
+
+    # ------------------------------------------------------------------ reference
+    def _build_reference(self) -> QtWidgets.QWidget:
+        page = QtWidgets.QWidget()
+        layout = QtWidgets.QHBoxLayout(page)
+        left = QtWidgets.QVBoxLayout()
+        warn = QtWidgets.QLabel(
+            "Tunes the internal 10 MHz OCXO with DIAG:CAL:REF:DAC [R1], the method of [R3] Step 4: "
+            "counter on RF OUT, referenced to a 10 MHz standard. Measure, record, send the next DAC "
+            "value, repeat until within tolerance. The original value is kept for Restore. Whether a "
+            "value sent this way survives a power cycle is not documented; tick 'Apply on connect' "
+            "to send the saved value each time this program connects.")
+        warn.setWordWrap(True)
+        left.addWidget(warn)
+        box = QtWidgets.QGroupBox("Tuning")
+        form = QtWidgets.QFormLayout(box)
+        self.ref_target = make_double_spin(0.5, 40.0, 6, 1.0, " GHz", DEFAULT_REF_CAL_FREQ_HZ / 1e9)
+        self.ref_tol = make_double_spin(0.001, 10000.0, 3, 1.0, " Hz", DEFAULT_REF_CAL_TOL_HZ)
+        self.ref_step = make_int_spin(-30000, 30000, DEFAULT_REF_TRIAL_STEP, " counts")
+        self.ref_start_button = QtWidgets.QPushButton("Start: read DAC, internal reference, RF on")
+        self.ref_dac_label = QtWidgets.QLabel("DAC: -")
+        self.ref_measured = make_double_spin(0.0, 41e9, 3, 1.0, " Hz", DEFAULT_REF_CAL_FREQ_HZ)
+        self.ref_record_button = QtWidgets.QPushButton("Record measurement")
+        self.ref_read_counter_button = QtWidgets.QPushButton("Read counter")
+        self.ref_next_label = QtWidgets.QLabel("Next DAC: -")
+        self.ref_apply_button = QtWidgets.QPushButton("Send next DAC value")
+        self.ref_auto_apply = QtWidgets.QCheckBox("Send the next value automatically after recording")
+        self.ref_auto_apply.setChecked(True)
+        self.ref_restore_button = QtWidgets.QPushButton("Restore original DAC")
+        self.ref_save_button = QtWidgets.QPushButton("Save as this unit's reference calibration")
+        self.ref_apply_on_connect = QtWidgets.QCheckBox("Apply the saved value on connect")
+        self.ref_saved_label = QtWidgets.QLabel("Saved: none")
+        self.ref_saved_label.setWordWrap(True)
+        form.addRow("Counter frequency", self.ref_target)
+        form.addRow("Tolerance", self.ref_tol)
+        form.addRow("First trial step", self.ref_step)
+        form.addRow("", self.ref_start_button)
+        form.addRow(self.ref_dac_label)
+        form.addRow("Measured", self.ref_measured)
+        form.addRow("", labelled_row(self.ref_record_button, self.ref_read_counter_button))
+        form.addRow(self.ref_next_label)
+        form.addRow("", self.ref_apply_button)
+        form.addRow("", self.ref_auto_apply)
+        form.addRow("", labelled_row(self.ref_restore_button, self.ref_save_button))
+        form.addRow("", self.ref_apply_on_connect)
+        form.addRow(self.ref_saved_label)
+        left.addWidget(box)
+        left.addStretch(1)
+        self.ref_table = QtWidgets.QTableWidget(0, len(self.REF_COLUMNS))
+        self.ref_table.setHorizontalHeaderLabels(self.REF_COLUMNS)
+        self.ref_table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.ref_table.verticalHeader().setVisible(False)
+        layout.addLayout(left, 2)
+        layout.addWidget(self.ref_table, 3)
+
+        c = self.ctl
+        self.ref_start_button.clicked.connect(lambda: c.guard(self._ref_start))
+        self.ref_record_button.clicked.connect(lambda: c.guard(self._ref_record_manual))
+        self._ref_enter = EnterApplies(self.ref_measured, lambda: c.guard(self._ref_record_manual))
+        self.ref_read_counter_button.clicked.connect(lambda: c.guard(self._ref_read_counter))
+        self.ref_apply_button.clicked.connect(lambda: c.guard(self._ref_apply_next))
+        self.ref_restore_button.clicked.connect(lambda: c.guard(self._ref_restore))
+        self.ref_save_button.clicked.connect(lambda: c.guard(self._ref_save))
+        self.ref_apply_on_connect.toggled.connect(self._ref_apply_on_connect_changed)
+        return page
+
+    def _ref_start(self) -> None:
+        driver = self.ctl.driver
+        original = driver.get_reference_dac()
+        self.tuner = RefCalTuner(self.ref_target.value() * 1e9, self.ref_tol.value(),
+                                 self.ref_step.value(), original)
+        driver.set_reference_source(RefSource.INTERNAL)
+        driver.set_frequency(self.tuner.target_hz)
+        driver.set_rf_output(True)
+        self.ref_measured.setValue(self.tuner.target_hz)
+        self._refresh_ref_view()
+        self.ctl.status_message(f"Reference tuning started: DAC {original}, internal reference, "
+                                f"{self.tuner.target_hz / 1e9:.6f} GHz, RF on. Measure RF OUT.")
+
+    def _ref_current_dac(self) -> int:
+        return self.ctl.driver.get_reference_dac()
+
+    def _ref_record(self, measured_hz: float, source: str) -> None:
+        if self.tuner is None:
+            raise CalibrationError("Press Start first.")
+        it = self.tuner.record(self._ref_current_dac(), measured_hz, source)
+        self._refresh_ref_view()
+        if self.tuner.converged():
+            self.ctl.status_message(f"Within tolerance: DAC {it.dac}, error {it.error_hz:+.3f} Hz "
+                                    f"({it.error_ppb:+.3f} ppb). Save to keep it.")
+        elif self.ref_auto_apply.isChecked():
+            self._ref_apply_next()
+
+    def _ref_record_manual(self) -> None:
+        if self.ref_measured.take_rejected_text() is not None:
+            return
+        self._ref_record(self.ref_measured.value(), "manual")
+
+    def _ref_read_counter(self) -> None:
+        self._apply_meter_fields()
+        value = self._reader("counter").read(self.tuner.target_hz if self.tuner else None)
+        self.ref_measured.setValue(value)
+        self._ref_record(value, self.counter_cfg.resource or "counter")
+
+    def _ref_apply_next(self) -> None:
+        if self.tuner is None:
+            raise CalibrationError("Press Start first.")
+        dac = self.tuner.next_dac()
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
+        try:
+            self.ctl.driver.set_reference_dac(dac)       # waits WAIT_REF_DAC_S
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+        self._refresh_ref_view()
+        self.ctl.status_message(f"DIAG:CAL:REF:DAC {dac} sent; let the OCXO settle, then measure again.")
+
+    def _ref_restore(self) -> None:
+        if self.tuner is None:
+            raise CalibrationError("Nothing to restore: tuning was not started.")
+        self.ctl.driver.set_reference_dac(self.tuner.original_dac)
+        self._refresh_ref_view()
+        self.ctl.status_message(f"Original DAC {self.tuner.original_dac} restored.")
+
+    def _ref_save(self) -> None:
+        if self.tuner is None or not self.tuner.iterations:
+            raise CalibrationError("No measurements to save.")
+        best = self.tuner.best()
+        model, serial, _ = self._unit()
+        if not serial:
+            raise CalibrationError("No unit serial: connect first.")
+        if self._ref_current_dac() != best.dac:
+            self.ctl.driver.set_reference_dac(best.dac)
+        self.ref_record = RefCalRecord(model=model, serial=serial, dac=best.dac,
+                                       original_dac=self.tuner.original_dac,
+                                       target_hz=best.target_hz, measured_hz=best.measured_hz,
+                                       created_iso=utc_iso(time.time()),
+                                       apply_on_connect=self.ref_apply_on_connect.isChecked())
+        path = self.store.save_ref(self.ref_record)
+        self._refresh_ref_view()
+        self.ctl.status_message(f"Reference calibration saved ({path}): DAC {best.dac}, "
+                                f"error {best.error_hz:+.3f} Hz.")
+
+    def _ref_apply_on_connect_changed(self, on: bool) -> None:
+        if self.ref_record is not None:
+            self.ref_record.apply_on_connect = on
+            self._guard_local(lambda: self.store.save_ref(self.ref_record))
+            self._refresh_ref_view()
+
+    def _refresh_ref_view(self) -> None:
+        its = self.tuner.iterations if self.tuner else []
+        self.ref_table.setRowCount(len(its))
+        for r, it in enumerate(its):
+            for col, text in enumerate((str(r + 1), str(it.dac), f"{it.measured_hz:.3f}",
+                                        f"{it.error_hz:+.3f}", f"{it.error_ppb:+.4f}", it.source)):
+                self.ref_table.setItem(r, col, QtWidgets.QTableWidgetItem(text))
+        self.ref_table.resizeColumnsToContents()
+        if self.tuner is not None:
+            slope = self.tuner.slope_hz_per_count()
+            self.ref_dac_label.setText(
+                f"Original DAC {self.tuner.original_dac}; "
+                + (f"slope {slope:+.4f} Hz/count at {self.tuner.target_hz / 1e9:g} GHz"
+                   if slope is not None else "slope not yet measured"))
+            done = self.tuner.converged()
+            self.ref_next_label.setText(
+                f"{'Converged' if done else 'Next DAC'}: {self.tuner.next_dac()}"
+                + (f" (within {self.tuner.tolerance_hz:g} Hz)" if done else ""))
+        record = self.ref_record
+        if record is None:
+            self.ref_saved_label.setText("Saved: none for this unit")
+        else:
+            self.ref_saved_label.setText(
+                f"Saved: DAC {record.dac} (original {record.original_dac}), error "
+                f"{record.error_hz:+.3f} Hz at {record.target_hz / 1e9:g} GHz, {record.created_iso}; "
+                f"apply on connect: {'yes' if record.apply_on_connect else 'no'}")
+            self.ref_apply_on_connect.blockSignals(True)
+            self.ref_apply_on_connect.setChecked(record.apply_on_connect)
+            self.ref_apply_on_connect.blockSignals(False)
+
+    # ------------------------------------------------------------------ meters
+    def _build_meters(self) -> QtWidgets.QWidget:
+        page = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(page)
+        have = InstrumentReader.available()
+        status = QtWidgets.QLabel(
+            "PyVISA is installed." if have else
+            "PyVISA is not installed, so meters cannot be read; typed readings work. "
+            "Install with: mamba install -c conda-forge pyvisa pyvisa-py")
+        status.setWordWrap(True)
+        layout.addWidget(status)
+        hint = QtWidgets.QLabel(
+            "Any SCPI instrument whose query returns one number. Defaults follow common SCPI "
+            "usage; check them in the instrument's manual. NI's own panel expects an Agilent "
+            "E4418B power meter or an exact SCPI equivalent, and a Pendulum CNT-90, Anritsu "
+            "MF2412B or Phase Matrix 346A counter [R3]. In the pre-command, {freq_hz} and "
+            "{freq_ghz} are replaced by the point's frequency (for the sensor cal factor).")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        self.meter_widgets: dict[str, dict[str, QtWidgets.QWidget]] = {}
+        for key, title, cfg in (("power", "Power meter", self.power_meter_cfg),
+                                ("counter", "Frequency counter", self.counter_cfg)):
+            box = QtWidgets.QGroupBox(title)
+            form = QtWidgets.QFormLayout(box)
+            resource = QtWidgets.QLineEdit(cfg.resource)
+            resource.setPlaceholderText("GPIB0::13::INSTR, USB0::...::INSTR, TCPIP0::host::inst0::INSTR")
+            backend = QtWidgets.QComboBox()
+            backend.addItem("Default VISA library (NI-VISA, Keysight IO Libraries)", "")
+            backend.addItem("pyvisa-py (@py)", "@py")
+            query = QtWidgets.QLineEdit(cfg.query)
+            pre = QtWidgets.QLineEdit(cfg.pre_command)
+            timeout = make_int_spin(100, 120_000, cfg.timeout_ms, " ms")
+            test = QtWidgets.QPushButton("Connect and identify (*IDN?)")
+            listing = QtWidgets.QPushButton("List resources")
+            result = QtWidgets.QLabel("-")
+            result.setWordWrap(True)
+            for w in (test, listing):
+                w.setEnabled(have)
+            form.addRow("VISA resource", resource)
+            form.addRow("Back end", backend)
+            form.addRow("Query", query)
+            form.addRow("Pre-command", pre)
+            form.addRow("Timeout", timeout)
+            form.addRow("", labelled_row(test, listing))
+            form.addRow(result)
+            layout.addWidget(box)
+            self.meter_widgets[key] = {"resource": resource, "backend": backend, "query": query,
+                                       "pre": pre, "timeout": timeout, "result": result}
+            test.clicked.connect(lambda _c=False, k=key: self._guard_local(lambda: self._test_meter(k)))
+            listing.clicked.connect(lambda _c=False, k=key: self._guard_local(lambda: self._list_meter(k)))
+        layout.addStretch(1)
+        return page
+
+    def _apply_meter_fields(self) -> None:
+        """Copy the Meters page into the two MeterConfig objects."""
+        for key, cfg in (("power", self.power_meter_cfg), ("counter", self.counter_cfg)):
+            w = self.meter_widgets[key]
+            before = (cfg.resource, cfg.backend, cfg.timeout_ms)
+            cfg.resource = w["resource"].text().strip()
+            cfg.backend = w["backend"].currentData() or ""
+            cfg.query = w["query"].text().strip() or cfg.query
+            cfg.pre_command = w["pre"].text().strip()
+            cfg.timeout_ms = int(w["timeout"].value())
+            reader = self.readers.get(key)
+            if reader is not None and before != (cfg.resource, cfg.backend, cfg.timeout_ms):
+                reader.close()              # reopened with the new settings on next use
+
+    def _test_meter(self, key: str) -> None:
+        self._apply_meter_fields()
+        reader = self._reader(key)
+        idn = reader.open()
+        self.meter_widgets[key]["result"].setText(f"Connected: {idn}")
+        if key == "power":
+            self.table.meter = idn
+
+    def _list_meter(self, key: str) -> None:
+        self._apply_meter_fields()
+        found = self._reader(key).list_resources()
+        self.meter_widgets[key]["result"].setText(", ".join(found) if found else "No resources found.")
+
+    # ------------------------------------------------------------------ connection
+    def on_connected(self) -> None:
+        """Load this unit's saved tables and apply the reference value if asked."""
+        model, serial, _ = self._unit()
+        control = self._has_power_control()
+        self.levels_edit.setEnabled(control)
+        self.correct_check.setEnabled(control)
+        self.ref_record = None
+        self.tuner = None
+        self.set_active_table(None)
+        self._refresh_power_view()
+        if not serial:
+            self._refresh_ref_view()
+            return
+        try:
+            self.set_active_table(self.store.load_active_power(model, serial))
+            self.ref_record = self.store.load_ref(model, serial)
+        except CalibrationError as exc:
+            self.ctl.warn(f"Calibration file for {model} {serial} not usable: {exc}")
+        self._refresh_ref_view()
+        record = self.ref_record
+        if record is not None and record.apply_on_connect:
+            try:
+                self.ctl.driver.set_reference_dac(record.dac)
+            except QuickSynError as exc:
+                self.ctl.warn(f"Saved reference calibration (DAC {record.dac}) not applied: {exc}")
+                return
+            self.ctl.status_message(f"Reference calibration applied: DIAG:CAL:REF:DAC {record.dac} "
+                                    f"(saved {record.created_iso}).")
+
+    def on_disconnected(self) -> None:
+        """Stop any automatic run and close meters."""
+        self._stop_auto_run()
+        for reader in self.readers.values():
+            reader.close()
+
+
+def export_power_cal_vszh5(table: PowerCalTable, path: str | os.PathLike) -> Path:
+    """Write a power calibration as a Veusz HDF5 document (h5py only, no Veusz).
+
+    One page: level at RF OUT against frequency, one curve per commanded
+    level (one curve on fixed-output models), with the datasheet minimum as
+    a dashed line where [R4] gives one. Opened with Veusz 3.6 or later.
+    """
+    if not table.points:
+        raise CalibrationError("The table is empty.")
+    if vszh5_writer is None:
+        raise CalibrationError("vszh5_writer.py is not next to this program.")
+    vw = vszh5_writer
+    spec = SPEC_MIN_POWER_DBM.get(table.model)
+    colours = ("#3b7dd8", "#d9483b", "#2e9e5b", "#b07d2a", "#8a4fbf", "#4a9aa8")
+    writer = vw.VeuszWriter(Path(path), writer_tag=f"{APP_NAME} {__version__}")
+    doc = vw.VszDoc(generator=f"{APP_NAME} {__version__} power calibration")
+    with writer:
+        series: list[tuple[str, str]] = []
+        for level in table.levels():
+            f, out = table.curve(level)
+            if level is None:
+                tag, key = "fixed", "fixed output"
+            else:
+                tag = f"set_{level:+.1f}".replace("+", "p").replace("-", "m").replace(".", "_")
+                key = f"set {level:+.1f} dBm"
+            writer.dataset_1d(f"cal_freq_ghz_{tag}", np.asarray(f) / 1e9, tags=("cal",))
+            writer.dataset_1d(f"cal_rf_out_dbm_{tag}", out, tags=("cal",))
+            series.append((tag, key))
+        if spec is not None:
+            lo, hi = table.frequency_span()
+            writer.dataset_1d("cal_spec_freq_ghz", [lo / 1e9, hi / 1e9], tags=("cal",))
+            writer.dataset_1d("cal_spec_dbm", [spec, spec], tags=("cal",))
+        title = (f"{table.model} {table.serial} - level at RF OUT - "
+                 f"{table.created_iso or 'undated'}")
+        doc.add("page", "page_power_cal")
+        doc.to("page_power_cal")
+        doc.set("width", "25cm")
+        doc.set("height", "15cm")
+        doc.add("label", "title")
+        doc.set("title/label", vw.vz_text(title))
+        doc.set("title/xPos", [0.5])
+        doc.set("title/yPos", [0.965])
+        doc.set("title/alignHorz", "centre")
+        doc.set("title/Text/size", "10pt")
+        doc.add("graph", "graph1")
+        doc.to("graph1")
+        doc.set("leftMargin", "2.0cm")
+        doc.set("rightMargin", "0.4cm")
+        doc.set("topMargin", "0.9cm")
+        doc.set("bottomMargin", "1.3cm")
+        doc.add("axis", "x")
+        doc.add("axis", "y")
+        doc.set("x/label", "Frequency (GHz)")
+        doc.set("y/direction", "vertical")
+        doc.set("y/label", "Level at RF OUT (dBm)")
+        doc.set("y/autoRange", "+5%")
+        doc.set("y/GridLines/hide", False)
+        doc.set("y/GridLines/color", "#c8c8c8")
+        doc.set("y/GridLines/style", "dotted")
+        for i, (tag, key) in enumerate(series):
+            colour = colours[i % len(colours)]
+            doc.add("xy", f"xy_{tag}")
+            doc.to(f"xy_{tag}")
+            doc.set("xData", f"cal_freq_ghz_{tag}")
+            doc.set("yData", f"cal_rf_out_dbm_{tag}")
+            doc.set("key", vw.vz_text(key))
+            doc.set("marker", "circle")
+            doc.set("markerSize", "2.5pt")
+            doc.set("PlotLine/width", "0.8pt")
+            doc.set("PlotLine/color", colour)
+            doc.set("MarkerFill/color", colour)
+            doc.up()
+        if spec is not None:
+            doc.add("xy", "xy_spec")
+            doc.to("xy_spec")
+            doc.set("xData", "cal_spec_freq_ghz")
+            doc.set("yData", "cal_spec_dbm")
+            doc.set("key", vw.vz_text(f"datasheet minimum {spec:+.0f} dBm"))
+            doc.set("marker", "none")
+            doc.set("PlotLine/style", "dashed")
+            doc.set("PlotLine/color", "#8c8c8c")
+            doc.up()
+        doc.add("key", "key1")
+        doc.set("key1/horzPosn", "right")       # the level usually falls with frequency,
+        doc.set("key1/vertPosn", "top")         # so the top right is clear
+        doc.up()
+        doc.up()
+        return writer.finish(doc.text())
+
+
+# %% ===========================================================================
 #    APPLICATION CONTROLLER
 # =============================================================================
 class AppController(QtCore.QObject):
@@ -5991,6 +7832,9 @@ class AppController(QtCore.QObject):
             tab.show_identity(ident, self.driver.capability)
             tab.set_connected(True)
             self._apply_capability_limits()
+            # Read-backs from a previous connection would describe another unit.
+            for label in (self.window.tab_main.freq_readback, self.window.tab_main.power_readback):
+                label.setText("-")
             self.sync_from_instrument()
 
             # No dialog for firmware below the [R1] figure of 100: the
@@ -6006,6 +7850,10 @@ class AppController(QtCore.QObject):
                     + (" (simulated)." if simulate else ".")
                 )
             self.window.set_connected(True)
+            # Per-unit calibration: active power table, reference DAC (0.0.10).
+            # Last, so its status line is the one left showing.
+            self.window.tab_cal.on_connected()
+            self.window.tab_main.update_cal_output()
         except QuickSynError as exc:
             QtWidgets.QMessageBox.critical(self.window, "Connection failed", str(exc))
             self.disconnect_instrument()
@@ -6014,6 +7862,9 @@ class AppController(QtCore.QObject):
         """Stop acquisition if running and close the transport."""
         if self.sampler is not None:
             self.stop_logging()
+        tab_cal = getattr(self.window, "tab_cal", None)
+        if tab_cal is not None:
+            tab_cal.on_disconnected()
         if self.transport is not None:
             self.transport.close()
         self.transport = None
@@ -6115,8 +7966,11 @@ class AppController(QtCore.QObject):
         main.update_reference(source, status)
         refout = d.get_reference_output_optional()
         if refout is not None:
+            if refout != status.ref_output_on:
+                d.refout_status_reliable = False
             main.note_reference_output(refout, status)
         self.window.tab_modulation.update_modulation(d.get_modulation_status())
+        main.update_cal_output()
 
     def set_auto_sync(self, enabled: bool, interval_s: float) -> None:
         """Start, retime or stop the periodic "Read all settings"."""
@@ -7018,6 +8872,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tab_list = ListModeTab(self.controller)
         self.tab_monitor = MonitorTab(self.controller)
         self.tab_memory = MemoryTab(self.controller)
+        self.tab_cal = CalibrationTab(self.controller)
 
         self.tabs.addTab(self.tab_connection, "Connection")
         self.tabs.addTab(self.tab_main, "Main control")
@@ -7026,6 +8881,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs.addTab(self.tab_list, "List mode")
         self.tabs.addTab(self.tab_monitor, "Monitor and log")
         self.tabs.addTab(self.tab_memory, "Memory")
+        self.tabs.addTab(self.tab_cal, "Calibration")
         self.setCentralWidget(self.tabs)
 
         # Live SCPI console, docked below the tabs (View > SCPI console).
@@ -7191,8 +9047,11 @@ class MainWindow(QtWidgets.QMainWindow):
         support, so this is the coarse gate and
         ``AppController._apply_capability_limits`` is the fine one.
         """
+        cal_index = self.tabs.indexOf(self.tab_cal)
         for index in range(1, self.tabs.count()):
-            self.tabs.setTabEnabled(index, connected)
+            # Calibration stays open offline: tables can be loaded, viewed
+            # and exported without a synthesizer (0.0.10).
+            self.tabs.setTabEnabled(index, connected or index == cal_index)
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # noqa: N802 (Qt API)
         """Shut acquisition and the link down cleanly on window close."""

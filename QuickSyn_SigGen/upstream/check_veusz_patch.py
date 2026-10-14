@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 William W. Wallace <wwallace@nrao.edu>
 """Reproduce the three Veusz limits and check the upstream patch against them.
 
-Part of the QuickSyn SCPI controller package, version 0.0.9.
+Part of the QuickSyn SCPI controller package, version 0.0.10.
 Author: William W. Wallace <wwallace@nrao.edu>, NRAO/GBO.
 Licence: GPL-3.0-or-later (see ../LICENSE).
 

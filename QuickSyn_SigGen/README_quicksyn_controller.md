@@ -1,6 +1,6 @@
 # QuickSyn SCPI Controller and Telemetry Logger
 
-**Version 0.0.9** · Python 3.12 · Qt.py → PySide6 · 2026-10-12
+**Version 0.0.10** · Python 3.12 · Qt.py → PySide6 · 2026-10-14
 
 | | |
 | --- | --- |
@@ -9,7 +9,7 @@
 | Email | [wwallace@nrao.edu](mailto:wwallace@nrao.edu) |
 | Licence | GPL-3.0-or-later — see `LICENSE` and §14 |
 | Versioning | Semantic Versioning 2.0.0 [15]; `0.y.z` means initial development |
-| Status | Internal draft — **first hardware session 2026-10-12** (FSL-0020, §10.1); FSW not yet tested |
+| Status | Internal draft — hardware sessions **2026-10-12** and **2026-10-14** (FSL-0020, §10.1–§10.2); Calibration tab (§3.7) verified on the simulator only; FSW not yet tested |
 
 SCPI control of the NI / Phase Matrix QuickSyn® microwave frequency
 synthesiser family over the USB virtual COM port, with a timestamped log of
@@ -22,27 +22,38 @@ rate.
 
 | File | Version | Purpose |
 | --- | --- | --- |
-| `quicksyn_scpi_gui_v0_0_9.py` | 0.0.9 | Controller, logger and GUI with the live SCPI console (single file, Spyder `# %%` cells); output-power fix and RF OUTPUT OFF (§3.3, §3.4); hardware-session fixes, reference LEDs, auto-read, free typing (§3.5–§3.6, §5.5, §10.1) |
-| `quicksyn_veusz_export_v0_0_9.py` | 0.0.9 | Reduction and statistics; `export_veusz()` writes the session `.vszh5`; renders PDF (with bookmarks) and PNG from it; writes and compiles the LuaLaTeX session report |
-| `vszh5_writer.py` | 0.0.9 | **Veusz HDF5 writer** (`VeuszWriter`, `VszDoc`, `vz_text`, …) from `isp_speed_monitor.py`: h5py only, no Veusz needed to write; `render_pages()` and `add_pdf_bookmarks()`; reusable in other programs |
-| `environment_quicksyn.yml` | 0.0.9 | Mamba environment definition |
-| `README_quicksyn_controller.md` | 0.0.9 | This file |
-| `README_quicksyn_controller.pdf` / `.tex` | 0.0.9 | This file typeset with LuaLaTeX (bookmark hierarchy of the sections, outline pane opens); the `.tex` is the editable LaTeX source |
+| `quicksyn_scpi_gui_v0_0_10.py` | 0.0.10 | Controller, logger and GUI with the live SCPI console (single file, Spyder `# %%` cells); output-power fix and RF OUTPUT OFF (§3.3, §3.4); hardware-session fixes, reference LEDs, auto-read, free typing (§3.5–§3.6, §5.5, §10.1); **Calibration tab** (§3.7) and the stale `STAT?` bit 5 of the FSL-0020 (§3.5) |
+| `quicksyn_veusz_export_v0_0_10.py` | 0.0.10 | Reduction and statistics; `export_veusz()` writes the session `.vszh5`; renders PDF (with bookmarks) and PNG from it; writes and compiles the LuaLaTeX session report |
+| `vszh5_writer.py` | 0.0.10 | **Veusz HDF5 writer** (`VeuszWriter`, `VszDoc`, `vz_text`, …) from `isp_speed_monitor.py`: h5py only, no Veusz needed to write; `render_pages()` and `add_pdf_bookmarks()`; reusable in other programs |
+| `environment_quicksyn.yml` | 0.0.10 | Mamba environment definition |
+| `README_quicksyn_controller.md` | 0.0.10 | This file |
+| `README_quicksyn_controller.pdf` / `.tex` | 0.0.10 | This file typeset with LuaLaTeX (bookmark hierarchy of the sections, outline pane opens); the `.tex` is the editable LaTeX source |
 | `LICENSE` | — | Full GNU GPL version 3 text, unmodified |
-| `tests/check_release_metadata.py` | 0.0.9 | Headers, SemVer, SPDX, history entries, `LICENSE` hash, `--version`, About dialog, every file at one version |
-| `tests/check_smoke.py` | 0.0.9 | Driver, simulator, logging, sampler and full-GUI checks, including the controller's own `.vszh5` export; output power (native and SCPI forms, read-back, fallback, model gating), Enter-to-apply, RF OFF, console Send line; 0.0.8 hardware-session fixes (typed entries, combo-box enums, reference read-backs and LEDs, auto-read, temperature flag, *IDN? order); 0.0.9 10 MHz output path (native command kept, unanswered `OUTP:ROSC:STAT?`) |
-| `tests/check_reduction.py` | 0.0.9 | Rate, jitter, ADEV and moving-statistics maths |
-| `tests/check_vszh5.py` | 0.0.9 | Writer and `export_veusz()`: layout, types, tags, escaping, DST, bit-exact data, pages; render plumbing (Windows paths, broken or unstartable Veusz, fallback); PDF page scale, bookmarks, re-render; LuaLaTeX report; real-Veusz load, re-save comparison and renders when Veusz is available |
-| `tests/check_console.py` | 0.0.9 | The live SCPI console: line format and alignment, thread safety, a simulated session against `transactions.csv`, a 200 000-exchange pause (memory and Resume time), filter, clear, save |
-| `tests/run_all.py` | 0.0.9 | Runs the five checks in parallel and prints a summary |
+| `tests/check_release_metadata.py` | 0.0.10 | Headers, SemVer, SPDX, history entries, `LICENSE` hash, `--version`, About dialog, every file at one version |
+| `tests/check_smoke.py` | 0.0.10 | Driver, simulator, logging, sampler and full-GUI checks, including the controller's own `.vszh5` export; output power (native and SCPI forms, read-back, fallback, model gating), Enter-to-apply, RF OFF, console Send line; 0.0.8 hardware-session fixes (typed entries, combo-box enums, reference read-backs and LEDs, auto-read, temperature flag, *IDN? order); 0.0.9 10 MHz output path (native command kept, unanswered `OUTP:ROSC:STAT?`) |
+| `tests/check_reduction.py` | 0.0.10 | Rate, jitter, ADEV and moving-statistics maths |
+| `tests/check_vszh5.py` | 0.0.10 | Writer and `export_veusz()`: layout, types, tags, escaping, DST, bit-exact data, pages; render plumbing (Windows paths, broken or unstartable Veusz, fallback); PDF page scale, bookmarks, re-render; LuaLaTeX report; real-Veusz load, re-save comparison and renders when Veusz is available |
+| `tests/check_console.py` | 0.0.10 | The live SCPI console: line format and alignment, thread safety, a simulated session against `transactions.csv`, a 200 000-exchange pause (memory and Resume time), filter, clear, save |
+| `tests/check_calibration.py` | 0.0.10 | Calibration (§3.7): path loss (constant, CSV, Touchstone v1/v2 DB/MA/RI), tables, interpolation, level correction, OCXO tuning, per-unit store, PyVISA reader with a fake meter and counter; the GUI on a simulated FSL-0020 and FSW-0020; the stale `STAT?` bit 5; NI-panel command vectors |
+| `tests/run_all.py` | 0.0.10 | Runs the six checks in parallel and prints a summary |
 | `upstream/veusz-4.2.1-vszh5-load-quit-pdfdpi.patch` | — | Patch for Veusz itself (not needed by this package): `.vszh5` in `--export` and `Load()`, `Quit()` in listen mode, PDF page scale (§6.5) |
 | `upstream/VEUSZ_UPSTREAM_ISSUE.md` | — | Ready-to-file issue text for the Veusz project, with the test results |
-| `upstream/check_veusz_patch.py` | 0.0.9 | Reproduces the three Veusz limits and checks the patch, for any set of Veusz programs |
-| `tools/build_readme_pdf.py` | 0.0.9 | Rebuilds the README PDF and `.tex` (pandoc + LuaLaTeX) |
-| `examples/simulated_session_20261012_194954/` | 0.0.9 | Output of a 41 s **simulated** session recorded with 0.0.9 (four commanded frequency and power steps, each read back, RF OFF at the end, 10 Hz): `quicksyn_session.vszh5`, the bookmarked `quicksyn_session.pdf`, the overview PNG, `quicksyn_session_report.tex` and `.pdf` (LuaLaTeX), `reduction_summary.md`. No instrument was connected |
+| `upstream/check_veusz_patch.py` | 0.0.10 | Reproduces the three Veusz limits and checks the patch, for any set of Veusz programs |
+| `tools/build_readme_pdf.py` | 0.0.10 | Rebuilds the README PDF and `.tex` (pandoc + LuaLaTeX) |
+| `examples/simulated_session_20261014_163313/` | 0.0.10 | Output of a 41 s **simulated** session recorded with 0.0.10 (four commanded frequency and power steps, each read back, RF OFF at the end, 10 Hz): `quicksyn_session.vszh5`, the bookmarked `quicksyn_session.pdf`, the overview PNG, `quicksyn_session_report.tex` and `.pdf` (LuaLaTeX), `reduction_summary.md`. No instrument was connected |
 | `examples/hardware_session_20261012_140204_FSL-0020/` | 0.0.9 | The **first hardware session** (FSL-0020, 600 s at 2 Hz, recorded with 0.0.7) re-exported with the 0.0.9 export script: plots PDF, overview PNG, LuaLaTeX report, `reduction_summary.md` (§10.1). Shows the temperature artefact and the 15.6 ms latency quantisation |
+| `examples/calibration_simulated_FSL-0020/` | 0.0.10 | A **simulated** power calibration (synthetic level $12 - 0.4\,f/\text{GHz}$ dBm, 1.5 dB constant path loss, 20 points read by a fake meter): the table as JSON and CSV, its `.vszh5`, PDF and PNG, and screenshots of the Calibration tab and the Main tab's expected level (§3.7). **Not a measurement** |
 
-0.0.9 corrects the 10 MHz output switch for the FSL-0020: its REF OUT does
+0.0.10 adds a **Calibration** tab (§3.7) in place of NI's GPIB-only
+calibration panel: power against frequency from typed readings or any SCPI
+power meter through PyVISA, with cable-loss correction from a constant, a
+CSV table or a Touchstone `.s2p`; and OCXO tuning with the documented
+`DIAG:CAL:REF:DAC` against a counter. The results are kept in this program
+per unit; nothing undocumented is written to the synthesizer. It also stops
+the false warning on the FSL-0020's 10 MHz output, whose `STAT?` bit 5
+stays set while REF OUT switches (§3.5, §10.2).
+
+0.0.9 corrected the 10 MHz output switch for the FSL-0020: its REF OUT does
 switch (confirmed with NI's panel and a power meter), but not with the SCPI
 command, so the native command is used once it has been seen to work, and a
 unit that does not answer `OUTP:ROSC:STAT?` no longer breaks the switch or
@@ -58,8 +69,8 @@ entry (§3.3) and added RF OUTPUT OFF (§3.4).
 ```bash
 mamba env create -f environment_quicksyn.yml
 mamba activate quicksyn
-python quicksyn_scpi_gui_v0_0_9.py            # Help > About shows author, company, email, licence
-python quicksyn_scpi_gui_v0_0_9.py --version  # prints the same identity block, no display needed
+python quicksyn_scpi_gui_v0_0_10.py            # Help > About shows author, company, email, licence
+python quicksyn_scpi_gui_v0_0_10.py --version  # prints the same identity block, no display needed
 python tests/run_all.py                       # no instrument or display required
 ```
 
@@ -124,6 +135,11 @@ The driver talks to its transport through four calls (`open`, `close`,
 an Ethernet transport (standard-library socket) and a PyVISA transport (any
 VISA resource string, GPIB included, imported only when chosen) would each
 be one class. Neither was asked for, so neither is in 0.0.7 (§13).
+
+0.0.10 does use PyVISA, for a different link: the optional power meter and
+frequency counter of the Calibration tab (§3.7), which are usually GPIB
+instruments. It is imported only when a meter is opened; the synthesizer
+link stays on pyserial.
 
 ---
 
@@ -320,7 +336,7 @@ means muted, not disconnected: −65 dBm max on the FSW ("Power Mute"), a
 | Control | Commands (0.0.8) | Checked with |
 | --- | --- | --- |
 | *Reference source* combo | `ROSC:SOUR INT/EXT`; native `0600`/`0601` [1, Table 2a] if `ROSC:SOUR?` disagrees | `ROSC:SOUR?`, `STAT?`, and again 1.5 s later for the lock |
-| *10 MHz reference output* switch | `OUTP:ROSC:STAT ON/OFF`; native `0800`/`0801` if the output did not follow. Once the native command has worked where the SCPI one did not, it is sent directly for the rest of the session (0.0.9) | `STAT?` bit 5, and `OUTP:ROSC:STAT?` where the unit answers it |
+| *10 MHz reference output* switch | `OUTP:ROSC:STAT ON/OFF`; native `0800`/`0801` if the output did not follow. Once the native command has worked where the SCPI one did not, it is sent directly for the rest of the session (0.0.9). On a unit that reports the state nowhere, `OUTP:ROSC:STAT` alone after the first double failure (0.0.10) | `OUTP:ROSC:STAT?` when the unit answers it (trusted over bit 5, 0.0.10); otherwise `STAT?` bit 5 until it is seen not to follow |
 
 Two LEDs in the status box show which reference is **in use**: *Internal
 10 MHz reference IN USE*, or *External 10 MHz reference IN USE* when
@@ -358,6 +374,22 @@ open until REF OUT is measured while this program switches it.
   OUT on a power meter or counter: if REF OUT did switch, only the status
   bit is wrong.
 
+**Settled on 2026-10-14 (§10.2): only the status bit is wrong.** With a
+power meter on REF OUT, `OUTP:ROSC:STAT OFF` and `ON` sent from this
+program switch the 10 MHz output off and on, and `STAT?` bit 5 stays set
+throughout. 0.0.9 would therefore have warned falsely and sent the native
+`08xx` as well. 0.0.10:
+
+| Situation | What 0.0.10 does | Shown |
+| --- | --- | --- |
+| `OUTP:ROSC:STAT?` answers | The query decides; bit 5 is not used for the output. A bit 5 that disagrees marks the bit unreliable for the session (status-bar note, once) | LED and checkbox from the query: *Ref output off (OUTP:ROSC:STAT?)* |
+| No query, bit 5 follows | As 0.0.9 | LED and checkbox from bit 5 |
+| No query, bit 5 follows neither `OUTP:ROSC:STAT` nor `08xx` (the first double failure) | One warning explaining that on the FSL-0020 REF OUT switches while bit 5 stays set; from then on `OUTP:ROSC:STAT` alone is sent, with no fallback and no warning | Grey LED *Ref output: not reported (last sent OFF)*; the checkbox keeps what was sent and is no longer overwritten from bit 5 by *Read all* or auto-read |
+
+The simulator option `refout_status_bit_follows=False` holds bit 5 set, as
+on the FSL-0020; `check_calibration.py` covers both rows that differ from
+0.0.9.
+
 ### 3.6 Typing values
 
 Frequencies below 1 GHz could not be typed in 0.0.7. With nine decimals
@@ -383,6 +415,156 @@ number from 0.2 to 20 GHz; the box keeps … and nothing was sent") instead
 of being replaced in silence. The arrows and wheel work as before.
 
 ---
+
+### 3.7 Calibration (program-side)
+
+NI's calibration soft front panel [3] calibrates output power and the
+10 MHz OCXO, but only with GPIB instruments it knows: an Agilent E4418B
+power meter "or exact SCPI-command equivalent" with an E4413A sensor and a
+6 dB pad, and a Pendulum CNT-90, Anritsu MF2412B or Phase Matrix 346A
+counter, and it sets its power calibration points "based on the QuickSyn
+synthesizer model, FSW-0010 or FSW-0020" [3]. The **Calibration** tab does
+the same measurements with readings typed in or read from *any* SCPI meter
+through PyVISA [30], [31] (GPIB, USB or LAN), and keeps the results in this
+program.
+
+**What is written to the synthesizer, and what is not.**
+
+| NI panel step [3] | Documented command? | This program |
+| --- | --- | --- |
+| Ref. Cal: *Start Ref Cal* — tune until RF OUT is within ±20 Hz at 10 GHz; "stored in volatile memory" | **Yes**: `DIAG:CAL:REF:DAC 0–65535`, "a few seconds for hardware to update" [1, Table 5] | Same tuning, same command, same ±20 Hz default; the value can be re-sent on every connect |
+| Ref. Cal: *Write Ref Cal to UUT* — permanent | No | Not sent. The value is saved per unit in this program instead |
+| Power: *Write Cal to UUT* (volatile) and *Store in Flash* ("will overwrite previous calibration data") | No | **Not sent.** Guessing an unpublished write could destroy the factory calibration, and a power table cannot give an FSL level control it lacks (§3.3). The table is kept in this program |
+| Power: *Max/Min Pwr Sweep*, *Verify Cal* | Measurement only | The *Power vs frequency* page does both: a point list, meter readings, the table and a plot against the datasheet |
+
+The vendor describes the output power control as "an open-loop method"
+with temperature compensation [37]. An open-loop source can only be as
+flat as its calibration, so a table measured at RF OUT is the right object
+to keep; what it cannot do is change the hardware's own correction.
+
+**Power vs frequency.**
+
+1. *Points*: start, stop and step frequency, and on power-control models a
+   list of commanded levels (for example `-10, 0, 13`). Points outside the
+   model's range are dropped and counted.
+2. *Path loss* between RF OUT and the sensor: none, a constant, a CSV table
+   (frequency and loss in dB; units from the header or by magnitude; a
+   column that is all negative is read as $S_{21}$ in dB and negated) or a
+   Touchstone `.s2p` [35] (v1 and v2, `MA`/`DB`/`RI`, both
+   `[Two-Port Data Order]` values; noise data ignored). A file is never
+   extrapolated: a point outside it is refused.
+3. *Set synthesizer to this point* sends `FREQ` (and `POW` on power-control
+   models) and RF on, and reads the status back. Type the meter reading and
+   press **Enter**: it is recorded and, with *Auto-advance*, the next point
+   is set. *Read power meter* reads it instead; *Run all points with the
+   power meter* does the whole list with a settle time per point, and
+   *Stop* ends it.
+4. *Save and make active for this unit* writes the table (§ files below)
+   and makes it the unit's active table, loaded again on every connect.
+
+The level at RF OUT is the reading plus the path loss,
+
+$$
+P_\mathrm{out}(f) = P_\mathrm{meter}(f) + L(f), \qquad
+L(f) = -20\log_{10}\lvert S_{21}(f)\rvert \ \text{dB},
+$$
+
+with $\lvert S_{21}\rvert$ taken directly (`MA`), as $\sqrt{a^2+b^2}$ from
+real and imaginary parts (`RI`), or $L = -S_{21,\mathrm{dB}}$ (`DB`). The
+table and the plot show $P_\mathrm{out}$, and against the datasheet minimum
+for fixed-output models (+15 dBm FSL-0010, +10 dBm FSL-0020/E020 [4]).
+Between calibrated frequencies $f_i < f < f_{i+1}$ the level is
+interpolated linearly in dB,
+
+$$
+P_\mathrm{out}(f) = P_i + \left(P_{i+1} - P_i\right)\frac{f - f_i}{f_{i+1} - f_i},
+$$
+
+and outside $[f_1, f_n]$ nothing is reported. With *Show expected level at
+RF OUT* ticked, the Main tab shows this value under the power read-back
+(*At RF OUT (power cal)*), updated with every frequency change.
+
+**Level correction (power-control models).** With several commanded
+levels $P_s$ measured, the table holds the error
+$e(f, P_s) = P_\mathrm{out}(f, P_s) - P_s$, interpolated in frequency as
+above and linearly in $P_s$ (held constant beyond the lowest and highest
+level). To put a target $P_t$ at RF OUT, the level to command solves
+$P_s + e(f, P_s) = P_t$, by the fixed-point iteration
+
+$$
+P_s^{(0)} = P_t, \qquad
+P_s^{(k+1)} = \operatorname{clamp}\!\left(P_t - e\!\left(f, P_s^{(k)}\right),\ P_\mathrm{min},\ P_\mathrm{max}\right),
+$$
+
+stopped when two iterates differ by less than 0.005 dB and then quantised
+to the 0.1 dB of the command set (§3.3). It converges whenever
+$\lvert\partial e/\partial P_s\rvert < 1$ (a contraction), i.e. whenever
+the output rises with the commanded level at all. With *Correct the
+commanded level* ticked, *Set power* on the Main tab sends the corrected
+level, the read-back says so ("set +2.0 dBm for +0.0 dBm at RF OUT"), and a
+frequency change re-applies it. Sweeps and list mode are **not** corrected.
+On fixed-output models the box is disabled: there is no level to correct.
+
+**Reference (10 MHz OCXO).** The method of [3] Step 4: a counter on RF OUT,
+referenced to a 10 MHz standard. *Start* reads `DIAG:CAL:REF:DAC?` (kept as
+the original), selects the internal reference, sets the counter frequency
+(10 GHz by default) and switches RF on. Each measured frequency is
+recorded (typed, or *Read counter*) and the next DAC word follows from the
+secant method on the two latest distinct points,
+
+$$
+D_{k+1} = D_k - \left(f_k - f_\mathrm{t}\right)\frac{D_k - D_{k-1}}{f_k - f_{k-1}},
+$$
+
+after a first trial step (500 counts by default, only to measure the
+slope), limited to 8000 counts per step and to 0–65535. The default
+tolerance, ±20 Hz at 10 GHz [3], is
+
+$$
+\frac{20\ \mathrm{Hz}}{10\ \mathrm{GHz}} = 2\times10^{-9},
+\quad\text{i.e. } \pm 0.02\ \mathrm{Hz} \text{ at } 10\ \mathrm{MHz}.
+$$
+
+*Send next DAC value* (automatic after each recording by default) writes it
+and waits the documented few seconds. *Restore original DAC* undoes the
+session; *Save as this unit's reference calibration* keeps the best
+iteration and, with *Apply the saved value on connect*, sends it every time
+this program connects (the status bar says so). Whether a value written
+with `DIAG:CAL:REF:DAC` survives a power cycle is not documented; [3] says
+the panel's own tuning value is volatile until *Write Ref Cal to UUT*.
+
+**Meters (optional).** Any instrument whose query returns one number.
+
+| Field | Power meter default | Counter default | Note |
+| --- | --- | --- | --- |
+| VISA resource | — | — | e.g. `GPIB0::13::INSTR`, `USB0::…::INSTR`, `TCPIP0::host::inst0::INSTR`; *List resources* shows what the VISA library sees |
+| Back end | default VISA library | default VISA library | NI-VISA or Keysight IO Libraries (needed for most GPIB adapters), or `@py` (pyvisa-py) |
+| Query | `MEAS?` | `MEAS:FREQ?` | common SCPI forms; check them in the instrument's manual |
+| Pre-command | `SENS:FREQ {freq_hz:.0f}` | — | written before each reading; `{freq_hz}` / `{freq_ghz}` are replaced by the point's frequency, so the sensor applies its cal factor |
+| Timeout | 10 000 ms | 10 000 ms | |
+
+*Connect and identify* sends `*IDN?`, which is stored in the table. Without
+PyVISA the page says how to install it
+(`mamba install -c conda-forge pyvisa pyvisa-py`) and typed readings still
+work.
+
+**Files.** Under `~/quicksyn_cal/<model>_<serial>/` (set
+`QUICKSYN_CAL_DIR` to move it); nothing is created until something is saved.
+
+| File | Content |
+| --- | --- |
+| `power_cal_<YYYYmmdd_HHMMSS>.json` / `.csv` | Each saved table: unit, operator, meter `*IDN?`, path-loss description, every point (frequency, commanded level, reading, path loss, level at RF OUT, time, source) |
+| `active_power_cal.json` | The table loaded on connect |
+| `ref_cal.json` | Saved DAC word, original word, target, residual error, apply-on-connect flag |
+| `ref_cal_history.csv` | One line per reference save |
+
+*Export CSV…* and *Export .vszh5…* write a table anywhere; the `.vszh5`
+has one page (level at RF OUT against frequency, one curve per commanded
+level, the datasheet minimum dashed) and opens in Veusz.
+
+![Calibration tab, *Power vs frequency* page, after a **simulated** 20-point run on the FSL-0020 simulator (synthetic level $12-0.4\,f/\mathrm{GHz}$ dBm, 1.5 dB constant path loss). Not a measurement.](examples/calibration_simulated_FSL-0020/calibration_tab_power.png)
+
+![The same simulated table exported as `.vszh5` and rendered by Veusz 4.2.1.](examples/calibration_simulated_FSL-0020/power_cal_simulated_FSL-0020_p00_page_power_cal.png)
 
 ## 4. The 64-byte buffer, and why frequencies are encoded two ways
 
@@ -598,7 +780,7 @@ telemetry log is still the sampler's.
 ## 6. Veusz documents, reduction and plots
 
 ```bash
-python quicksyn_veusz_export_v0_0_9.py <session_dir>
+python quicksyn_veusz_export_v0_0_10.py <session_dir>
     --time-axis A      local (default), utc or elapsed
     --no-render        write the .vszh5 but skip the PDF/PNG render
     --png-pages P      first (default, the overview), all or none
@@ -926,7 +1108,9 @@ on the next power cycle.
 | 14 | [1] says SCPI needs firmware 100 or higher | The FSL-0020 reports firmware 0008 and answers SCPI; the rule is shown as information, no dialog |
 | 15 | `STAT?` example `00A8` in [1, Table 5] | The hardware replies `0xA1` (and `DIAG:MOD?` `0x0`); both forms are parsed, the simulator now uses the hardware form |
 | 16 | Option word lists option 2 on an FSL-0020; [4] lists only option 8 for the Lite | The datasheet decides the GUI's gating; a power meter agreed (§3.3) |
-| 17 | `OUTP:ROSC:STAT` in [1, Table 5]; on the FSL-0020 it did not change `STAT?` bit 5, while REF OUT switches with NI's panel (native commands) | Native `08xx` fallback, kept once it works; `OUTP:ROSC:STAT?` optional (§3.5) |
+| 17 | `OUTP:ROSC:STAT` in [1, Table 5]; on the FSL-0020 it did not change `STAT?` bit 5, while REF OUT switches with NI's panel (native commands) | **Settled 2026-10-14:** `OUTP:ROSC:STAT` does switch REF OUT; bit 5 is stale on that unit. `OUTP:ROSC:STAT?` trusted when it answers, otherwise the state is shown as not reported (§3.5) |
+| 18 | [3] describes writing power and reference calibration into the unit (*Write Cal to UUT*, *Store in Flash*, *Write Ref Cal to UUT*); [1] publishes only `DIAG:CAL:REF:DAC` | Only the documented command is sent; power tables are kept in this program (§3.7) |
+| 19 | [4] gives 0.65 GHz as the FSL-0020's lower limit; the unit, asked for 100 MHz (by NI's panel or by `FREQ 100000000000`), went to **656.062 MHz**; NI's panel displays 100 MHz regardless | The 0.65 GHz limit is kept; requests below it are refused here. Whether 0.650 GHz itself is reached or also clamps near 656 MHz is open (§13) |
 
 ---
 
@@ -952,6 +1136,21 @@ code; the rows that `check_vszh5.py` and `check_console.py` cover were
 re-run in this build (first table). The third table lists older results.
 Rows marked † are measurements from 0.0.4/0.0.5 that were not repeated.
 Counts vary by a few samples with timing.
+
+| Check (0.0.10 build, 2026-10-14) | Result |
+| --- | --- |
+| `tests/run_all.py`, Python 3.12.3 with Veusz 4.2.1, and Python 3.13.16 | 6 / 6 checks pass on both, also from the extracted archive |
+| Path loss | constant; CSV with GHz, MHz and unit-less Hz columns and $S_{21}$ given as negative dB; Touchstone v1 `DB`/`MA`/`RI` of a synthetic cable ($0.6\sqrt{f}+0.05f$ dB) recovered to $10^{-5}$ dB; v2 with `21_12` and `12_21`, noise data ignored; `.s1p` refused; no extrapolation |
+| Power tables | interpolation and band edges; level correction against a synthetic FSW (error $-(0.5+0.15f)+0.02P_s$ dB) within 0.05 dB of the exact solution, clamped at +13 dBm, `None` outside the band; JSON and CSV round trip; another file kind and a newer schema refused |
+| OCXO tuning | from DAC 30000, 33500 and 12000 against a slightly curved model (0.3 Hz/count at 10 GHz): within ±20 Hz in ≤ 6 measurements; DAC clamped at 65535 |
+| PyVISA reader (fake E4418B and CNT-90) | `*IDN?`, `SENS:FREQ 12500000000` then `MEAS?`, `-3.21000E+00` → −3.21 dBm; resource-not-found and `OVLD` reported as errors; the install hint when PyVISA is missing |
+| GUI, simulated FSL-0020 | 20 points: 3 typed (Enter records and sets the next point), 17 by the fake meter in an automatic run; saved and reloaded on reconnect; Main tab "+7.80 dBm expected at 10.500000 GHz", out-of-band noted; CSV and `.vszh5` export |
+| GUI, OCXO | DAC 30000 → 31240 in 3 counter readings (+1.8 Hz at 10 GHz); restore; saved value re-sent on connect |
+| GUI, simulated FSW-0020 | 15 points (5 frequencies × 3 levels) by the fake meter; 0 dBm at RF OUT commanded as `POW +2.0` at 10 GHz and re-corrected to `POW +3.1` on moving to 18 GHz; another unit's table not extended |
+| 10 MHz output, bit 5 stuck (no query) | `OUTP:ROSC:STAT OFF`, `STAT?`, `0800`, `STAT?`, one warning; then `OUTP:ROSC:STAT ON`, `STAT?` only; LED *not reported (last sent OFF)*; *Read all* leaves the checkbox alone |
+| 10 MHz output, bit 5 stuck, query answers | `OUTP:ROSC:STAT OFF`, `OUTP:ROSC:STAT?`, `STAT?`; "confirmed by OUTP:ROSC:STAT?"; no native command |
+| NI panel vectors (§10.2) | the 11 power words, `0F`/`08`/`06` switches and the 100 MHz frequency word reproduced |
+| Example session and calibration (`examples/`) | 41 s simulated session (414 samples), 7-page bookmarked PDF and 9-page LuaLaTeX report; simulated calibration rendered by Veusz 4.2.1 |
 
 | Check (0.0.9 build, 2026-10-12) | Result |
 | --- | --- |
@@ -1069,7 +1268,7 @@ latency mean 11.7 ms / p95 16 ms / max 188 ms (quantised, item 6),
 temperature 26.8–57.5 °C (item 7), frequency fixed at 1 GHz, so the ADEV is
 zero at every τ and has no log-scale plot.
 
-**Not yet verified:** the 0.0.8 and 0.0.9 fixes on the instrument; output
+**Not yet verified:** the 0.0.8, 0.0.9 and 0.0.10 changes on the instrument (the REF OUT behaviour of 0.0.10 follows the 2026-10-14 observation, §10.2, but has not itself been run there); the Calibration tab with a real meter or counter (only fakes here) and PyVISA on Windows; output
 power on an FSW with option 2; whether the FSL-0020's REF OUT follows the
 native `08xx` sent by this program (it does with NI's panel) and whether
 `STAT?` bit 5 then changes; the LuaLaTeX report with TeX Live 2025 or MiKTeX on
@@ -1087,6 +1286,42 @@ and `veusz` 4.2.1, `h5py` 3.16.0 (win-64 included) and `pypdf` 6.20.0
 (noarch) on conda-forge were confirmed from their package pages [17], [19],
 [26], which is weaker than a successful solve.
 
+### 10.2 Second hardware check (FSL-0020, 2026-10-13/14)
+
+Reported by the user from the same FSL-0020 (serial 1530200407), with NI's
+soft front panel (SFP release V1.0.21), the 0.0.9 controller, a power meter
+and photographs of the unit.
+
+| # | Observed | Conclusion | 0.0.10 |
+| -- | ------------------ | ------------------ | -------------- |
+| 1 | `OUTP:ROSC:STAT OFF` / `ON` from this program switch REF OUT off and on (power meter); `STAT?` bit 5 stays set | SCPI works; the status bit is stale | §3.5 |
+| 2 | NI's panel log: REF OUT `08 00`/`08 01`, reference source `06 01`/`06 00`, RF `0F 00`/`0F 01` | The native commands this program sends are the panel's | Regression vectors |
+| 3 | NI's power wheel: `03 FF EA` … `03 FF C5`, `03 00 00`, `03 00 96`, `03 00 C8`, `03 FF 7E` | −2.2 … −5.9, 0, +15, +20, −13 dBm: byte-identical to `native_power_command()`. The power meter did not follow the panel either, so the fixed level is the unit, not the command | Regression vectors |
+| 4 | Panel *Set Frequency* `0C 00 17 48 76 E8 00` for 100 MHz | $\mathtt{0x174876E800} = 10^{11}$ mHz = 100 MHz | Regression vector |
+| 5 | 100 MHz asked (panel, or `FREQ 100000000000` here) → output at **656.062 MHz**; the panel still displays 100 MHz | The firmware clamps below-range requests; NI's panel does no range check (it also sent +20 dBm) | §9 #19; limit kept at 0.65 GHz |
+| 6 | Output **+5.3 dBm at 10 GHz**, **−10 dBm at 20 GHz** on the power meter, the same from NI's panel and from this program | Below the +10 dBm datasheet minimum [4] by 4.7 dB and 20 dB; see below | §3.7 to measure the unit's own curve |
+| 7 | Photos: label "QuickSyn Lite Synthesizer", MODEL FSL-0020, CCN 15302, S/N 15302-00407; connectors REF IN, REF OUT, USB, POWER/SPI, RF OUT only | Lite confirmed; no PULSE/AM/FM inputs, as [4] says | — |
+| 8 | NI's calibration panel needs GPIB and an E4418B-class meter | Program-side calibration instead | §3.7 |
+
+**Can cable loss explain item 6?** Coaxial loss in dB is the sum of a
+conductor term growing as $\sqrt f$ and a dielectric term growing as $f$
+[36]:
+
+$$
+L(f) = a\sqrt{f} + b\,f, \quad a, b \ge 0
+\quad\Longrightarrow\quad
+\sqrt{2} \le \frac{L(20\ \mathrm{GHz})}{L(10\ \mathrm{GHz})} \le 2 .
+$$
+
+If the unit put out its minimum +10 dBm at both frequencies, the path
+would have to lose $10 - 5.3 = 4.7$ dB at 10 GHz and $10 - (-10) = 20$ dB
+at 20 GHz, a ratio of $20/4.7 = 4.3$, outside $[1.41, 2]$. So a cable alone
+cannot account for both readings; a sensor out of its range or without its
+cal factor, a damaged connector or adapter (which can resonate), or a real
+output shortfall remain. Measuring the path's $S_{21}$ (or a substitution
+with a known source) and loading it as a `.s2p` in the Calibration tab
+separates the two (§13).
+
 ---
 
 ## 11. Revision history
@@ -1102,6 +1337,7 @@ and `veusz` 4.2.1, `h5py` 3.16.0 (win-64 included) and `pypdf` 6.20.0
 | 0.0.7 | 2026-10-12 | **Output power.** Reported: the level could not be changed. Fixed: Enter now applies the frequency and power boxes (0.0.6 applied only on the Set buttons); every change is read back with `POW?` / `FREQ?` and a mismatch is shown in red, in the status bar, the session log and the console, naming option 2; the level is written with its sign (`POW +12.0`); a *Command* selector adds the native Set Output Power command (`030078`, [1, Table 2a] examples reproduced) with automatic fallback; fixed-output models (FSL Lite, FSL mmW) no longer offer a level box or power sweeps, and the mmW min/max output specification is no longer offered as a control range. **Bring-up aids:** *Read (0D)* (native Get Power) and a console *Send* line. **RF OUTPUT OFF:** red button on the Main tab and on a *Safety* toolbar, confirmed with `STAT?` (§3.4). **Documentation:** §2.1 pyserial vs PyVISA; §3.3, §3.4; conflicts 11–13; model table corrected. **Tests:** `check_smoke.py` covers all of the above. |
 | 0.0.8 | 2026-10-12 | **First hardware session** (FSL-0020, §10.1). **Fixed:** reference-source crash (PySide6 returns `StrEnum` combo data as `str`; the driver now converts all enum arguments); frequencies below 1 GHz could not be typed and the old value was re-sent (new `EntrySpinBox` for every numeric box, out-of-range typing refused with a message); *IDN?* serial and firmware swapped (order confirmed on hardware, option word decoded, no firmware dialog); 15.6 ms timing on Windows/Python 3.12 (`perf_counter`); 10 MHz output switch unchecked (read-back of `OUTP:ROSC:STAT?` and `STAT?`, native `08xx` fallback; reference source likewise with `06xx`). **Added:** Internal/External 10 MHz reference LEDs; *Auto-read all settings every N s*; "RF output is OFF" in power read-backs; suspect-temperature flag. **Export:** *IDN?* labels from the raw fields, so 0.0.7 sessions are labelled correctly. **Simulator:** hardware reply forms (`0xA1`), REF IN presence, native switches. **Documentation:** §3.3 hardware result and the calibration-panel checks, §3.5, §3.6, §5.5, §10.1, conflicts 2 and 13–16. |
 | 0.0.9 | 2026-10-12 | **10 MHz reference output.** The user confirmed that the FSL-0020's REF OUT switches off (NI's panel, power meter), so the fault is the SCPI path, not the hardware. `OUTP:ROSC:STAT?`, never seen to answer on that unit, is now optional: in 0.0.8 a time-out there would have stopped the switch before the native fallback and failed every *Read all settings* and auto-read. The native `08xx` command is kept for the session once it has worked where the SCPI form did not. The warning no longer suggests the output cannot be switched. README §3.5, §9 #17, §10, §10.1, §13 corrected. |
+| 0.0.10 | 2026-10-14 | **Calibration tab** (§3.7), in place of NI's GPIB-only calibration panel: power against frequency (and against level on power-control models) from typed readings or any SCPI power meter through PyVISA, with path loss from a constant, CSV or Touchstone `.s2p`; automatic runs; table, plot against the datasheet, JSON/CSV/`.vszh5`; a per-unit active table giving the expected level at RF OUT on the Main tab and, on power-control models, a corrected commanded level. OCXO tuning with `DIAG:CAL:REF:DAC` against a counter (secant search, ±20 Hz at 10 GHz), restore, and a saved value re-sent on connect. **Nothing undocumented is written to the unit.** **10 MHz output:** SCPI works on the FSL-0020 and bit 5 is stale (§10.2), so `OUTP:ROSC:STAT?` is trusted when it answers and the state is otherwise shown as not reported, without false warnings or a native fallback. Read-backs cleared on connect. `set_reference_dac` docstring cites [3]. **Tests:** new `check_calibration.py` (with the NI panel vectors). **Examples** regenerated, plus a simulated calibration. **Documentation:** §3.5, §3.7, §9 #17–19, §10, §10.2, §12 [35]–[37], §13, §14.1. pyvisa and pyvisa-py added to the environment (optional). |
 
 ---
 
@@ -1143,6 +1379,9 @@ and `veusz` 4.2.1, `h5py` 3.16.0 (win-64 included) and `pypdf` 6.20.0
 | [32] | C. Liechti, "pySerial 3.5," Python Package Index, 23 Nov. 2020 (BSD); documentation. | https://pypi.org/project/pyserial/ ; https://pyserial.readthedocs.io/ |
 | [33] | Python Software Foundation, "What's New In Python 3.13," section *time*: on Windows `monotonic()` now uses `QueryPerformanceCounter()` (1 µs) instead of `GetTickCount64()` (15.6 ms), gh-88494; `time()` likewise, gh-63207. Accessed 12 Oct. 2026. | https://docs.python.org/3/whatsnew/3.13.html |
 | [34] | Python Software Foundation, "time — Time access and conversions" (`perf_counter`, `monotonic`, `get_clock_info`), Python 3 documentation, accessed 12 Oct. 2026. | https://docs.python.org/3/library/time.html |
+| [35] | IBIS Open Forum, "Touchstone File Format Specification," Version 2.1, ratified 26 Jan. 2024 (option line, `MA`/`DB`/`RI`, `[Two-Port Data Order]`, noise data), accessed 14 Oct. 2026. | https://www.ibis.org/touchstone_ver2.1/ ; https://www.ibis.org/touchstone_ver2.1/touchstone_ver2_1.pdf |
+| [36] | D. M. Pozar, *Microwave Engineering*, 4th ed. Hoboken, NJ, USA: Wiley, 2012, Ch. 2 (lossy transmission lines) and Ch. 3 (coaxial line) (attenuation: conductor loss $\propto\sqrt{f}$ through the surface resistance, dielectric loss $\propto f$). | ISBN 978-0-470-63155-3 |
+| [37] | Phase Matrix, Inc., "A Compact Synthesizer Module Offers Instrument-grade Performance and Functionality," *Microwave Journal*, 2 Feb. 2011 ("output power is controlled using an open-loop method"; temperature compensation), accessed 14 Oct. 2026. | https://www.microwavejournal.com/articles/10598-a-compact-synthesizer-module-offers-instrument-grade-performance-and-functionality |
 
 ### Sourcing confidence
 
@@ -1180,6 +1419,12 @@ and `veusz` 4.2.1, `h5py` 3.16.0 (win-64 included) and `pypdf` 6.20.0
 | FSL-0020 output level does not follow `POW` | **High** for that unit | Power meter, with this program and with NI's panel; the cause (no hardware, or a fixed-power calibration [3]) is **unknown** |
 | Temperature doubling after `POW` | **Medium** | Seen four times in one session, ratio 2.00; cause unknown; not checked in NI's panel |
 | Windows 15.6 ms clock on Python 3.12 | **High** | [33], and the logged latencies take only the values 0, 15 and 16 ms |
+| FSL-0020: `OUTP:ROSC:STAT` switches REF OUT, `STAT?` bit 5 stale | **High** for that unit | Power meter on REF OUT (user, 2026-10-14); whether `OUTP:ROSC:STAT?` answers is still unknown |
+| NI panel steps, instruments and the ±20 Hz at 10 GHz tolerance (§3.7) | **High** | [3], read for this release |
+| No published command for writing power calibration or storing to flash | **High** for [1] and [3]; **Medium** overall | Neither document gives one; NI may have it unpublished |
+| Open-loop power control | **Medium** | Vendor article [37], not the datasheet |
+| Cable-loss bound $\sqrt2 \le L(20)/L(10) \le 2$ | **High** for a uniform coaxial line | [36]; does not hold for a damaged connector, an adapter resonance or a sensor error |
+| Calibration tab with real meters | **Unknown** | Tested only with fake PyVISA resources; `MEAS?` / `MEAS:FREQ?` defaults are common SCPI, not checked against a specific manual |
 
 ---
 
@@ -1227,7 +1472,7 @@ and `veusz` 4.2.1, `h5py` 3.16.0 (win-64 included) and `pypdf` 6.20.0
    transport for GPIB (address 5) or any VISA resource. Not started; say
    if either is wanted.
 
-9. **Run 0.0.9 on the FSL-0020.** Choose External with and without a 10 MHz
+9. **Run 0.0.10 on the FSL-0020.** Choose External with and without a 10 MHz
    signal at REF IN (LEDs and warnings); switch the 10 MHz output off and on
    with the power meter on REF OUT and note the status-bar message (SCPI
    confirmed, native kept, or the warning); type 0.800 GHz; try auto-read
@@ -1241,6 +1486,26 @@ and `veusz` 4.2.1, `h5py` 3.16.0 (win-64 included) and `pypdf` 6.20.0
     (`mamba install -c conda-forge qt.py`, or create the environment from
     `environment_quicksyn.yml`); the session ran on the direct PySide6
     fallback.
+
+13. **Calibration on the FSL-0020 (0.0.10).** With the power meter on RF
+    OUT, run *Power vs frequency* from 0.65 to 20 GHz (typed readings are
+    enough); first measure the cable (or its `.s2p`) so the table holds the
+    level at RF OUT. Save, send `active_power_cal.json`. The models and VISA
+    resources of the power meter and counter decide whether *Read power
+    meter* and *Read counter* work as they are.
+14. **Frequency floor.** Send `FREQ 650000000000`, then `FREQ?`, and measure:
+    is 650 MHz reached, or does it clamp near 656.062 MHz like 100 MHz did?
+    The FSL-0020's lower limit will follow.
+15. **`OUTP:ROSC:STAT?`.** Send it on the console *Send* line and note the
+    reply (or the time-out). It decides which row of the §3.5 table applies.
+16. **The level shortfall (§10.2).** Before concluding that the unit is
+    below specification: check the sensor's range and cal factor at 10 and
+    20 GHz, the connectors, and the path loss; the $\sqrt f$–$f$ bound rules
+    out a cable alone.
+
+**Closed in 0.0.10.** *Does SCPI switch the FSL-0020's REF OUT?* Yes; only
+`STAT?` bit 5 is stale (§3.5). *Calibration without NI's GPIB panel:* the
+Calibration tab (§3.7), program-side.
 
 **Closed in 0.0.9.** *Can the FSL-0020 switch REF OUT?* Yes (the user, with
 NI's panel and a power meter); the command path is item 9.
@@ -1311,6 +1576,8 @@ noted, on its PyPI or conda-forge page.
 | LuaLaTeX / TeX Live or MiKTeX | TeX Live 2023 (LuaHBTeX 1.17.0) tested | free licences, mainly LPPL 1.3 and GPL (per package) | compiles the session report as a separate program (optional; not installed by the environment file) | Yes: run as an external program, not linked |
 | Veusz | 4.2.1 (PyPI and conda-forge pages) | GPL-2.0-or-later | renders PDF/PNG from the `.vszh5` (imported, optional) | Yes, because "or later" admits version 3 |
 | CuPy | 14.2.0 (PyPI page) | MIT | GPU reductions (optional) | Yes |
+| PyVISA | 1.16.2 (PyPI and conda-forge pages) | MIT | meter and counter reads, Calibration tab (optional) | Yes |
+| PyVISA-py | 0.8.1 (PyPI and conda-forge pages) | MIT | pure-Python VISA back end (optional) | Yes |
 
 The right-hand column is my application of the FSF's published compatibility
 positions, not legal advice; see the confidence table in §12.

@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 William W. Wallace <wwallace@nrao.edu>
 """Headless smoke test: driver, simulator, logging, sampler and full GUI.
 
-Part of the QuickSyn SCPI controller package, version 0.0.9.
+Part of the QuickSyn SCPI controller package, version 0.0.10.
 Author: William W. Wallace <wwallace@nrao.edu>, NRAO/GBO.
 Licence: GPL-3.0-or-later (see ../LICENSE).
 
@@ -36,6 +36,9 @@ value), the temperature-step flag, and no time.monotonic() in the source.
 Added in 0.0.9: the 10 MHz output switch on firmware that does not answer
 OUTP:ROSC:STAT? (no time-out failure, Read all still works) and the native
 08xx command remembered once it has worked where the SCPI form did not.
+
+0.0.10: the Calibration tab, the stale STAT? bit 5 of the FSL-0020 and the
+NI panel command vectors are checked in check_calibration.py.
 """
 
 import os, sys, time, csv, gzip, pickle, json
@@ -47,7 +50,7 @@ sys.path.insert(0, str(PKG_ROOT))
 sys.dont_write_bytecode = True   # keep __pycache__ out of the package tree
 from pathlib import Path
 
-import quicksyn_scpi_gui_v0_0_9 as app
+import quicksyn_scpi_gui_v0_0_10 as app
 
 print(f"module v{app.__version__}  Qt={app.QT_ABSTRACTION}/{app.QT_BINDING}")
 print(f"pyserial={app.HAVE_PYSERIAL} pyqtgraph={app.HAVE_PYQTGRAPH} "

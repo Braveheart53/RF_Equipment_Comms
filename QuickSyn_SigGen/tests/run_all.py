@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 William W. Wallace <wwallace@nrao.edu>
 """Run every check in this folder, in parallel, and print a summary table.
 
-Part of the QuickSyn SCPI controller package, version 0.0.9.
+Part of the QuickSyn SCPI controller package, version 0.0.10.
 Author: William W. Wallace <wwallace@nrao.edu>, NRAO/GBO.
 Licence: GPL-3.0-or-later (see ../LICENSE).
 
@@ -25,7 +25,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 CHECKS = ("check_release_metadata.py", "check_smoke.py", "check_reduction.py",
-          "check_vszh5.py", "check_console.py")
+          "check_vszh5.py", "check_console.py", "check_calibration.py")
 
 
 def run_one(name: str) -> tuple[str, int, float, str]:
