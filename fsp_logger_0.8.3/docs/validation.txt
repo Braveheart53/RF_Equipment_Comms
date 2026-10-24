@@ -1,0 +1,22 @@
+test_csv_order_and_immutable_copy (test_merge.OutputTests.test_csv_order_and_immutable_copy) ... ok
+test_invalid_channels (test_merge.OutputTests.test_invalid_channels) ... ok
+test_mailbox (test_merge.OutputTests.test_mailbox) ... ok
+test_queue_terminal_capture (test_merge.OutputTests.test_queue_terminal_capture) ... ok
+test_801_bins (test_merge.PlotTests.test_801_bins) ... ok
+test_page_union_and_raw_series (test_merge.PlotTests.test_page_union_and_raw_series) ... ok
+test_precise_names (test_merge.PlotTests.test_precise_names) ... ok
+test_utc_dates (test_merge.PlotTests.test_utc_dates) ... ok
+test_channels_stay_separate (test_merge.PowerTests.test_channels_stay_separate) ... ok
+test_chunks_and_axis (test_merge.PowerTests.test_chunks_and_axis) ... ok
+test_extreme_levels (test_merge.PowerTests.test_extreme_levels) ... ok
+test_linear_not_log_mean (test_merge.PowerTests.test_linear_not_log_mean) ... ok
+test_reject_invalid (test_merge.PowerTests.test_reject_invalid) ... ok
+test_statistics_use_shared_helper (test_merge.PowerTests.test_statistics_use_shared_helper) ... ok
+test_actual_hdf5 (test_merge.SourceTests.test_actual_hdf5) ... skipped 'h5py unavailable: real HDF5 creation not tested'
+test_gui_interlocks_and_display_no_averaging (test_merge.SourceTests.test_gui_interlocks_and_display_no_averaging) ... ok
+test_python38_grammar (test_merge.SourceTests.test_python38_grammar) ... ok
+
+----------------------------------------------------------------------
+Ran 17 tests in 0.079s
+
+OK (skipped=1)

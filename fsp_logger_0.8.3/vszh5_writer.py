@@ -11,7 +11,7 @@
 ===============================================================================
  Title          : Veusz HDF5 Document Writer
  Filename       : vszh5_writer.py
- Version        : 0.0.15 (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+ Version        : 0.0.17 (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
  Author         : William W. Wallace
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
@@ -160,11 +160,14 @@ REFERENCES
 
 REVISION HISTORY
 ----------------
-0.0.15 2026-10-23  FSP logger integration. Python 3.8-safe Bookmarks type
-                   alias; private sibling temporary files for atomic writes;
-                   explicit flush on renderer protocol markers to prevent a
-                   frozen Veusz --listen process waiting after export.
-                   Existing public page and dataset APIs are unchanged.
+0.0.17 2026-10-23  Consolidate numerically stable, chunked linear-power dBm
+                   averaging for the merged logger/report release 0.8.3.
+
+0.0.17 2026-10-23  Add precise frequency_ghz_text() and frequency_time_pages():
+                   Freq_N_GHz and Combined_Freq_vs_Time with datetime axes.
+                   Independent analyzer traces are never averaged together.
+0.0.15 2026-10-23  Python 3.8-safe typing alias; private atomic temp files;
+                   flushed renderer markers to prevent export-complete hangs.
 
 0.0.14 2026-10-19  Released with the GBT RFI Interference Evaluator 0.0.1.
                    Additions only; every 0.0.13 call is unchanged:
@@ -285,8 +288,9 @@ import tempfile
 import time
 import warnings
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
-from typing import Any, Callable, Iterable, Sequence, Union, List
+from typing import Any, Callable, Iterable, Sequence, Union, List, Mapping
 
 import numpy as np
 
@@ -295,7 +299,7 @@ try:
 except ImportError:  # pragma: no cover - reported when a writer is created
     h5py = None
 
-__version__ = "0.0.15"                 # Semantic Versioning 2.0.0
+__version__ = "0.0.17"                 # Semantic Versioning 2.0.0
 __author__ = "William W. Wallace"
 __email__ = "wwallace@nrao.edu"
 __company__ = "NRAO/GBO"
@@ -311,6 +315,7 @@ __all__ = [
     "TRACE_COLOURS", "Trace", "add_title", "xy_page", "image_page",
     # 0.0.12: multi-panel and text pages
     "Panel", "grid_page", "text_page",
+    "frequency_ghz_text", "frequency_time_pages", "linear_power_mean_dbm",
     # 0.0.13: reading a written document back
     "dataset_names", "read_text_dataset", "page_names",
     # 0.0.14: fills, bar charts, step masks, reference lines
@@ -471,13 +476,12 @@ class VeuszWriter:
                                "(mamba install -c conda-forge h5py)")
         self.final_path = Path(path)
         if atomic:
-            # A private sibling prevents one exporter from deleting another's
-            # in-progress file. Same-filesystem replacement remains atomic.
-            descriptor, temporary_filename = tempfile.mkstemp(
-                prefix=self.final_path.name + ".", suffix=".part",
-                dir=str(self.final_path.parent))
+            # Private same-directory temporary file: concurrent writers must
+            # not unlink one another's unfinished documents.
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=self.final_path.name + ".", suffix=".part", dir=str(self.final_path.parent))
             os.close(descriptor)
-            self.path = Path(temporary_filename)
+            self.path = Path(temporary_name)
         else:
             self.path = self.final_path
         self.compress = compress
@@ -997,6 +1001,132 @@ def grid_page(doc: VszDoc, page: str, panels: Sequence[Panel], title: str = "", 
     doc.up()                                     # page -> where we started
 
 
+# %% FREQUENCY-VERSUS-TIME PAGES — 0.0.17
+
+# %% LINEAR-POWER AVERAGING — SHARED BY REPORTS AND FUTURE CALLERS
+
+def linear_power_mean_dbm(levels_dbm: Any, axis: int = 0,
+                          chunk_size: int = 128) -> np.ndarray:
+    """Equal-weight power mean of finite dBm samples, returned in dBm.
+
+    Averages relative milliwatts, not logarithms. Maximum-referenced scaling
+    avoids overflow even outside ordinary RF ranges. Only one chunk of
+    relative linear powers is allocated at a time. This supports disk-backed
+    input without loading a second complete matrix into memory. Independent
+    analyzer channels must be passed separately, never stacked as samples.
+
+    No NaN skipping, weighting, smoothing, interpolation or decimation is
+    implicit. Empty/nonfinite inputs fail rather than produce biased reports.
+    The reduction axis is removed, matching NumPy reduction conventions.
+    """
+    input_levels = np.asarray(levels_dbm, dtype=float)
+    if input_levels.ndim == 0:
+        raise ValueError("Supply at least one sample dimension.")
+    if not isinstance(axis, (int, np.integer)) or not -input_levels.ndim <= axis < input_levels.ndim:
+        raise ValueError("Invalid reduction axis.")
+    if not isinstance(chunk_size, (int, np.integer)) or chunk_size < 1:
+        raise ValueError("chunk_size must be a positive integer.")
+    sample_levels = np.moveaxis(input_levels, axis, 0)
+    if not sample_levels.size:
+        raise ValueError("Cannot average empty power samples.")
+    sample_count = sample_levels.shape[0]
+    maximum_levels = np.full(sample_levels.shape[1:], -np.inf)
+    for first_sample in range(0, sample_count, chunk_size):
+        sample_block = sample_levels[first_sample:first_sample + chunk_size]
+        if not np.all(np.isfinite(sample_block)):
+            raise ValueError("Power samples must all be finite dBm values.")
+        maximum_levels = np.maximum(maximum_levels, np.max(sample_block, axis=0))
+    relative_power_sum = np.zeros_like(maximum_levels)
+    for first_sample in range(0, sample_count, chunk_size):
+        sample_block = sample_levels[first_sample:first_sample + chunk_size]
+        with np.errstate(under="ignore", over="ignore"):
+            relative_power_sum += np.sum(
+                np.power(10.0, (sample_block - maximum_levels) / 10.0), axis=0)
+    return maximum_levels + 10.0 * np.log10(relative_power_sum / sample_count)
+
+
+def frequency_ghz_text(frequency_hz: Any) -> str:
+    """Scale decimal Hz to GHz without coarse rounding/name collisions.
+
+    Decimal(str(value)) respects the supplied float's decimal representation;
+    fixed-point GHz avoids scientific notation in page names and trace keys.
+    """
+    value = Decimal(str(frequency_hz))
+    if not value.is_finite() or value < 0:
+        raise ValueError("Frequency must be finite and nonnegative.")
+    result = format(value / Decimal("1000000000"), "f")
+    if "." in result:
+        result = result.rstrip("0").rstrip(".")
+    return "0" if result in ("", "-0") else result
+
+
+def frequency_time_pages(doc: VszDoc, frequency_hz: Sequence[float], time_dataset: str,
+                         channel_frequency_datasets: Mapping[str, Sequence[str]], *,
+                         xlabel: str = "Time", xmode: str = "datetime",
+                         datetime_format: str = "%VDY-%VDm-%VDd %VDH:%VDM:%VDS") -> list[str]:
+    """Append one page per frequency and a combined page; preserve all raw data.
+
+    Mapping keys identify independent analyzer channels. Mapping values list
+    one raw 1-D dataset per frequency, in input order. Each Freq_N_GHz page
+    overlays the analyzer channels at that frequency. Combined_Freq_vs_Time
+    uses one panel per analyzer channel, so every panel's legend is exactly
+    'N GHz', without merging incompatible hold/detector channels or creating
+    ambiguous duplicate labels. One analyzer channel produces one graph.
+
+    No averaging/interpolation/decimation occurs here. All bins are included;
+    large sweeps necessarily create many pages and crowded combined legends.
+    The caller must avoid naming conflicts with existing document pages.
+    """
+    frequency_names = [frequency_ghz_text(value) for value in frequency_hz]
+    channels = list(channel_frequency_datasets.items())
+    if not frequency_names or len(frequency_names) != len(set(frequency_names)):
+        raise ValueError("At least one frequency with unique GHz text is required.")
+    if not channels or any(len(names) != len(frequency_names) for _, names in channels):
+        raise ValueError("Each analyzer channel requires one dataset per frequency.")
+    if xmode not in ("numeric", "datetime"):
+        raise ValueError("xmode must be numeric or datetime.")
+    pages = []
+    for frequency_index, ghz_text in enumerate(frequency_names):
+        page_name = "Freq_" + ghz_text + "_GHz"
+        traces = [Trace(time_dataset, names[frequency_index], channel_name,
+                        colour=TRACE_COLOURS[channel_index % len(TRACE_COLOURS)],
+                        marker="circle", marker_size="2pt")
+                  for channel_index, (channel_name, names) in enumerate(channels)]
+        xy_page(doc, page_name, traces, title=ghz_text + " GHz versus time",
+                xlabel=xlabel, ylabel="Level (dBm)", xmode=xmode, key=True)
+        if xmode == "datetime" and datetime_format:
+            doc.to(page_name)
+            doc.set("graph/x/TickLabels/format", datetime_format)
+            doc.up()
+        pages.append(page_name)
+    panels = []
+    styles = ("solid", "dashed", "dotted", "dash-dot")
+    for channel_name, datasets in channels:
+        traces = [Trace(time_dataset, dataset_name, frequency_names[index] + " GHz",
+                        colour=TRACE_COLOURS[index % len(TRACE_COLOURS)],
+                        style=styles[(index // len(TRACE_COLOURS)) % len(styles)],
+                        marker="circle", marker_size="2pt")
+                  for index, dataset_name in enumerate(datasets)]
+        panels.append(Panel(traces, title=channel_name, xlabel=xlabel,
+                            ylabel="Level (dBm)", xmode=xmode, key=True))
+    page_name = "Combined_Freq_vs_Time"
+    if len(panels) == 1:
+        xy_page(doc, page_name, panels[0].traces, title="All frequencies versus time — " + channels[0][0],
+                xlabel=xlabel, ylabel="Level (dBm)", xmode=xmode, key=True, width="30cm", height="18cm")
+    else:
+        grid_page(doc, page_name, panels, columns=1, title="All frequencies versus time",
+                  width="30cm", height=str(max(18, 10 * len(panels))) + "cm")
+    if xmode == "datetime" and datetime_format:
+        doc.to(page_name)
+        paths = ["graph/x/TickLabels/format"] if len(panels) == 1 else [
+            "grid/graph%d/x/TickLabels/format" % index for index in range(len(panels))]
+        for path in paths:
+            doc.set(path, datetime_format)
+        doc.up()
+    pages.append(page_name)
+    return pages
+
+
 #: Veusz text markup for a line break (two backslashes in the label text).
 VEUSZ_LINE_BREAK = "\\\\"
 
@@ -1429,7 +1559,10 @@ def render_pages(vszh5: str | os.PathLike, outdir: str | os.PathLike | None = No
     # the start, so a re-render returned nothing).
     written = [pdf_path] if pdf_path is not None else []
     if png_stem is not None:
-        written += sorted(out.glob(f"{glob.escape(png_stem.name)}_p[0-9][0-9]_*.png"))
+        # Frequency-per-page exports can exceed 99 pages; :02d is a
+        # minimum width, not a two-digit limit. Include p100, p1000, ... .
+        written += sorted(path for path in out.glob(f"{glob.escape(png_stem.name)}_p*_*.png")
+                          if re.match(re.escape(png_stem.name) + r"_p[0-9]+_", path.name))
     return sorted(p for p in written
                   if p.is_file() and p.stat().st_mtime >= started - 2.0)
 

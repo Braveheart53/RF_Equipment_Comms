@@ -1,0 +1,85 @@
+--- rs_fsp_logger-6.py
++++ rs_fsp_logger.py
+@@ -6,14 +6,14 @@
+ ===============================================================================
+  Title          : R&S FSP Spectrum Analyzer Trace Logger
+  Filename       : rs_fsp_logger.py
+- Version        : 0.8.2 (Semantic Versioning 2.0.0)
++ Version        : 0.8.3 (Semantic Versioning 2.0.0)
+  Author         : William W. Wallace (application owner)
+  Company        : NRAO/GBO
+  Email          : wwallace@nrao.edu
+  Modified       : 2026-10-23
+  Language       : Python 3.8 through 3.12 (tested endpoints)
+  Requires       : See requirements.txt; optional standalone Veusz for PDF/PNG
+- Companions     : fsp_background 0.1.1, fsp_reports 0.1.2, vszh5_writer 0.0.16
++ Companions     : fsp_background 0.1.2, fsp_reports 0.1.3, vszh5_writer 0.0.17
+  Licence        : Supplied logger's license not declared; no grant inferred.
+  Attribution    : Author/contact copied from supplied writer at user's request;
+                   this integration includes AI-generated modifications.
+@@ -21,7 +21,7 @@
+ 
+ REVISION HISTORY
+ ----------------
+-0.8.2: All-bin Freq_N_GHz and Combined_Freq_vs_Time native datetime plots;
++0.8.3: All-bin Freq_N_GHz and Combined_Freq_vs_Time native datetime plots;
+        retain every prior plot. Full text menu/toolbar, dark/light/system
+        display themes, persistent preference and author/About information.
+ 0.8.1: Isolated reporting, bounded async CSV, coalesced live display, serial
+@@ -96,7 +96,7 @@
+ #         thread without killing Spyder kernel. Removed 30 s fetch test
+ #         from Diagnostics (the processEvents spin loop was starving
+ #         Spyder's heartbeat). Probe Traces button now synchronous.
+-APP_VERSION = "0.8.2"
++APP_VERSION = "0.8.3"
+ 
+ # ---------------------------------------------------------------------------
+ # %% Python version handling
+@@ -1148,13 +1148,14 @@
+             return self._fetch_one(trace_num, timeout_s * 2.0)
+ 
+     def _trigger_with_progress(self, idx: int):
+-        """One VISA owner; GUI timer animates without concurrent SCPI access.
+-
+-        Stop waits for this serial call/timeout. No detached instrument
+-        thread can outlive the worker or have its handle closed mid-read.
++        """One serial VISA owner; progress animation belongs to the GUI timer.
++
++        Stop is cooperative: the current trigger call finishes or times out.
++        Never leave a detached SCPI thread or close its VISA handle underneath
++        a pending read. GUI progress does not send analyzer queries.
+         """
+-        total_seconds = max(0.05, self._sweep_total)
+-        self.inst.trigger_and_wait(total_seconds * 3.0 + 5.0)
++        total_sweep_seconds = max(0.05, self._sweep_total)
++        self.inst.trigger_and_wait(total_sweep_seconds * 3.0 + 5.0)
+         self.captureProgress.emit(idx, 1.0)
+ 
+ 
+@@ -1270,7 +1271,7 @@
+         version_lbl.setObjectName("versionLabel")
+         version_lbl.setStyleSheet("font-family: monospace;")
+         version_lbl.setToolTip(
+-            "0.8.2: frequency-time pages; text menus; dark/light themes.\n"
++            "0.8.3: frequency-time pages; text menus; dark/light themes.\n"
+             "0.7.0: TRAC? (no :DATA), MODE-based detection, no spin loops.\n"
+             "0.6.0: continuous-sweep aware, probe-based trace detection.\n"
+             "0.5.0: initial real-FSP version (single-sweep, MODE/STAT detection).")
+@@ -1979,7 +1980,7 @@
+         for number in sorted(traces):
+             if number not in self._plot_curves:
+                 color = self.display_trace_colors[(number - 1) % 3]
+-                self._plot_curves[number] = self.plot.plot(pen=pg.mkPen(color, width=2), name="Trace %d" % number)
++                self._plot_curves[number] = self.plot.plot(pen=pg.mkPen(color, width=2), name="Trace %d" % number, autoDownsample=False, downsample=1)
+             self._plot_curves[number].setData(freq, traces[number])
+         for number in set(self._plot_curves) - set(traces):
+             self.plot.removeItem(self._plot_curves.pop(number))
+@@ -2341,7 +2342,7 @@
+             "<b>R&amp;S FSP Trace Logger " + APP_VERSION + "</b><br>"
+             "Author / application owner: William W. Wallace<br>"
+             "Company: NRAO/GBO<br>Email: wwallace@nrao.edu<br>"
+-            "Native Veusz writer: 0.0.16; report engine: 0.1.2<br>"
++            "Native Veusz writer: 0.0.17; report engine: 0.1.3<br>"
+             "Python 3.8–3.12; generated integration update 2026-10-23.<br>"
+             "Source attribution/license notices remain in the supplied modules.")
+ 

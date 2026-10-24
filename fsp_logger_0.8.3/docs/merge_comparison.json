@@ -1,0 +1,57 @@
+{
+  "pages_three_channels_three_bins": {
+    "0.8.1": [
+      "measurement_report",
+      "trace1_spectral_envelope",
+      "trace1_waterfall",
+      "trace1_peak_history",
+      "trace2_spectral_envelope",
+      "trace2_waterfall",
+      "trace2_peak_history",
+      "trace3_spectral_envelope",
+      "trace3_waterfall",
+      "trace3_peak_history",
+      "last_capture"
+    ],
+    "0.8.2": [
+      "measurement_report",
+      "trace1_spectral_envelope",
+      "trace1_waterfall",
+      "trace1_peak_history",
+      "trace2_spectral_envelope",
+      "trace2_waterfall",
+      "trace2_peak_history",
+      "trace3_spectral_envelope",
+      "trace3_waterfall",
+      "trace3_peak_history",
+      "last_capture",
+      "Freq_1_GHz",
+      "Freq_1.25_GHz",
+      "Freq_1.5_GHz",
+      "Combined_Freq_vs_Time"
+    ],
+    "0.8.3": [
+      "measurement_report",
+      "trace1_spectral_envelope",
+      "trace1_waterfall",
+      "trace1_peak_history",
+      "trace2_spectral_envelope",
+      "trace2_waterfall",
+      "trace2_peak_history",
+      "trace3_spectral_envelope",
+      "trace3_waterfall",
+      "trace3_peak_history",
+      "last_capture",
+      "Freq_1_GHz",
+      "Freq_1.25_GHz",
+      "Freq_1.5_GHz",
+      "Combined_Freq_vs_Time"
+    ]
+  },
+  "page_union_verified": true,
+  "legacy_datasets_numerically_preserved": true,
+  "instrument_and_acquisition_ast_equal_to_081": true,
+  "all_081_mainwindow_methods_preserved": true,
+  "runtime": "3.12.8 (main, Aug 11 2026, 02:20:20) [GCC 15.2.0]",
+  "limits": "Qt, h5py, Veusz and Python 3.8 runtime unavailable. Document commands tested with memory recorder; real rendering not performed."
+}

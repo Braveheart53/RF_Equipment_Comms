@@ -3,35 +3,42 @@
 """
 R&S FSP Spectrum Analyzer Trace Logger
 ======================================
+===============================================================================
+ Title          : R&S FSP Spectrum Analyzer Trace Logger
+ Filename       : rs_fsp_logger.py
+ Version        : 0.8.3 (Semantic Versioning 2.0.0)
+ Author         : William W. Wallace (application owner)
+ Company        : NRAO/GBO
+ Email          : wwallace@nrao.edu
+ Modified       : 2026-10-23
+ Language       : Python 3.8 through 3.12 (tested endpoints)
+ Requires       : See requirements.txt; optional standalone Veusz for PDF/PNG
+ Companions     : fsp_background 0.1.2, fsp_reports 0.1.3, vszh5_writer 0.0.17
+ Licence        : Supplied logger's license not declared; no grant inferred.
+ Attribution    : Author/contact copied from supplied writer at user's request;
+                  this integration includes AI-generated modifications.
+===============================================================================
 
-Filename : rs_fsp_logger.py
-Version  : 0.8.1 (supplied baseline: 0.7.4)
-Modified : 2026-10-23
-Python   : 3.8 through 3.12
-Modules  : fsp_background.py 0.1.1, fsp_reports.py 0.1.1,
-           vszh5_writer.py 0.0.15 (William W. Wallace's native writer)
-
-Revision history
+REVISION HISTORY
 ----------------
-0.8.1: Completed package delivery; validated stop/restart/close lifecycle.
-0.8.0: Integration design: bounded background CSV output, coalesced live
-       display, process-isolated Veusz reporting and reciprocal interlocks.
+0.8.3: All-bin Freq_N_GHz and Combined_Freq_vs_Time native datetime plots;
+       retain every prior plot. Full text menu/toolbar, dark/light/system
+       display themes, persistent preference and author/About information.
+0.8.1: Isolated reporting, bounded async CSV, coalesced live display, serial
+       VISA ownership, cooperative stop/drain/close and reciprocal interlocks.
 
-Acquisition policy
-------------------
-Report processing is allowed ONLY when acquisition and CSV draining have
-ended, including scheduled-start waiting. There is no portable CPU-load
-threshold that guarantees sampling deadlines. Reports run in a QProcess;
-per-trace numerical reductions are parallel. The analyzer VISA session is
-strictly serial; do NOT parallelize its queries. The CSV consumer has one
-ordered file owner, a bounded queue and an explicit stop-on-overload path.
-This is a best-effort desktop logger, not a hard-real-time acquisition system.
+Processing policy
+-----------------
+Reports NEVER run during sampling, scheduled waiting or CSV draining.
+Sampling is disabled while reports run. This protects this instance, not
+other applications or hard-real-time deadlines. Numerical per-channel work
+is parallel; VISA access is intentionally serial in one acquisition worker.
 
 
 Connects to a Rohde & Schwarz FSP-series spectrum analyzer over Ethernet (VISA TCPIP),
 detects active traces, waits for the running sweep to finish, then captures every
 N seconds and writes a CSV row per (frequency, capture) sample.
-Each run creates/replaces its selected CSV; it does not append to prior runs.
+Each run creates/replaces the selected CSV; it does not append to prior runs.
 
 CSV layout (one row per frequency point, per capture):
     date, time, timestamp_iso, freq_hz, trace1_dBm, trace2_dBm, trace3_dBm, ...
@@ -39,7 +46,7 @@ Only columns for traces that were active at the start of the run are included.
 
 Features
 --------
-* QtPy abstraction layer (packaged and tested with PyQt5)
+* QtPy abstraction layer (packaged/tested with PyQt5)
 * Filename field, planned start time, manual Start, Stop
 * Active-trace LEDs (1, 2, 3) + Recording LED
 * Per-capture progress bar (driven by sweep time)
@@ -70,7 +77,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-
 from fsp_background import AsyncCaptureCsvWriter, LatestCaptureMailbox
 
 # ---------------------------------------------------------------------------
@@ -90,7 +96,7 @@ from fsp_background import AsyncCaptureCsvWriter, LatestCaptureMailbox
 #         thread without killing Spyder kernel. Removed 30 s fetch test
 #         from Diagnostics (the processEvents spin loop was starving
 #         Spyder's heartbeat). Probe Traces button now synchronous.
-APP_VERSION = "0.8.1"
+APP_VERSION = "0.8.3"
 
 # ---------------------------------------------------------------------------
 # %% Python version handling
@@ -1019,7 +1025,8 @@ class AcquisitionWorker(QtCore.QObject):
         self.statusMessage.emit("Recording…")
         self.recordingStateChanged.emit(True)
 
-        # Put instrument in single-sweep mode for clean grabs
+        # Existing instrument abstraction preserves continuous sweep by
+        # default. arm_single() only changes mode when explicitly configured.
         self.inst.arm_single()
 
         next_trigger = _perf()
@@ -1069,7 +1076,7 @@ class AcquisitionWorker(QtCore.QObject):
                 )
                 break
 
-            # Timestamp the completed read, not the later disk write.
+            # Timestamp read completion, not later formatting/disk output.
             self._csv_writer.submit(datetime.now(), traces)
             self.display_mailbox.publish(idx, self._freq_axis, traces)
 
@@ -1202,7 +1209,7 @@ class LedIndicator(QtWidgets.QFrame):
 TRACE_COLORS = ["#f1c40f", "#3498db", "#e74c3c"]  # 1, 2, 3
 
 
-# %% MAIN GUI AND REPORT PROCESS
+# %% MAIN GUI AND ISOLATED REPORTING
 class MainWindow(QtWidgets.QMainWindow):
     requestStop = Signal()
 
@@ -1226,18 +1233,24 @@ class MainWindow(QtWidgets.QMainWindow):
         self.close_after_acquisition = False
         self.capture_progress_started = None
         self.capture_progress_duration = 1.0
-
+        self.settings = QtCore.QSettings("William W Wallace", "R&S FSP Trace Logger")
+        self.base_palette = QtGui.QPalette(self.palette())
+        self.display_trace_colors = list(TRACE_COLORS)
         self._build_ui()
         self._wire_signals()
         self.acquisition_locked_controls = (self.screen_auto_rb, self.screen_a_rb, self.screen_b_rb,
-                                            self.file_edit, self.browse_btn, self.interval_spin,
-                                            self.start_dt, self.now_btn)
+                                            self.file_edit, self.browse_btn, self.interval_spin, self.start_dt, self.now_btn, self.debug_check)
+        self._build_menus()
+        saved_renderer = str(self.settings.value("veusz_executable", ""))
+        if saved_renderer and Path(saved_renderer).is_file() and not os.environ.get("VEUSZ_EXE"):
+            os.environ["VEUSZ_EXE"] = saved_renderer
+        self.apply_theme(str(self.settings.value("theme", "system")), persist=False)
         self.display_timer = QTimer(self)
         self.display_timer.setInterval(100)
         self.display_timer.timeout.connect(self._refresh_live_display)
         self.display_timer.start()
         self.report_timer = QTimer(self)
-        self.report_timer.setInterval(1000)
+        self.report_timer.setInterval(500)
         self.report_timer.timeout.connect(self._update_report_availability)
         self.report_timer.start()
         self._update_report_availability()
@@ -1255,9 +1268,10 @@ class MainWindow(QtWidgets.QMainWindow):
         header.addWidget(title_lbl)
         header.addStretch(1)
         version_lbl = QtWidgets.QLabel(f"v{APP_VERSION}")
-        version_lbl.setStyleSheet("color: #888; font-family: monospace;")
+        version_lbl.setObjectName("versionLabel")
+        version_lbl.setStyleSheet("font-family: monospace;")
         version_lbl.setToolTip(
-            "0.8.1: isolated reports, queued CSV, bounded live display.\n"
+            "0.8.3: frequency-time pages; text menus; dark/light themes.\n"
             "0.7.0: TRAC? (no :DATA), MODE-based detection, no spin loops.\n"
             "0.6.0: continuous-sweep aware, probe-based trace detection.\n"
             "0.5.0: initial real-FSP version (single-sweep, MODE/STAT detection).")
@@ -1289,7 +1303,7 @@ class MainWindow(QtWidgets.QMainWindow):
         cl.addWidget(self.diag_btn, 1, 8)
         cl.addWidget(QtWidgets.QLabel("Instrument ID:"), 1, 0)
         self.idn_label = QtWidgets.QLabel("(not connected)")
-        self.idn_label.setStyleSheet("color: #888;")
+        self.idn_label.setObjectName("instrumentIdentity")
         cl.addWidget(self.idn_label, 1, 1, 1, 5)
 
         # FSP screen selector. The FSP-38 has two measurement screens
@@ -1667,7 +1681,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.probe_btn.setEnabled(False)
         original_status = self.status_label.text()
         self.status_label.setText("Probing traces…")
-        # No nested event loop while this GUI slot owns the VISA session.
+        # Do not pump nested events while this slot owns the VISA session.
         try:
             try:
                 self._sweep_settings = self.instrument.sweep_settings()
@@ -1748,7 +1762,7 @@ class MainWindow(QtWidgets.QMainWindow):
             # Step 1: identify the instrument. Just one short query.
             idn = self.instrument.idn()
             self.idn_label.setText(idn)
-            self.idn_label.setStyleSheet("color: #2ecc71;")
+            self.idn_label.setStyleSheet("")
             # Step 2: read sweep settings (cheap). Skip trace probing here.
             try:
                 self._sweep_settings = self.instrument.sweep_settings()
@@ -1791,7 +1805,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 pass
             self.instrument = None
         self.idn_label.setText("(not connected)")
-        self.idn_label.setStyleSheet("color: #888;")
+        self.idn_label.setObjectName("instrumentIdentity")
         self.connect_btn.setEnabled(True)
         self.disconnect_btn.setEnabled(False)
         self.diag_btn.setEnabled(False)
@@ -1890,12 +1904,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 return
 
         if os.path.exists(filename):
-            answer = QtWidgets.QMessageBox.question(self, "Replace existing CSV?",
-                "Recording will replace:\n" + os.path.abspath(filename),
-                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
+            answer = QtWidgets.QMessageBox.question(self, "Replace CSV?", "Recording replaces:\n" + os.path.abspath(filename),
+                        QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
             if answer != QtWidgets.QMessageBox.Yes:
                 return
-        # Revalidate after any modal dialog processed queued GUI events.
         if self.thread is not None or self.report_process is not None:
             return
         self.last_acquisition_error = ""
@@ -1916,8 +1928,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.worker.captureProgress.connect(self.on_capture_progress)
         self.worker.recordingStateChanged.connect(self.led_rec.setOn)
         self.worker.errorOccurred.connect(self.on_worker_error)
-        # Direct quit is safe and does not depend on the GUI event loop.
-        # Only QThread.finished permits releasing the thread references.
         self.worker.finished.connect(self.thread.quit, Qt.DirectConnection)
         self.worker.finished.connect(self.worker.deleteLater)
         self.thread.finished.connect(self.on_worker_finished)
@@ -1966,32 +1976,31 @@ class MainWindow(QtWidgets.QMainWindow):
     def on_capture_finished(self, idx: int, freq, traces: dict):
         self.progress.setValue(1000)
         self.status_label.setText(f"Capture #{idx} queued for CSV ({len(freq)} pts × {len(traces)} traces).")
-        # Persistent curves avoid repeated scene/legend construction.
-        for trace_number in sorted(traces):
-            if trace_number not in self._plot_curves:
-                color = TRACE_COLORS[(trace_number - 1) % len(TRACE_COLORS)]
-                self._plot_curves[trace_number] = self.plot.plot(
-                    pen=pg.mkPen(color, width=2), name="Trace %d" % trace_number)
-            self._plot_curves[trace_number].setData(freq, traces[trace_number])
-        for trace_number in set(self._plot_curves) - set(traces):
-            self.plot.removeItem(self._plot_curves.pop(trace_number))
+        # Reuse curves; display mailbox bounds queued GUI memory.
+        for number in sorted(traces):
+            if number not in self._plot_curves:
+                color = self.display_trace_colors[(number - 1) % 3]
+                self._plot_curves[number] = self.plot.plot(pen=pg.mkPen(color, width=2), name="Trace %d" % number, autoDownsample=False, downsample=1)
+            self._plot_curves[number].setData(freq, traces[number])
+        for number in set(self._plot_curves) - set(traces):
+            self.plot.removeItem(self._plot_curves.pop(number))
 
-    # ----- Finalization and process admission -----
+    # %% COOPERATIVE ACQUISITION CLEANUP
     @Slot(str)
     def on_worker_error(self, message):
-        # Defer modal dialogs until the producer and CSV consumer finish.
         self.last_acquisition_error = message
-        self.status_label.setText("Acquisition error; finishing queued CSV output…")
+        self.status_label.setText("Acquisition/output error; draining CSV…")
 
     @Slot()
     def on_worker_finished(self):
-        # Connected to QThread.finished, never to a still-running worker.
-        # Read the independent mailbox, not a potentially deleted QObject.
+        # Only QThread.finished releases references; never wait()/terminate()
+        # from GUI slots. CSV drain completes before the worker emits finished.
         self._refresh_live_display()
         self.thread = None
         self.worker = None
         self.display_mailbox = None
         self.capture_progress_started = None
+        self._capture_in_progress = False
         self.led_rec.setOn(False)
         self.progress.setValue(0)
         self.stop_btn.setEnabled(False)
@@ -2002,8 +2011,7 @@ class MainWindow(QtWidgets.QMainWindow):
         for control in self.acquisition_locked_controls:
             control.setEnabled(True)
         self._update_report_availability()
-        self.status_label.setText("Idle; CSV writer closed." if not self.last_acquisition_error
-                                  else "Acquisition/output error; see error dialog.")
+        self.status_label.setText("Idle; CSV writer closed." if not self.last_acquisition_error else "Stopped with acquisition/output error.")
         if self.last_acquisition_error:
             QtWidgets.QMessageBox.critical(self, "Acquisition error", self.last_acquisition_error)
         if self.close_after_acquisition:
@@ -2011,36 +2019,30 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _refresh_live_display(self):
         if self.capture_progress_started is not None:
-            fraction_complete = min(0.99, (time.perf_counter() - self.capture_progress_started) /
-                                    self.capture_progress_duration)
-            self.progress.setValue(int(1000 * fraction_complete))
+            fraction = min(0.99, (time.perf_counter() - self.capture_progress_started) / self.capture_progress_duration)
+            self.progress.setValue(int(1000 * fraction))
         if self.display_mailbox is not None:
             frame = self.display_mailbox.take()
             if frame is not None:
                 self.on_capture_finished(*frame)
 
+    # %% REPORT PROCESS ADMISSION AND COMPLETION
     def _report_unavailable_reason(self):
-        """Conservative admission control, not a speculative CPU-load guess.
-
-        A non-None thread includes scheduled waiting, stopping and disk drain.
-        Reports never compete with sampling. The reciprocal start guard keeps
-        acquisition disabled until the isolated report process has exited.
-        """
         if self.thread is not None:
-            return "Reports disabled during acquisition, scheduled waiting, or CSV drain."
+            return "Reports disabled during sampling, scheduled waiting, or CSV drain."
         if self.report_process is not None:
-            return "A report is running; acquisition is also disabled until it finishes."
-        for companion in ("fsp_reports.py", "vszh5_writer.py"):
-            if not Path(__file__).resolve().with_name(companion).is_file():
-                return "Keep all supplied Python modules together: missing " + companion
+            return "Reports running; acquisition disabled until process exits."
+        for filename in ("fsp_reports.py", "vszh5_writer.py"):
+            if not Path(__file__).resolve().with_name(filename).is_file():
+                return "Keep supplied modules together; missing " + filename
         if importlib.util.find_spec("h5py") is None:
-            return "Install h5py in this Python environment to enable reporting."
-        selected_csv = Path(self.file_edit.text().strip()).expanduser()
+            return "Install h5py in this Python environment to enable reports."
+        source = Path(self.file_edit.text().strip()).expanduser()
         try:
-            if not selected_csv.is_file() or selected_csv.stat().st_size == 0:
+            if not source.is_file() or source.stat().st_size == 0:
                 return "Select a nonempty, completed logger CSV in Output File."
         except OSError:
-            return "The selected CSV is inaccessible."
+            return "Selected CSV is inaccessible."
         return ""
 
     @Slot()
@@ -2049,15 +2051,14 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         reason = self._report_unavailable_reason()
         self.report_btn.setEnabled(not reason)
-        self.report_btn.setToolTip(reason or "Generate native Veusz plots and reports from this completed CSV.")
+        self.report_btn.setToolTip(reason or "All native plots including every frequency versus time.")
         self.render_reports_check.setEnabled(self.thread is None and self.report_process is None)
         can_start = self.instrument is not None and self.thread is None and self.report_process is None
         self.start_manual_btn.setEnabled(can_start)
         self.start_scheduled_btn.setEnabled(can_start)
-        if self.report_process is None and self.report_result_message:
-            self.report_status_label.setText(self.report_result_message)
-        else:
-            self.report_status_label.setText(reason or "Ready: analysis runs only after sampling and CSV output stop.")
+        self.report_status_label.setText(self.report_result_message if self.report_process is None and self.report_result_message
+                                         else reason or "Ready: idle-only native Veusz plots and reports.")
+        self._sync_menu_actions()
 
     @Slot()
     def on_create_reports(self):
@@ -2065,27 +2066,25 @@ class MainWindow(QtWidgets.QMainWindow):
         if reason:
             self.report_status_label.setText(reason)
             return
-        source_csv = Path(self.file_edit.text().strip()).expanduser().resolve()
-        suggested_directory = source_csv.with_name(source_csv.stem + "_reports_" + datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
-        selected_directory, _ = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Choose NEW report folder name (must not already exist)", str(suggested_directory), "All files (*)")
-        if not selected_directory:
+        source = Path(self.file_edit.text().strip()).expanduser().resolve()
+        suggested = source.with_name(source.stem + "_reports_" + datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
+        selected, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Choose NEW report folder name (must not exist)", str(suggested), "All files (*)")
+        if not selected:
             return
-        if Path(selected_directory).exists():
-            QtWidgets.QMessageBox.warning(self, "Existing destination", "Choose a new folder name; existing reports are not overwritten.")
+        if Path(selected).exists():
+            QtWidgets.QMessageBox.warning(self, "Existing destination", "Choose a new folder; reports are never overwritten.")
             return
-        # Modal dialogs pump events: recheck state after the selection returns.
+        # Modal dialogs pump Qt events. Recheck state before publishing guard.
         reason = self._report_unavailable_reason()
         if reason:
             self.report_status_label.setText(reason)
             return
-        self.report_output_directory = str(Path(selected_directory).resolve())
+        self.report_output_directory = str(Path(selected).resolve())
         self.report_stdout.clear()
         self.report_stderr.clear()
         self.report_result_message = ""
         process = QtCore.QProcess(self)
         environment = QtCore.QProcessEnvironment.systemEnvironment()
-        # Avoid nested numerical thread pools in the report child.
         for variable in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
             environment.insert(variable, "1")
         environment.insert("PYTHONUNBUFFERED", "1")
@@ -2094,11 +2093,10 @@ class MainWindow(QtWidgets.QMainWindow):
         process.readyReadStandardError.connect(self._read_report_stderr)
         process.finished.connect(self._on_report_finished)
         process.errorOccurred.connect(self._on_report_error)
-        arguments = [str(Path(__file__).resolve().with_name("fsp_reports.py")), "--csv", str(source_csv),
-                     "--output-dir", self.report_output_directory]
+        arguments = [str(Path(__file__).resolve().with_name("fsp_reports.py")), "--csv", str(source), "--output-dir", self.report_output_directory]
         if self.render_reports_check.isChecked():
             arguments.append("--render")
-        self.report_process = process  # Publish the guard BEFORE starting.
+        self.report_process = process
         self._update_report_availability()
         process.start(sys.executable, arguments)
 
@@ -2122,29 +2120,316 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self._read_report_stdout()
         self._read_report_stderr()
-        finished_process = self.report_process
+        old_process = self.report_process
         self.report_process = None
-        finished_process.deleteLater()
-        successful = exit_code == 0 and exit_status == QtCore.QProcess.NormalExit
-        if successful:
+        old_process.deleteLater()
+        success = exit_code == 0 and exit_status == QtCore.QProcess.NormalExit
+        if success:
             self.report_result_message = "Reports complete: " + self.report_output_directory
             try:
-                status = json.loads(self.report_stdout.decode("utf-8", errors="replace").strip().splitlines()[-1])
-                if status.get("rendering", {}).get("status") == "unavailable_or_failed":
-                    self.report_result_message = "Native plots/reports complete; PDF/PNG unavailable. See report.md in " + self.report_output_directory
+                result = json.loads(self.report_stdout.decode("utf-8", errors="replace").strip().splitlines()[-1])
+                if result.get("rendering", {}).get("status") == "unavailable_or_failed":
+                    self.report_result_message = "Native plots complete; PDF/PNG unavailable. See report.md in " + self.report_output_directory
             except (ValueError, IndexError):
                 pass
         else:
-            self.report_result_message = "Report generation failed; original CSV was not modified."
+            self.report_result_message = "Report generation failed; source CSV unchanged."
         self._update_report_availability()
-        if not successful:
+        if not success:
             QtWidgets.QMessageBox.critical(self, "Report generation failed",
-                self.report_stderr.decode("utf-8", errors="replace").strip() or "Report subprocess exited unexpectedly.")
+                self.report_stderr.decode("utf-8", errors="replace").strip() or "Report process exited unexpectedly.")
 
-    # ----- Cooperative window shutdown -----
+    # %% COMPLETE TEXT MENUS / TOOLBAR
+    def _build_menus(self):
+        self.menu_button_bindings = []
+        self.menu_checkbox_bindings = []
+        self.menu_control_bindings = []
+        self.menuBar().setNativeMenuBar(False)
+        file_menu = self.menuBar().addMenu("&File")
+        connection_menu = self.menuBar().addMenu("&Connection")
+        acquisition_menu = self.menuBar().addMenu("&Acquisition")
+        view_menu = self.menuBar().addMenu("&View")
+        tools_menu = self.menuBar().addMenu("&Tools")
+        help_menu = self.menuBar().addMenu("&Help")
+        action_class = getattr(QtGui, "QAction", None) or QtWidgets.QAction
+        group_class = getattr(QtGui, "QActionGroup", None) or QtWidgets.QActionGroup
+
+        def action(menu, text, callback, shortcut=""):
+            result = action_class(text, self)
+            result.triggered.connect(lambda checked=False: callback())
+            if shortcut:
+                result.setShortcut(shortcut)
+            menu.addAction(result)
+            return result
+
+        def button_action(menu, text, button, shortcut=""):
+            result = action(menu, text, button.click, shortcut)
+            self.menu_button_bindings.append((result, button))
+            button.installEventFilter(self)
+            return result
+
+        def check_action(menu, text, control):
+            result = action_class(text, self)
+            result.setCheckable(True)
+            result.setChecked(control.isChecked())
+            result.toggled.connect(control.setChecked)
+            control.toggled.connect(result.setChecked)
+            menu.addAction(result)
+            self.menu_checkbox_bindings.append((result, control))
+            return result
+
+        button_action(file_menu, "Choose output CSV…", self.browse_btn, "Ctrl+O")
+        self.report_action = button_action(file_menu, "Create Veusz plots / reports…", self.report_btn, "Ctrl+R")
+        self.open_report_action = action(file_menu, "Open last report folder", self._open_report_folder)
+        file_menu.addSeparator()
+        action(file_menu, "E&xit", self.close, "Ctrl+Q")
+        connect_action = button_action(connection_menu, "Connect", self.connect_btn)
+        disconnect_action = button_action(connection_menu, "Disconnect", self.disconnect_btn)
+        check_action(connection_menu, "Demo mode", self.demo_check)
+        check_action(connection_menu, "Log SCPI to stderr", self.debug_check)
+        self.resource_action = action(connection_menu, "VISA resource…", self._edit_resource)
+        self.menu_control_bindings.append((self.resource_action, self.resource_edit))
+        backend_menu = connection_menu.addMenu("VISA backend")
+        self.backend_actions = []
+        backend_group = group_class(self)
+        backend_group.setExclusive(True)
+        for index in range(self.backend_combo.count()):
+            result = action_class(self.backend_combo.itemText(index), self)
+            result.setCheckable(True)
+            result.triggered.connect(lambda checked, value=index: self.backend_combo.setCurrentIndex(value) if checked and self.backend_combo.isEnabled() else None)
+            backend_group.addAction(result)
+            backend_menu.addAction(result)
+            self.backend_actions.append(result)
+        screen_menu = connection_menu.addMenu("Analyzer screen")
+        screen_group = group_class(self)
+        screen_group.setExclusive(True)
+        for control in (self.screen_auto_rb, self.screen_a_rb, self.screen_b_rb):
+            result = check_action(screen_menu, control.text(), control)
+            screen_group.addAction(result)
+        button_action(connection_menu, "Diagnostics…", self.diag_btn)
+        button_action(connection_menu, "Probe traces", self.probe_btn)
+        start_action = button_action(acquisition_menu, "Start now", self.start_manual_btn, "F5")
+        button_action(acquisition_menu, "Start at planned time", self.start_scheduled_btn)
+        stop_action = button_action(acquisition_menu, "Stop and drain CSV", self.stop_btn, "F6")
+        acquisition_menu.addSeparator()
+        result = action(acquisition_menu, "Sampling interval…", self._edit_interval)
+        self.menu_control_bindings.append((result, self.interval_spin))
+        result = action(acquisition_menu, "Planned start time…", self._edit_start_time)
+        self.menu_control_bindings.append((result, self.start_dt))
+        button_action(acquisition_menu, "Set planned start to now", self.now_btn)
+        self.theme_group = group_class(self)
+        self.theme_group.setExclusive(True)
+        self.theme_actions = {}
+        theme_menu = view_menu.addMenu("Theme")
+        for mode, label in (("system", "System / application"), ("dark", "Dark"), ("light", "Light")):
+            result = action_class(label, self)
+            result.setCheckable(True)
+            result.triggered.connect(lambda checked, value=mode: self.apply_theme(value) if checked else None)
+            self.theme_group.addAction(result)
+            theme_menu.addAction(result)
+            self.theme_actions[mode] = result
+        action(view_menu, "Autoscale live plot", self.plot.enableAutoRange, "Ctrl+0")
+        self.toolbar = self.addToolBar("Acquisition and reports")
+        self.toolbar.setObjectName("acquisition_reports_toolbar")
+        self.toolbar.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        for result in (connect_action, disconnect_action, start_action, stop_action, self.report_action):
+            self.toolbar.addAction(result)
+        view_menu.addAction(self.toolbar.toggleViewAction())
+        self.statusbar_action = action_class("Status bar", self)
+        self.statusbar_action.setCheckable(True)
+        self.statusbar_action.setChecked(True)
+        self.statusbar_action.toggled.connect(self.statusBar().setVisible)
+        view_menu.addAction(self.statusbar_action)
+        button_action(tools_menu, "Create all Veusz plots / reports…", self.report_btn)
+        check_action(tools_menu, "Also render PDF + PNG", self.render_reports_check)
+        self.veusz_action = action(tools_menu, "Select standalone Veusz executable…", self._select_veusz)
+        button_action(tools_menu, "Instrument diagnostics…", self.diag_btn)
+        button_action(tools_menu, "Probe displayed traces", self.probe_btn)
+        action(help_menu, "Usage / output documentation", self._show_help, "F1")
+        action(help_menu, "About R&S FSP Trace Logger…", self._show_about)
+        action(help_menu, "About Qt…", lambda: QtWidgets.QMessageBox.aboutQt(self))
+
+    def eventFilter(self, watched, event):
+        if event.type() == QtCore.QEvent.EnabledChange and hasattr(self, "menu_button_bindings"):
+            for action, button in self.menu_button_bindings:
+                if watched is button:
+                    action.setEnabled(button.isEnabled())
+        return super().eventFilter(watched, event)
+
+    def _sync_menu_actions(self):
+        if not hasattr(self, "menu_button_bindings"):
+            return
+        for action, button in self.menu_button_bindings:
+            action.setEnabled(button.isEnabled())
+            action.setToolTip(button.toolTip())
+        for action, control in self.menu_checkbox_bindings:
+            action.setEnabled(control.isEnabled())
+            action.setChecked(control.isChecked())
+        for action, control in self.menu_control_bindings:
+            action.setEnabled(control.isEnabled())
+        for index, action in enumerate(self.backend_actions):
+            action.setEnabled(self.backend_combo.isEnabled())
+            action.setChecked(index == self.backend_combo.currentIndex())
+        self.open_report_action.setEnabled(bool(self.report_output_directory) and Path(self.report_output_directory).is_dir())
+        self.veusz_action.setEnabled(self.thread is None and self.report_process is None)
+
+    def _edit_resource(self):
+        if self.resource_edit.isEnabled():
+            text, accepted = QtWidgets.QInputDialog.getText(self, "VISA resource", "Resource:", text=self.resource_edit.text())
+            if accepted and self.resource_edit.isEnabled():
+                self.resource_edit.setText(text.strip())
+
+    def _edit_interval(self):
+        if self.interval_spin.isEnabled():
+            value, accepted = QtWidgets.QInputDialog.getDouble(self, "Sampling interval", "Interval (s):", self.interval_spin.value(),
+                         self.interval_spin.minimum(), self.interval_spin.maximum(), self.interval_spin.decimals())
+            if accepted and self.interval_spin.isEnabled():
+                self.interval_spin.setValue(value)
+
+    def _edit_start_time(self):
+        if not self.start_dt.isEnabled():
+            return
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Planned start time")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        editor = QtWidgets.QDateTimeEdit(self.start_dt.dateTime(), dialog)
+        editor.setDisplayFormat(self.start_dt.displayFormat())
+        editor.setCalendarPopup(True)
+        layout.addWidget(editor)
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        if dialog.exec_() == QtWidgets.QDialog.Accepted and self.start_dt.isEnabled():
+            self.start_dt.setDateTime(editor.dateTime())
+
+    def _select_veusz(self):
+        if self.thread is not None or self.report_process is not None:
+            return
+        executable, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select standalone Veusz executable", os.environ.get("VEUSZ_EXE", ""), "All files (*)")
+        if executable:
+            os.environ["VEUSZ_EXE"] = executable
+            self.settings.setValue("veusz_executable", executable)
+            self.statusBar().showMessage("Renderer: " + executable, 8000)
+
+    def _open_report_folder(self):
+        if self.report_output_directory and Path(self.report_output_directory).is_dir():
+            QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(self.report_output_directory))
+
+    def _show_help(self):
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Logger usage and outputs")
+        dialog.resize(820, 650)
+        layout = QtWidgets.QVBoxLayout(dialog)
+        text = QtWidgets.QTextBrowser(dialog)
+        readme = Path(__file__).resolve().with_name("README.md")
+        content = readme.read_text(encoding="utf-8") if readme.is_file() else (
+            "Connect or enable Demo. Choose CSV, interval and screen; start/stop.\n"
+            "Wait for CSV drain, then Create Veusz Plots / Reports into a new folder.\n"
+            "Freq_N_GHz pages and Combined_Freq_vs_Time retain every frequency.\n"
+            "Time axes use recorded datetime; means use linear power.\n"
+            "Select light/dark/system from View > Theme. Optional PDF/PNG requires Veusz.\n"
+            "No hardware/compliance certification; this is a best-effort desktop logger.")
+        text.setPlainText(content)
+        layout.addWidget(text)
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        dialog.exec_()
+
+    def _show_about(self):
+        QtWidgets.QMessageBox.about(self, "About R&S FSP Trace Logger",
+            "<b>R&amp;S FSP Trace Logger " + APP_VERSION + "</b><br>"
+            "Author / application owner: William W. Wallace<br>"
+            "Company: NRAO/GBO<br>Email: wwallace@nrao.edu<br>"
+            "Native Veusz writer: 0.0.17; report engine: 0.1.3<br>"
+            "Python 3.8–3.12; generated integration update 2026-10-23.<br>"
+            "Source attribution/license notices remain in the supplied modules.")
+
+    # %% PERSISTENT DARK / LIGHT / SYSTEM THEMES
+    def apply_theme(self, mode, persist=True):
+        """Scope palette/styles to this window, not Spyder's QApplication.
+
+        Axes, legend, plot background and trace pens change along with text,
+        controls, menu/toolbar and disabled states. OS-native file dialogs
+        may retain the operating-system theme. Document export is independent
+        of GUI display theme and stays publication-oriented.
+        """
+        if mode not in ("dark", "light", "system"):
+            mode = "system"
+        self.theme_mode = mode
+        palette = QtGui.QPalette(self.base_palette)
+        if mode == "system":
+            dark = palette.color(QtGui.QPalette.Window).lightness() < 128
+        else:
+            dark = mode == "dark"
+            colors = {"window": "#24272e" if dark else "#f3f4f6", "base": "#171a20" if dark else "#ffffff",
+                      "text": "#f1f3f7" if dark else "#17212b", "button": "#353b46" if dark else "#e5e9ef",
+                      "disabled": "#9098a5" if dark else "#6b7280", "highlight": "#406bb5" if dark else "#245eb4"}
+            for role, color in ((QtGui.QPalette.Window, colors["window"]), (QtGui.QPalette.WindowText, colors["text"]),
+                                (QtGui.QPalette.Base, colors["base"]), (QtGui.QPalette.AlternateBase, colors["window"]),
+                                (QtGui.QPalette.Text, colors["text"]), (QtGui.QPalette.Button, colors["button"]),
+                                (QtGui.QPalette.ButtonText, colors["text"]), (QtGui.QPalette.ToolTipBase, colors["base"]),
+                                (QtGui.QPalette.ToolTipText, colors["text"]), (QtGui.QPalette.Highlight, colors["highlight"]),
+                                (QtGui.QPalette.HighlightedText, "#ffffff"), (QtGui.QPalette.Link, "#66b7ff" if dark else "#154caa")):
+                palette.setColor(role, QtGui.QColor(color))
+            for role in (QtGui.QPalette.Text, QtGui.QPalette.ButtonText, QtGui.QPalette.WindowText):
+                palette.setColor(QtGui.QPalette.Disabled, role, QtGui.QColor(colors["disabled"]))
+        self.setPalette(palette)
+        foreground = palette.color(QtGui.QPalette.WindowText).name()
+        base = palette.color(QtGui.QPalette.Base).name()
+        background = palette.color(QtGui.QPalette.Window).name()
+        button = palette.color(QtGui.QPalette.Button).name()
+        disabled = palette.color(QtGui.QPalette.Disabled, QtGui.QPalette.Text).name()
+        border = "#626b7a" if dark else "#9ba5b4"
+        self.setStyleSheet("""
+QWidget { background-color: %s; color: %s; }
+QProgressBar { background: %s; color: %s; border: 1px solid %s; text-align: center; }
+QProgressBar::chunk { background: #406bb5; }
+QCheckBox::indicator, QRadioButton::indicator { width: 13px; height: 13px; border: 1px solid #8d99aa; background: palette(base); }
+QRadioButton::indicator { border-radius: 7px; }
+QCheckBox::indicator:checked, QRadioButton::indicator:checked { background: #406bb5; border: 2px solid #82b8ff; }
+QCheckBox::indicator:disabled, QRadioButton::indicator:disabled { border-color: #626b7a; }
+QMenuBar, QMenu, QToolBar { background: %s; color: %s; }
+QMenuBar::item:selected, QMenu::item:selected { background: #406bb5; color: white; }
+QMenu::item:disabled { color: %s; }
+QLineEdit, QAbstractSpinBox, QComboBox, QTextEdit, QTextBrowser { background: %s; color: %s; selection-background-color: #406bb5; }
+QPushButton, QToolButton { background: %s; color: %s; border: 1px solid %s; border-radius: 3px; padding: 5px; }
+QPushButton:disabled, QToolButton:disabled { color: %s; }
+QPushButton:hover:enabled, QToolButton:hover:enabled { border: 1px solid #5b9beb; }
+QGroupBox { border: 1px solid %s; border-radius: 4px; margin-top: 9px; padding-top: 7px; }
+QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 3px; }
+QToolTip { background: %s; color: %s; border: 1px solid %s; }
+""" % (background, foreground, base, foreground, border, background, foreground, disabled,
+       base, foreground, button, foreground, border, disabled, border, base, foreground, border))
+        plot_background = "#171a20" if dark else "#ffffff"
+        self.plot.setBackground(plot_background)
+        for name in ("bottom", "left", "top", "right"):
+            axis = self.plot.getAxis(name)
+            axis.setPen(pg.mkPen(foreground))
+            axis.setTextPen(pg.mkPen(foreground))
+        self.plot.setLabel("bottom", "Frequency", units="Hz", color=foreground)
+        self.plot.setLabel("left", "Power", units="dBm", color=foreground)
+        legend = self.plot.plotItem.legend
+        if legend is not None:
+            legend.setLabelTextColor(foreground)
+            legend.setBrush(pg.mkBrush(plot_background))
+            legend.setPen(pg.mkPen(border))
+        self.display_trace_colors = (["#f1c40f", "#5bb8ff", "#ff7777"] if dark else ["#875700", "#125fba", "#b12b38"])
+        for number, curve in self._plot_curves.items():
+            curve.setPen(pg.mkPen(self.display_trace_colors[(number - 1) % 3], width=2))
+        for number, led in enumerate((self.led_t1, self.led_t2, self.led_t3)):
+            led._on_color = QtGui.QColor(self.display_trace_colors[number])
+            led.update()
+        for name, action in self.theme_actions.items():
+            action.setChecked(name == mode)
+        if persist:
+            self.settings.setValue("theme", mode)
+
+    # %% COOPERATIVE WINDOW CLOSE
     def closeEvent(self, event):
         if self.report_process is not None:
-            self.report_status_label.setText("Wait for report processing before closing; no file writer will be force-killed.")
+            self.report_status_label.setText("Wait for report generation before closing.")
             event.ignore()
             return
         if self.thread is not None:
