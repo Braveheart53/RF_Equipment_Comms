@@ -1,0 +1,4 @@
+# Optional PDF bookmarks only. Native .vszh5 generation does not need Veusz.
+pypdf==4.3.1
+# Install the standalone Veusz application separately and set VEUSZ_EXE.
+# Do not force-install Veusz 4.x into a Python 3.8 environment.

@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61,<76", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rs-fsp-logger"
+version = "0.8.1"
+description = "R&S FSP trace logger with isolated native Veusz reporting"
+readme = "README.md"
+requires-python = ">=3.8,<3.13"
+dependencies = [
+  "numpy==1.24.4; python_version < '3.9'",
+  "numpy==1.26.4; python_version >= '3.9'",
+  "h5py==3.10.0", "QtPy==2.4.3", "PyQt5==5.15.11",
+  "pyqtgraph==0.13.3", "PyVISA==1.14.1", "PyVISA-py==0.7.2"
+]
+
+[project.optional-dependencies]
+render = ["pypdf==4.3.1"]
+test = ["pytest==8.3.5"]
+
+[project.scripts]
+rs-fsp-logger = "rs_fsp_logger:main"
+fsp-trace-reports = "fsp_reports:main"
+
+[tool.setuptools]
+py-modules = ["rs_fsp_logger", "fsp_background", "fsp_reports", "vszh5_writer"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

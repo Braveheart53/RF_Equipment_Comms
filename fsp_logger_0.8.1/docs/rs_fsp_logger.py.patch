@@ -1,0 +1,776 @@
+--- supplied/rs_fsp_logger.py
++++ 0.8.1/rs_fsp_logger.py
+@@ -4,9 +4,34 @@
+ R&S FSP Spectrum Analyzer Trace Logger
+ ======================================
+ 
++Filename : rs_fsp_logger.py
++Version  : 0.8.1 (supplied baseline: 0.7.4)
++Modified : 2026-10-23
++Python   : 3.8 through 3.12
++Modules  : fsp_background.py 0.1.1, fsp_reports.py 0.1.1,
++           vszh5_writer.py 0.0.15 (William W. Wallace's native writer)
++
++Revision history
++----------------
++0.8.1: Completed package delivery; validated stop/restart/close lifecycle.
++0.8.0: Integration design: bounded background CSV output, coalesced live
++       display, process-isolated Veusz reporting and reciprocal interlocks.
++
++Acquisition policy
++------------------
++Report processing is allowed ONLY when acquisition and CSV draining have
++ended, including scheduled-start waiting. There is no portable CPU-load
++threshold that guarantees sampling deadlines. Reports run in a QProcess;
++per-trace numerical reductions are parallel. The analyzer VISA session is
++strictly serial; do NOT parallelize its queries. The CSV consumer has one
++ordered file owner, a bounded queue and an explicit stop-on-overload path.
++This is a best-effort desktop logger, not a hard-real-time acquisition system.
++
++
+ Connects to a Rohde & Schwarz FSP-series spectrum analyzer over Ethernet (VISA TCPIP),
+ detects active traces, waits for the running sweep to finish, then captures every
+-N seconds and appends a CSV row per (frequency, capture) sample.
++N seconds and writes a CSV row per (frequency, capture) sample.
++Each run creates/replaces its selected CSV; it does not append to prior runs.
+ 
+ CSV layout (one row per frequency point, per capture):
+     date, time, timestamp_iso, freq_hz, trace1_dBm, trace2_dBm, trace3_dBm, ...
+@@ -14,7 +39,7 @@
+ 
+ Features
+ --------
+-* QtPy abstraction layer (works with PyQt5 / PyQt6 / PySide2 / PySide6)
++* QtPy abstraction layer (packaged and tested with PyQt5)
+ * Filename field, planned start time, manual Start, Stop
+ * Active-trace LEDs (1, 2, 3) + Recording LED
+ * Per-capture progress bar (driven by sweep time)
+@@ -26,27 +51,30 @@
+ Python: written for 3.8+; auto-detects 3.12 and uses faster paths where it helps.
+ 
+ Dependencies:
+-    pip install qtpy PyQt5 pyqtgraph pyvisa pyvisa-py numpy
++    pip install -r requirements.txt
+ """
+ 
+ from __future__ import annotations
+ 
+-import csv
+ import math
+ import os
++import importlib.util
++import json
+ import sys
+ import threading
+ import time
+-import random
+ import traceback
+-from dataclasses import dataclass, field
++from dataclasses import dataclass
+ from datetime import datetime, timedelta
++from pathlib import Path
+ from typing import Dict, List, Optional, Tuple
+ 
+ import numpy as np
+ 
++from fsp_background import AsyncCaptureCsvWriter, LatestCaptureMailbox
++
+ # ---------------------------------------------------------------------------
+-# Version
++# %% Version
+ # ---------------------------------------------------------------------------
+ # 0.5.0 — first version that connected to a real FSP-38; INIT:IMM-based
+ #         single-sweep arming. Trace detection via DISP:TRAC<n>:STAT? + MODE?.
+@@ -62,10 +90,10 @@
+ #         thread without killing Spyder kernel. Removed 30 s fetch test
+ #         from Diagnostics (the processEvents spin loop was starving
+ #         Spyder's heartbeat). Probe Traces button now synchronous.
+-APP_VERSION = "0.7.4"
++APP_VERSION = "0.8.1"
+ 
+ # ---------------------------------------------------------------------------
+-# Python version handling
++# %% Python version handling
+ # ---------------------------------------------------------------------------
+ PY_VERSION = sys.version_info
+ IS_PY312_PLUS = PY_VERSION >= (3, 12)
+@@ -77,7 +105,7 @@
+ _perf = time.perf_counter
+ 
+ # ---------------------------------------------------------------------------
+-# Qt imports via QtPy
++# %% Qt imports via QtPy
+ # ---------------------------------------------------------------------------
+ try:
+     from qtpy import QtCore, QtGui, QtWidgets
+@@ -102,7 +130,7 @@
+ 
+ 
+ # ===========================================================================
+-# Instrument abstraction
++# %% Instrument abstraction
+ # ===========================================================================
+ class FSPError(Exception):
+     """Raised for any instrument-side error."""
+@@ -831,6 +859,7 @@
+ # ===========================================================================
+ # Mock instrument (for Demo Mode and testing)
+ # ===========================================================================
++# %% DEMO INSTRUMENT
+ class MockFSPInstrument:
+     """
+     Emulates an R&S FSP just well enough to drive the GUI / logger
+@@ -905,7 +934,7 @@
+ 
+ 
+ # ===========================================================================
+-# Acquisition worker (runs in a QThread)
++# %% Acquisition worker (runs in a QThread)
+ # ===========================================================================
+ @dataclass
+ class RunConfig:
+@@ -931,19 +960,19 @@
+         super().__init__(parent)
+         self.inst = instrument
+         self.cfg = config
+-        self._stop = False
++        self._stop_event = threading.Event()
+         self._capture_idx = 0
+         self._freq_axis: Optional[np.ndarray] = None
+         self._active: List[int] = []
+         self._sweep_total: float = 1.0
+         self._csv_path = config.filename
+-        self._csv_file = None
+         self._csv_writer = None
++        self.display_mailbox = LatestCaptureMailbox()
+ 
+     # ----- control -----
+     @Slot()
+     def stop(self):
+-        self._stop = True
++        self._stop_event.set()
+ 
+     # ----- main loop -----
+     @Slot()
+@@ -955,11 +984,11 @@
+             self.errorOccurred.emit(f"{exc}\n\n{tb}")
+         finally:
+             try:
+-                if self._csv_file is not None:
+-                    self._csv_file.flush()
+-                    self._csv_file.close()
+-            except Exception:
+-                pass
++                if self._csv_writer is not None:
++                    self.statusMessage.emit("Draining queued CSV captures…")
++                    self._csv_writer.close()
++            except Exception as output_error:
++                self.errorOccurred.emit("CSV drain failed: " + str(output_error))
+             self.recordingStateChanged.emit(False)
+             self.finished.emit()
+ 
+@@ -984,7 +1013,7 @@
+         # Wait until planned start time (if any)
+         if self.cfg.start_at is not None:
+             self._wait_until(self.cfg.start_at)
+-            if self._stop:
++            if self._stop_event.is_set():
+                 return
+ 
+         self.statusMessage.emit("Recording…")
+@@ -994,13 +1023,14 @@
+         self.inst.arm_single()
+ 
+         next_trigger = _perf()
+-        while not self._stop:
++        while not self._stop_event.is_set():
++            self._csv_writer.raise_if_failed()
+             # Wait until it's time for the next capture
+             now = _perf()
+             if now < next_trigger:
+                 # Sleep in small slices so Stop is responsive
+                 self._sleep_responsive(next_trigger - now)
+-                if self._stop:
++                if self._stop_event.is_set():
+                     break
+ 
+             self._capture_idx += 1
+@@ -1009,7 +1039,7 @@
+ 
+             # Trigger sweep + drive progress bar based on elapsed time
+             self._trigger_with_progress(idx)
+-            if self._stop:
++            if self._stop_event.is_set():
+                 break
+ 
+             # Fetch all active traces. Use a generous timeout proportional
+@@ -1039,12 +1069,9 @@
+                 )
+                 break
+ 
+-            # Write rows
+-            self._write_capture(traces)
+-
+-            # Notify GUI for plot update
+-            self.captureFinished.emit(idx, self._freq_axis.copy(),
+-                                      {k: v.copy() for k, v in traces.items()})
++            # Timestamp the completed read, not the later disk write.
++            self._csv_writer.submit(datetime.now(), traces)
++            self.display_mailbox.publish(idx, self._freq_axis, traces)
+ 
+             # Schedule next trigger (drift-free cadence)
+             next_trigger += self.cfg.interval_s
+@@ -1056,42 +1083,11 @@
+ 
+     # ----- helpers -----
+     def _open_csv(self):
+-        # Ensure parent dir exists
+-        d = os.path.dirname(os.path.abspath(self._csv_path))
+-        if d and not os.path.isdir(d):
+-            os.makedirs(d, exist_ok=True)
+-        self._csv_file = open(self._csv_path, "w", newline="", encoding="utf-8")
+-        self._csv_writer = csv.writer(self._csv_file)
+-        header = ["date", "time", "timestamp_iso", "freq_hz"] + \
+-                 [f"trace{n}_dBm" for n in self._active]
+-        self._csv_writer.writerow(header)
+-        self._csv_file.flush()
+-
+-    def _write_capture(self, traces: Dict[int, np.ndarray]):
+-        now = datetime.now()
+-        d = now.strftime("%Y-%m-%d")
+-        t = now.strftime("%H:%M:%S.%f")[:-3]
+-        iso = now.isoformat(timespec="milliseconds")
+-        freq = self._freq_axis
+-        # Validate trace lengths
+-        for tn, arr in traces.items():
+-            if arr.shape[0] != freq.shape[0]:
+-                raise RuntimeError(
+-                    f"Trace {tn} returned {arr.shape[0]} points, "
+-                    f"expected {freq.shape[0]}."
+-                )
+-        rows = []
+-        for i in range(freq.shape[0]):
+-            row = [d, t, iso, f"{freq[i]:.6f}"]
+-            for tn in self._active:
+-                row.append(f"{traces[tn][i]:.4f}")
+-            rows.append(row)
+-        self._csv_writer.writerows(rows)
+-        self._csv_file.flush()
++        self._csv_writer = AsyncCaptureCsvWriter(self._csv_path, self._freq_axis, self._active)
+ 
+     def _wait_until(self, target: datetime):
+         self.statusMessage.emit(f"Waiting until {target.strftime('%H:%M:%S')}…")
+-        while not self._stop:
++        while not self._stop_event.is_set():
+             remaining = (target - datetime.now()).total_seconds()
+             if remaining <= 0:
+                 return
+@@ -1099,8 +1095,8 @@
+ 
+     def _sleep_responsive(self, seconds: float):
+         end = _perf() + seconds
+-        while not self._stop and _perf() < end:
+-            time.sleep(min(0.1, end - _perf()))
++        while not self._stop_event.is_set() and _perf() < end:
++            time.sleep(max(0.0, min(0.1, end - _perf())))
+ 
+     def _fetch_one(self, trace_num: int, timeout_s: float) -> np.ndarray:
+         """Adapter that calls fetch_trace with a timeout if the instrument supports it."""
+@@ -1145,56 +1141,19 @@
+             return self._fetch_one(trace_num, timeout_s * 2.0)
+ 
+     def _trigger_with_progress(self, idx: int):
+-        """
+-        Trigger a single sweep on the instrument and emit smooth progress.
+-
+-        We run the *blocking* trigger_and_wait() on a tiny helper thread so
+-        the worker thread is free to emit progress signals. This avoids the
+-        previous *OPC/*ESR polling race that caused VISA timeouts on real FSPs.
+-        """
+-        import threading
+-        total = max(0.05, self._sweep_total)
+-        done = threading.Event()
+-        err_box: List[BaseException] = []
+-
+-        def _trigger():
+-            try:
+-                # Generous deadline: 3x sweep time + 5 s slack
+-                self.inst.trigger_and_wait(total * 3 + 5.0)
+-            except BaseException as exc:
+-                err_box.append(exc)
+-            finally:
+-                done.set()
+-
+-        th = threading.Thread(target=_trigger, daemon=True)
+-        t0 = _perf()
+-        th.start()
+-
+-        # Smoothly emit progress while the sweep runs. Cap at 99% until done.
+-        max_wait = total * 5 + 10.0
+-        while not done.is_set() and not self._stop:
+-            elapsed = _perf() - t0
+-            self.captureProgress.emit(idx, min(0.99, elapsed / total))
+-            if elapsed > max_wait:
+-                # Hard ceiling — don't hang forever
+-                break
+-            time.sleep(0.05)
+-
+-        # If the user pressed Stop, let the trigger thread finish naturally
+-        # so the instrument isn't left mid-sweep with a dangling query.
+-        th.join(timeout=max_wait)
+-        if err_box:
+-            raise err_box[0]
+-        if not done.is_set():
+-            raise FSPError(
+-                f"Sweep did not complete within {max_wait:.1f} s. "
+-                f"Check sweep time/count on the analyzer."
+-            )
++        """One serial VISA owner; progress animation belongs to the GUI timer.
++
++        Stop is cooperative: the current trigger call finishes or times out.
++        Never leave a detached SCPI thread or close its VISA handle underneath
++        a pending read. GUI progress does not send analyzer queries.
++        """
++        total_sweep_seconds = max(0.05, self._sweep_total)
++        self.inst.trigger_and_wait(total_sweep_seconds * 3.0 + 5.0)
+         self.captureProgress.emit(idx, 1.0)
+ 
+ 
+ # ===========================================================================
+-# Custom LED widget
++# %% Custom LED widget
+ # ===========================================================================
+ class LedIndicator(QtWidgets.QFrame):
+     def __init__(self, label: str, color_on=QtGui.QColor("#2ecc71"),
+@@ -1243,6 +1202,7 @@
+ TRACE_COLORS = ["#f1c40f", "#3498db", "#e74c3c"]  # 1, 2, 3
+ 
+ 
++# %% MAIN GUI AND REPORT PROCESS
+ class MainWindow(QtWidgets.QMainWindow):
+     requestStop = Signal()
+ 
+@@ -1256,9 +1216,31 @@
+         self.worker: Optional[AcquisitionWorker] = None
+         self._sweep_settings: Dict[str, float] = {}
+         self._active_traces: List[int] = []
++        self.display_mailbox = None
++        self.report_process = None
++        self.report_stdout = bytearray()
++        self.report_stderr = bytearray()
++        self.report_output_directory = ""
++        self.report_result_message = ""
++        self.last_acquisition_error = ""
++        self.close_after_acquisition = False
++        self.capture_progress_started = None
++        self.capture_progress_duration = 1.0
+ 
+         self._build_ui()
+         self._wire_signals()
++        self.acquisition_locked_controls = (self.screen_auto_rb, self.screen_a_rb, self.screen_b_rb,
++                                            self.file_edit, self.browse_btn, self.interval_spin,
++                                            self.start_dt, self.now_btn)
++        self.display_timer = QTimer(self)
++        self.display_timer.setInterval(100)
++        self.display_timer.timeout.connect(self._refresh_live_display)
++        self.display_timer.start()
++        self.report_timer = QTimer(self)
++        self.report_timer.setInterval(1000)
++        self.report_timer.timeout.connect(self._update_report_availability)
++        self.report_timer.start()
++        self._update_report_availability()
+ 
+     # -------- UI construction --------
+     def _build_ui(self):
+@@ -1275,6 +1257,7 @@
+         version_lbl = QtWidgets.QLabel(f"v{APP_VERSION}")
+         version_lbl.setStyleSheet("color: #888; font-family: monospace;")
+         version_lbl.setToolTip(
++            "0.8.1: isolated reports, queued CSV, bounded live display.\n"
+             "0.7.0: TRAC? (no :DATA), MODE-based detection, no spin loops.\n"
+             "0.6.0: continuous-sweep aware, probe-based trace detection.\n"
+             "0.5.0: initial real-FSP version (single-sweep, MODE/STAT detection).")
+@@ -1379,6 +1362,14 @@
+         sl.addWidget(self.start_manual_btn, 2, 1)
+         sl.addWidget(self.start_scheduled_btn, 2, 2)
+         sl.addWidget(self.stop_btn, 2, 3)
++        self.report_btn = QtWidgets.QPushButton("Create Veusz Plots / Reports…")
++        self.report_btn.setEnabled(False)
++        self.render_reports_check = QtWidgets.QCheckBox("Also render PDF + PNG (requires Veusz)")
++        sl.addWidget(self.report_btn, 3, 1, 1, 2)
++        sl.addWidget(self.render_reports_check, 3, 3, 1, 3)
++        self.report_status_label = QtWidgets.QLabel("Reports require a completed CSV and idle acquisition.")
++        self.report_status_label.setWordWrap(True)
++        sl.addWidget(self.report_status_label, 4, 0, 1, 6)
+         root.addWidget(set_box)
+ 
+         # Status / LEDs group
+@@ -1438,6 +1429,8 @@
+         self.start_manual_btn.clicked.connect(lambda: self.on_start(scheduled=False))
+         self.start_scheduled_btn.clicked.connect(lambda: self.on_start(scheduled=True))
+         self.stop_btn.clicked.connect(self.on_stop)
++        self.report_btn.clicked.connect(self.on_create_reports)
++        self.file_edit.textChanged.connect(self._update_report_availability)
+         # Screen selector: when the user picks Auto / A / B, push the
+         # choice to the instrument and refresh sweep settings.
+         self.screen_auto_rb.toggled.connect(self._on_screen_changed)
+@@ -1453,6 +1446,8 @@
+         so the user immediately sees the resulting frequency readback.
+         Toggling fires the slot twice (off + on); we no-op the off side.
+         """
++        if self.thread is not None:
++            return
+         sender = self.sender()
+         if sender is None or not sender.isChecked():
+             return
+@@ -1502,7 +1497,7 @@
+         the long fetch test was triggering recursive on_diagnostics calls,
+         flooding stderr and never letting any single dialog actually open).
+         """
+-        if self.instrument is None:
++        if self.thread is not None or self.instrument is None:
+             return
+         # Hard-disable the button so queued clicks can't recurse during
+         # processEvents in the fetch-test loop.
+@@ -1667,12 +1662,12 @@
+         spin loop. (The previous spin-loop pattern was the actual cause of
+         Spyder kernel deaths because it starved the kernel's heartbeat.)
+         """
+-        if self.instrument is None:
++        if self.thread is not None or self.instrument is None:
+             return
+         self.probe_btn.setEnabled(False)
+         original_status = self.status_label.text()
+         self.status_label.setText("Probing traces…")
+-        QtWidgets.QApplication.processEvents()  # one paint, no loop
++        # No nested event loop while this GUI slot owns the VISA session.
+         try:
+             try:
+                 self._sweep_settings = self.instrument.sweep_settings()
+@@ -1735,6 +1730,8 @@
+         floats per trace and can take seconds. The user can press
+         Diagnostics or Start to trigger probing on demand.
+         """
++        if self.thread is not None or self.instrument is not None:
++            return
+         try:
+             if self.demo_check.isChecked():
+                 self.instrument = MockFSPInstrument()
+@@ -1853,6 +1850,9 @@
+     def on_start(self, scheduled: bool):
+         if self.instrument is None:
+             return
++        if self.thread is not None or self.report_process is not None:
++            self.status_label.setText("Wait for acquisition/report processing to finish.")
++            return
+         # Refresh once more so the sanity check uses live values
+         self._refresh_instrument_state()
+         if not self._active_traces:
+@@ -1889,11 +1889,24 @@
+                     "Pick a start time in the future or use Start Now.")
+                 return
+ 
++        if os.path.exists(filename):
++            answer = QtWidgets.QMessageBox.question(self, "Replace existing CSV?",
++                "Recording will replace:\n" + os.path.abspath(filename),
++                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
++            if answer != QtWidgets.QMessageBox.Yes:
++                return
++        # Revalidate after any modal dialog processed queued GUI events.
++        if self.thread is not None or self.report_process is not None:
++            return
++        self.last_acquisition_error = ""
++        self.report_result_message = ""
++        self.close_after_acquisition = False
+         cfg = RunConfig(interval_s=N, filename=filename, start_at=start_at)
+ 
+         # Build worker + thread
+         self.thread = QThread(self)
+         self.worker = AcquisitionWorker(self.instrument, cfg)
++        self.display_mailbox = self.worker.display_mailbox
+         self.worker.moveToThread(self.thread)
+         self.thread.started.connect(self.worker.run)
+         self.worker.statusMessage.connect(self.on_status)
+@@ -1901,10 +1914,14 @@
+         self.worker.sweepInfo.connect(self.on_sweep_info)
+         self.worker.captureStarted.connect(self.on_capture_started)
+         self.worker.captureProgress.connect(self.on_capture_progress)
+-        self.worker.captureFinished.connect(self.on_capture_finished)
+         self.worker.recordingStateChanged.connect(self.led_rec.setOn)
+         self.worker.errorOccurred.connect(self.on_worker_error)
+-        self.worker.finished.connect(self.on_worker_finished)
++        # Direct quit is safe and does not depend on the GUI event loop.
++        # Only QThread.finished permits releasing the thread references.
++        self.worker.finished.connect(self.thread.quit, Qt.DirectConnection)
++        self.worker.finished.connect(self.worker.deleteLater)
++        self.thread.finished.connect(self.on_worker_finished)
++        self.thread.finished.connect(self.thread.deleteLater)
+         self.requestStop.connect(self.worker.stop, Qt.DirectConnection)
+         self.thread.start()
+ 
+@@ -1912,6 +1929,11 @@
+         self.start_scheduled_btn.setEnabled(False)
+         self.stop_btn.setEnabled(True)
+         self.disconnect_btn.setEnabled(False)
++        self.diag_btn.setEnabled(False)
++        self.probe_btn.setEnabled(False)
++        for control in self.acquisition_locked_controls:
++            control.setEnabled(False)
++        self._update_report_availability()
+ 
+     @Slot()
+     def on_stop(self):
+@@ -1930,62 +1952,218 @@
+     @Slot(int, float)
+     def on_capture_started(self, idx: int, total_s: float):
+         self.progress.setValue(0)
++        self.capture_progress_started = time.perf_counter()
++        self.capture_progress_duration = max(0.05, total_s)
+         self.status_label.setText(f"Capture #{idx} — sweeping ({total_s:.2f} s)…")
+ 
+     @Slot(int, float)
+     def on_capture_progress(self, idx: int, frac: float):
++        if frac >= 1.0:
++            self.capture_progress_started = None
+         self.progress.setValue(int(max(0.0, min(1.0, frac)) * 1000))
+ 
+     @Slot(int, object, dict)
+     def on_capture_finished(self, idx: int, freq, traces: dict):
+         self.progress.setValue(1000)
+-        self.status_label.setText(f"Capture #{idx} written ({len(freq)} pts × {len(traces)} traces).")
+-        # Update plot
+-        self.plot.clear()
+-        self._plot_curves.clear()
+-        for tn in sorted(traces.keys()):
+-            color = TRACE_COLORS[(tn - 1) % len(TRACE_COLORS)]
+-            curve = self.plot.plot(
+-                freq, traces[tn], pen=pg.mkPen(color, width=2),
+-                name=f"Trace {tn}")
+-            self._plot_curves[tn] = curve
+-
++        self.status_label.setText(f"Capture #{idx} queued for CSV ({len(freq)} pts × {len(traces)} traces).")
++        # Persistent curves avoid repeated scene/legend construction.
++        for trace_number in sorted(traces):
++            if trace_number not in self._plot_curves:
++                color = TRACE_COLORS[(trace_number - 1) % len(TRACE_COLORS)]
++                self._plot_curves[trace_number] = self.plot.plot(
++                    pen=pg.mkPen(color, width=2), name="Trace %d" % trace_number)
++            self._plot_curves[trace_number].setData(freq, traces[trace_number])
++        for trace_number in set(self._plot_curves) - set(traces):
++            self.plot.removeItem(self._plot_curves.pop(trace_number))
++
++    # ----- Finalization and process admission -----
+     @Slot(str)
+-    def on_worker_error(self, msg: str):
+-        QtWidgets.QMessageBox.critical(self, "Acquisition error", msg)
++    def on_worker_error(self, message):
++        # Defer modal dialogs until the producer and CSV consumer finish.
++        self.last_acquisition_error = message
++        self.status_label.setText("Acquisition error; finishing queued CSV output…")
+ 
+     @Slot()
+     def on_worker_finished(self):
+-        if self.thread is not None:
+-            self.thread.quit()
+-            self.thread.wait(2000)
+-            self.thread = None
++        # Connected to QThread.finished, never to a still-running worker.
++        # Read the independent mailbox, not a potentially deleted QObject.
++        self._refresh_live_display()
++        self.thread = None
+         self.worker = None
++        self.display_mailbox = None
++        self.capture_progress_started = None
+         self.led_rec.setOn(False)
+         self.progress.setValue(0)
+-        self.start_manual_btn.setEnabled(True)
+-        self.start_scheduled_btn.setEnabled(True)
+         self.stop_btn.setEnabled(False)
+-        self.disconnect_btn.setEnabled(True)
+-        self.status_label.setText("Idle.")
+-
+-    # Make sure we shut down cleanly
+-    def closeEvent(self, ev):
+-        try:
+-            if self.worker is not None:
+-                self.requestStop.emit()
+-            if self.thread is not None:
+-                self.thread.quit()
+-                self.thread.wait(3000)
+-            if self.instrument is not None:
++        connected = self.instrument is not None
++        self.disconnect_btn.setEnabled(connected)
++        self.diag_btn.setEnabled(connected)
++        self.probe_btn.setEnabled(connected)
++        for control in self.acquisition_locked_controls:
++            control.setEnabled(True)
++        self._update_report_availability()
++        self.status_label.setText("Idle; CSV writer closed." if not self.last_acquisition_error
++                                  else "Acquisition/output error; see error dialog.")
++        if self.last_acquisition_error:
++            QtWidgets.QMessageBox.critical(self, "Acquisition error", self.last_acquisition_error)
++        if self.close_after_acquisition:
++            QTimer.singleShot(0, self.close)
++
++    def _refresh_live_display(self):
++        if self.capture_progress_started is not None:
++            fraction_complete = min(0.99, (time.perf_counter() - self.capture_progress_started) /
++                                    self.capture_progress_duration)
++            self.progress.setValue(int(1000 * fraction_complete))
++        if self.display_mailbox is not None:
++            frame = self.display_mailbox.take()
++            if frame is not None:
++                self.on_capture_finished(*frame)
++
++    def _report_unavailable_reason(self):
++        """Conservative admission control, not a speculative CPU-load guess.
++
++        A non-None thread includes scheduled waiting, stopping and disk drain.
++        Reports never compete with sampling. The reciprocal start guard keeps
++        acquisition disabled until the isolated report process has exited.
++        """
++        if self.thread is not None:
++            return "Reports disabled during acquisition, scheduled waiting, or CSV drain."
++        if self.report_process is not None:
++            return "A report is running; acquisition is also disabled until it finishes."
++        for companion in ("fsp_reports.py", "vszh5_writer.py"):
++            if not Path(__file__).resolve().with_name(companion).is_file():
++                return "Keep all supplied Python modules together: missing " + companion
++        if importlib.util.find_spec("h5py") is None:
++            return "Install h5py in this Python environment to enable reporting."
++        selected_csv = Path(self.file_edit.text().strip()).expanduser()
++        try:
++            if not selected_csv.is_file() or selected_csv.stat().st_size == 0:
++                return "Select a nonempty, completed logger CSV in Output File."
++        except OSError:
++            return "The selected CSV is inaccessible."
++        return ""
++
++    @Slot()
++    def _update_report_availability(self):
++        if not hasattr(self, "report_btn"):
++            return
++        reason = self._report_unavailable_reason()
++        self.report_btn.setEnabled(not reason)
++        self.report_btn.setToolTip(reason or "Generate native Veusz plots and reports from this completed CSV.")
++        self.render_reports_check.setEnabled(self.thread is None and self.report_process is None)
++        can_start = self.instrument is not None and self.thread is None and self.report_process is None
++        self.start_manual_btn.setEnabled(can_start)
++        self.start_scheduled_btn.setEnabled(can_start)
++        if self.report_process is None and self.report_result_message:
++            self.report_status_label.setText(self.report_result_message)
++        else:
++            self.report_status_label.setText(reason or "Ready: analysis runs only after sampling and CSV output stop.")
++
++    @Slot()
++    def on_create_reports(self):
++        reason = self._report_unavailable_reason()
++        if reason:
++            self.report_status_label.setText(reason)
++            return
++        source_csv = Path(self.file_edit.text().strip()).expanduser().resolve()
++        suggested_directory = source_csv.with_name(source_csv.stem + "_reports_" + datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
++        selected_directory, _ = QtWidgets.QFileDialog.getSaveFileName(
++            self, "Choose NEW report folder name (must not already exist)", str(suggested_directory), "All files (*)")
++        if not selected_directory:
++            return
++        if Path(selected_directory).exists():
++            QtWidgets.QMessageBox.warning(self, "Existing destination", "Choose a new folder name; existing reports are not overwritten.")
++            return
++        # Modal dialogs pump events: recheck state after the selection returns.
++        reason = self._report_unavailable_reason()
++        if reason:
++            self.report_status_label.setText(reason)
++            return
++        self.report_output_directory = str(Path(selected_directory).resolve())
++        self.report_stdout.clear()
++        self.report_stderr.clear()
++        self.report_result_message = ""
++        process = QtCore.QProcess(self)
++        environment = QtCore.QProcessEnvironment.systemEnvironment()
++        # Avoid nested numerical thread pools in the report child.
++        for variable in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
++            environment.insert(variable, "1")
++        environment.insert("PYTHONUNBUFFERED", "1")
++        process.setProcessEnvironment(environment)
++        process.readyReadStandardOutput.connect(self._read_report_stdout)
++        process.readyReadStandardError.connect(self._read_report_stderr)
++        process.finished.connect(self._on_report_finished)
++        process.errorOccurred.connect(self._on_report_error)
++        arguments = [str(Path(__file__).resolve().with_name("fsp_reports.py")), "--csv", str(source_csv),
++                     "--output-dir", self.report_output_directory]
++        if self.render_reports_check.isChecked():
++            arguments.append("--render")
++        self.report_process = process  # Publish the guard BEFORE starting.
++        self._update_report_availability()
++        process.start(sys.executable, arguments)
++
++    def _read_report_stdout(self):
++        if self.report_process is not None:
++            self.report_stdout.extend(bytes(self.report_process.readAllStandardOutput()))
++            del self.report_stdout[:-65536]
++
++    def _read_report_stderr(self):
++        if self.report_process is not None:
++            self.report_stderr.extend(bytes(self.report_process.readAllStandardError()))
++            del self.report_stderr[:-65536]
++
++    def _on_report_error(self, process_error):
++        if self.report_process is not None and process_error == QtCore.QProcess.FailedToStart:
++            self.report_stderr.extend(self.report_process.errorString().encode("utf-8"))
++            self._on_report_finished(-1, QtCore.QProcess.CrashExit)
++
++    def _on_report_finished(self, exit_code, exit_status):
++        if self.report_process is None:
++            return
++        self._read_report_stdout()
++        self._read_report_stderr()
++        finished_process = self.report_process
++        self.report_process = None
++        finished_process.deleteLater()
++        successful = exit_code == 0 and exit_status == QtCore.QProcess.NormalExit
++        if successful:
++            self.report_result_message = "Reports complete: " + self.report_output_directory
++            try:
++                status = json.loads(self.report_stdout.decode("utf-8", errors="replace").strip().splitlines()[-1])
++                if status.get("rendering", {}).get("status") == "unavailable_or_failed":
++                    self.report_result_message = "Native plots/reports complete; PDF/PNG unavailable. See report.md in " + self.report_output_directory
++            except (ValueError, IndexError):
++                pass
++        else:
++            self.report_result_message = "Report generation failed; original CSV was not modified."
++        self._update_report_availability()
++        if not successful:
++            QtWidgets.QMessageBox.critical(self, "Report generation failed",
++                self.report_stderr.decode("utf-8", errors="replace").strip() or "Report subprocess exited unexpectedly.")
++
++    # ----- Cooperative window shutdown -----
++    def closeEvent(self, event):
++        if self.report_process is not None:
++            self.report_status_label.setText("Wait for report processing before closing; no file writer will be force-killed.")
++            event.ignore()
++            return
++        if self.thread is not None:
++            self.close_after_acquisition = True
++            self.on_stop()
++            self.status_label.setText("Stopping and draining CSV before closing…")
++            event.ignore()
++            return
++        if self.instrument is not None:
++            try:
+                 self.instrument.close()
+-        except Exception:
+-            pass
+-        super().closeEvent(ev)
++            except Exception:
++                pass
++            self.instrument = None
++        event.accept()
+ 
+ 
+ # ===========================================================================
+-# Entry point
++# %% Entry point
+ # ===========================================================================
+ def main():
+     # Allow forcing demo mode from CLI for convenience

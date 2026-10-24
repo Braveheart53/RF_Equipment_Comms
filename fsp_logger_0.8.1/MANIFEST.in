@@ -1,0 +1,6 @@
+include README.md NOTICE.md CHANGELOG.md
+include requirements*.txt
+recursive-include tests *.py
+recursive-include docs *.md *.txt *.patch
+exclude SHA256SUMS.txt
+recursive-exclude * __pycache__ *.py[cod]

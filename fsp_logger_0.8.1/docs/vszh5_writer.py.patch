@@ -1,0 +1,106 @@
+--- supplied/vszh5_writer.py
++++ 0.8.1/vszh5_writer.py
+@@ -11,13 +11,13 @@
+ ===============================================================================
+  Title          : Veusz HDF5 Document Writer
+  Filename       : vszh5_writer.py
+- Version        : 0.0.14 (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
++ Version        : 0.0.15 (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+  Author         : William W. Wallace
+  Company        : NRAO/GBO
+  Email          : wwallace@nrao.edu
+  Created        : 2026-10-11
+- Modified       : 2026-10-19
+- Language       : Python 3.12
++ Modified       : 2026-10-23
++ Language       : Python 3.8 through 3.12
+  Requires       : numpy, h5py   (Veusz only to open or render the result;
+                   pypdf only for PDF bookmarks)
+  Licence        : GPL-3.0-or-later (GNU General Public License v3.0 or later)
+@@ -160,6 +160,12 @@
+ 
+ REVISION HISTORY
+ ----------------
++0.0.15 2026-10-23  FSP logger integration. Python 3.8-safe Bookmarks type
++                   alias; private sibling temporary files for atomic writes;
++                   explicit flush on renderer protocol markers to prevent a
++                   frozen Veusz --listen process waiting after export.
++                   Existing public page and dataset APIs are unchanged.
++
+ 0.0.14 2026-10-19  Released with the GBT RFI Interference Evaluator 0.0.1.
+                    Additions only; every 0.0.13 call is unchanged:
+                    * Trace.fill ("below" | "above" | ""), fill_colour and
+@@ -280,7 +286,7 @@
+ import warnings
+ from dataclasses import dataclass
+ from pathlib import Path
+-from typing import Any, Callable, Iterable, Sequence, Union
++from typing import Any, Callable, Iterable, Sequence, Union, List
+ 
+ import numpy as np
+ 
+@@ -289,7 +295,7 @@
+ except ImportError:  # pragma: no cover - reported when a writer is created
+     h5py = None
+ 
+-__version__ = "0.0.14"                 # Semantic Versioning 2.0.0
++__version__ = "0.0.15"                 # Semantic Versioning 2.0.0
+ __author__ = "William W. Wallace"
+ __email__ = "wwallace@nrao.edu"
+ __company__ = "NRAO/GBO"
+@@ -449,7 +455,7 @@
+     Parameters
+     ----------
+     path:
+-        Final file name. Data go to "<path>.part" until finish().
++        Final file name. Data go to a private sibling .part until finish().
+     compress:
+         gzip (level 4) + shuffle for arrays of COMPRESS_MIN_ELEMENTS or more.
+         Veusz reads compressed datasets transparently.
+@@ -464,9 +470,16 @@
+             raise RuntimeError("h5py is required to write .vszh5 files "
+                                "(mamba install -c conda-forge h5py)")
+         self.final_path = Path(path)
+-        self.path = Path(str(self.final_path) + ".part") if atomic else self.final_path
+-        if self.path.exists():
+-            self.path.unlink()
++        if atomic:
++            # A private sibling prevents one exporter from deleting another's
++            # in-progress file. Same-filesystem replacement remains atomic.
++            descriptor, temporary_filename = tempfile.mkstemp(
++                prefix=self.final_path.name + ".", suffix=".part",
++                dir=str(self.final_path.parent))
++            os.close(descriptor)
++            self.path = Path(temporary_filename)
++        else:
++            self.path = self.final_path
+         self.compress = compress
+         self.f = h5py.File(self.path, "w")
+         self.root = self.f.create_group("Veusz")
+@@ -1205,7 +1218,7 @@
+         "doc = Root._ci.document",
+         f"L.loadHDF5Doc(doc, {str(src)!r})",
+         "names = [p.name for p in doc.basewidget.children]",
+-        "print('VSZH5_PAGES', len(names), '|'.join(names))",
++        "print('VSZH5_PAGES', len(names), '|'.join(names), flush=True)",
+     ]
+     if pdf is not None:
+         lines.append(f"Export({str(pdf)!r}, page=list(range(len(names))), pdfdpi={PDF_DPI})")
+@@ -1218,7 +1231,7 @@
+         lines.append(
+             f"exec(\"for i in range({upto}): Export(vszh5_png_stem + '_p%02d_%s.png' "
+             f"% (i, names[i]), page=[i], dpi={int(dpi)})\")")
+-    lines += ["print('VSZH5_DONE')", "Quit()", ""]
++    lines += ["print('VSZH5_DONE', flush=True)", "Quit()", ""]
+     return "\n".join(lines)
+ 
+ 
+@@ -1228,7 +1241,7 @@
+ 
+ #: What render_pages() accepts as bookmarks: True (one per page), False (none),
+ #: an outline list, or a callable mapping the Veusz page names to an outline.
+-Bookmarks = Union[bool, Sequence[OutlineEntry], Callable[[list[str]], Sequence[OutlineEntry]]]
++Bookmarks = Union[bool, Sequence[OutlineEntry], Callable[[List[str]], Sequence[OutlineEntry]]]
+ 
+ 
+ def _outline_parts(entry: OutlineEntry) -> tuple[str, int | None, Sequence[OutlineEntry]]:
