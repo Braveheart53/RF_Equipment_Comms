@@ -1,9 +1,0 @@
-numpy==1.24.4; python_version < "3.9"
-numpy==1.26.4; python_version >= "3.9"
-h5py==3.10.0
-QtPy==2.4.3
-PyQt5==5.15.11
-pyqtgraph==0.13.3
-PyVISA==1.14.1
-PyVISA-py==0.7.2
-pypdf==4.3.1
