@@ -1,0 +1,59 @@
+--- 0.8.3/fsp_reports.py
++++ 0.9.0/fsp_reports.py
+@@ -1,10 +1,15 @@
+ #!/usr/bin/env python3
+ # -*- coding: utf-8 -*-
+ # %% MODULE HEADER
+-"""FSP CSV reporting, version 0.1.3, modified 2026-10-23.
++"""FSP CSV reporting, version 0.1.4, modified 2026-10-26.
+ Author: William W. Wallace (application owner; generated integration update).
+-Python: 3.8–3.12. Native writer: 0.0.17; logger bundle: 0.8.3.
++Python: 3.8–3.12. Native writer: 0.0.18; logger bundle: 0.9.0.
+ 
++0.1.4: Bundle 0.9.0 with vszh5_writer 0.0.18 (render fixes only). FIX: the
++logger version in the document generator line and report.json was the
++hard-coded string "0.8.3"; it is now read from rs_fsp_logger.py next to this
++module (logger_bundle_version()). No change to the report pages, datasets or
++statistics. A run's optional <capture>_events.csv (trace resets) is not read.
+ 0.1.3: Freq_N_GHz and Combined_Freq_vs_Time pages; all raw frequency bins,
+ actual datetime axes and independent analyzer channels. All previous pages
+ remain. Means always use linear power before conversion to displayed dBm.
+@@ -28,8 +33,19 @@
+ from pathlib import Path
+ import numpy as np
+ import vszh5_writer as native_writer
+-__version__ = "0.1.3"
++__version__ = "0.1.4"
+ TRACE_PATTERN = re.compile(r"trace([1-3])_dBm$")
++
++
++def logger_bundle_version():
++    """APP_VERSION of rs_fsp_logger.py beside this module, read from source
++    (importing the logger would pull in Qt). 'unknown' when not found."""
++    try:
++        text = Path(__file__).resolve().with_name("rs_fsp_logger.py").read_text(encoding="utf-8")
++    except OSError:
++        return "unknown"
++    match = re.search(r'^APP_VERSION\s*=\s*["\']([^"\']+)["\']', text, re.M)
++    return match.group(1) if match else "unknown"
+ DEFAULT_MAX_MATRIX_MIB = 512
+ CHUNK_CAPTURE_COUNT = 128
+ 
+@@ -182,7 +198,7 @@
+ # %% NATIVE DOCUMENT: RETAIN OLD PAGES, APPEND FREQUENCY-TIME PAGES
+ 
+ def write_native_document(destination, metadata, frequency_hz, elapsed_s, matrices, statistics):
+-    document = native_writer.VszDoc("R&S FSP logger 0.8.3 / fsp_reports " + __version__)
++    document = native_writer.VszDoc("R&S FSP logger " + logger_bundle_version() + " / fsp_reports " + __version__)
+     summary_lines = ["Source: " + Path(metadata["source_csv"]).name,
+                      "Captures: %d; bins: %d; traces: %s" % (metadata["captures"], len(frequency_hz), metadata["traces"]),
+                      "First: " + metadata["first_timestamp"], "Last: " + metadata["last_timestamp"],
+@@ -325,7 +341,7 @@
+         if file_signature(source) != signature:
+             raise ReportValidationError("CSV changed during provenance hashing.")
+         _, time_label, time_semantics = veusz_capture_datetimes(timestamps)
+-        metadata = dict(logger_version="0.8.3", report_engine_version=__version__, writer_version=native_writer.__version__,
++        metadata = dict(logger_version=logger_bundle_version(), report_engine_version=__version__, writer_version=native_writer.__version__,
+                         generated_utc=datetime.now(timezone.utc).isoformat(), source_csv=str(source), source_sha256=digest.hexdigest(),
+                         captures=len(timestamps), frequency_points=len(frequency_hz), traces=trace_numbers, timestamps=timestamps,
+                         first_timestamp=timestamps[0], last_timestamp=timestamps[-1], duration_s=float(elapsed_s[-1]),

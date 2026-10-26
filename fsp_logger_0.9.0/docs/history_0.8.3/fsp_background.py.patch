@@ -1,0 +1,41 @@
+--- fsp_background-8.py
++++ fsp_background.py
+@@ -1,7 +1,7 @@
+ #!/usr/bin/env python3
+ # -*- coding: utf-8 -*-
+ # %% MODULE HEADER
+-"""FSP background output, version 0.1.1, modified 2026-10-23.
++"""FSP background output, version 0.1.2, modified 2026-10-23.
+ Author: William W. Wallace (application owner; generated integration update).
+ Python: 3.8–3.12. One ordered CSV consumer overlaps serialized instrument I/O.
+ Queue saturation retains the terminal capture, then sampling explicitly stops.
+@@ -14,7 +14,7 @@
+ import queue
+ import threading
+ import numpy as np
+-__version__ = "0.1.1"
++__version__ = "0.1.2"
+ 
+ # %% ORDERED BOUNDED OUTPUT
+ class CsvBacklogError(RuntimeError):
+@@ -33,6 +33,11 @@
+         self.filename = os.path.abspath(filename)
+         self.frequency_axis = np.array(frequency_axis, dtype=float, copy=True)
+         self.active_trace_numbers = tuple(active_trace_numbers)
++        if (self.frequency_axis.ndim != 1 or not self.frequency_axis.size or
++                not np.all(np.isfinite(self.frequency_axis)) or
++                not self.active_trace_numbers or
++                len(set(self.active_trace_numbers)) != len(self.active_trace_numbers)):
++            raise ValueError("Require finite 1-D frequencies and unique active channels.")
+         capture_bytes = self.frequency_axis.nbytes * len(self.active_trace_numbers)
+         if capture_bytes <= 0 or capture_bytes > maximum_queue_bytes or queue_capacity <= 0:
+             raise ValueError("Empty capture or insufficient queue budget/capacity.")
+@@ -58,7 +63,7 @@
+             raise CsvBacklogError("CSV writer is closing or saturated.")
+         payload = (capture_datetime, {number: np.array(trace_arrays[number], dtype=float, copy=True)
+                                       for number in self.active_trace_numbers})
+-        if any(values.shape != self.frequency_axis.shape for values in payload[1].values()):
++        if any(values.shape != self.frequency_axis.shape or not np.all(np.isfinite(values)) for values in payload[1].values()):
+             raise ValueError("Trace length differs from frequency grid.")
+         try:
+             self.capture_queue.put_nowait(payload)

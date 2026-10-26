@@ -1,0 +1,12 @@
+# R&S FSP Logger 0.9.0 - tested pins (Python 3.8 and 3.12, 2026-10-26).
+# Optional instead of PyQt5: PySide6==6.7.3 with QT_API=pyside6 (Python 3.9+).
+# Optional for PDF/PNG: a Veusz program with h5py (VEUSZ_EXE).
+numpy==1.24.4; python_version < "3.9"
+numpy==1.26.4; python_version >= "3.9"
+h5py==3.10.0
+QtPy==2.4.3
+PyQt5==5.15.11
+pyqtgraph==0.13.3
+PyVISA==1.14.1
+PyVISA-py==0.7.2
+pypdf==4.3.1

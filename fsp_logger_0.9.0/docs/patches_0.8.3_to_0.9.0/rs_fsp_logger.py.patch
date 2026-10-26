@@ -1,0 +1,1898 @@
+--- 0.8.3/rs_fsp_logger.py
++++ 0.9.0/rs_fsp_logger.py
+@@ -6,21 +6,50 @@
+ ===============================================================================
+  Title          : R&S FSP Spectrum Analyzer Trace Logger
+  Filename       : rs_fsp_logger.py
+- Version        : 0.8.3 (Semantic Versioning 2.0.0)
++ Version        : 0.9.0 (Semantic Versioning 2.0.0)
+  Author         : William W. Wallace (application owner)
+  Company        : NRAO/GBO
+  Email          : wwallace@nrao.edu
+- Modified       : 2026-10-23
++ Modified       : 2026-10-26
+  Language       : Python 3.8 through 3.12 (tested endpoints)
+  Requires       : See requirements.txt; optional standalone Veusz for PDF/PNG
+- Companions     : fsp_background 0.1.2, fsp_reports 0.1.3, vszh5_writer 0.0.17
++ Companions     : fsp_background 0.2.0, fsp_reports 0.1.4, vszh5_writer 0.0.18,
++                  fsp_simulator 0.0.1
+  Licence        : Supplied logger's license not declared; no grant inferred.
+  Attribution    : Author/contact copied from supplied writer at user's request;
+                   this integration includes AI-generated modifications.
+ ===============================================================================
+ 
+-REVISION HISTORY
++REVISION HISTORY (newest first)
+ ----------------
++0.9.0  2026-10-26
++       NEW  Reset Active Traces (button, F7, Acquisition/Tools menus,
++            toolbar): every displayed trace of the selected screen is set
++            to Clear/Write (DISP:WIND<s>:TRAC<n>:MODE WRIT) and back to its
++            own mode, restarting max hold / min hold / average; View traces
++            are re-frozen after one fresh sweep. Idle: own worker thread;
++            recording: served by the acquisition worker between captures
++            and logged to <csv>_events.csv. Optional confirmation prompt.
++       FIX  Screen/trace mismatch that needed the Auto / A / B buttons to be
++            toggled before the right traces were read:
++            (1) trace modes were read with DISP:TRAC<n>:MODE?, which has no
++                WINDow suffix and therefore always addresses Screen A, even
++                when sweep settings and data came from Screen B; now
++                DISP:WIND<s>:TRAC<n>:MODE? of the selected screen;
++            (2) the Screen choice was only applied on a button toggle, so a
++                new connection ran Auto even with A or B shown; it is now
++                applied at connect;
++            (3) Auto detected the screen once per connection; it now
++                re-detects at connect, Probe, Start, Diagnostics and Reset
++                (never between captures);
++            (4) the trace-fetch syntax could fall back to the other screen
++                (TRAC? / TRAC1? for Screen B, TRAC2? for Screen A) and was
++                cached across a screen change; fetch forms and the cache are
++                now per screen.
++       NEW  Demo Mode runs the real FSPInstrument over fsp_simulator (two
++            screens, trace modes); "In use: Screen X (auto/forced)" label;
++            LED tooltips show each trace's mode; Diagnostics compares both
++            screens; trace LEDs fill at connect; About reads module versions.
+ 0.8.3: All-bin Freq_N_GHz and Combined_Freq_vs_Time native datetime plots;
+        retain every prior plot. Full text menu/toolbar, dark/light/system
+        display themes, persistent preference and author/About information.
+@@ -48,12 +77,15 @@
+ --------
+ * QtPy abstraction layer (packaged/tested with PyQt5)
+ * Filename field, planned start time, manual Start, Stop
+-* Active-trace LEDs (1, 2, 3) + Recording LED
++* Active-trace LEDs (1, 2, 3) + Recording LED (tooltips give each mode)
++* Screen A / B / Auto selection, applied at connect, with an "In use" label
++* Reset Active Traces: Clear/Write, then each trace's own mode (0.9.0)
+ * Per-capture progress bar (driven by sweep time)
+ * Live plot of last captured traces (pyqtgraph)
+ * Sanity check: ensures N >= sweep_time * sweep_count (+ safety margin),
+   with a warning dialog quoting the minimum allowed N
+-* Demo mode: built-in mock instrument so the GUI runs without hardware
++* Demo mode: the real instrument code over a simulated two-screen FSP
++  session (fsp_simulator.py), synthetic data only
+ 
+ Python: written for 3.8+; auto-detects 3.12 and uses faster paths where it helps.
+ 
+@@ -74,10 +106,11 @@
+ from dataclasses import dataclass
+ from datetime import datetime, timedelta
+ from pathlib import Path
+-from typing import Dict, List, Optional, Tuple
++from typing import Dict, List, Optional, Sequence, Tuple
+ 
+ import numpy as np
+-from fsp_background import AsyncCaptureCsvWriter, LatestCaptureMailbox
++from fsp_background import AsyncCaptureCsvWriter, CaptureEventLog, LatestCaptureMailbox
++from fsp_simulator import SimulatedFSPSession
+ 
+ # ---------------------------------------------------------------------------
+ # %% Version
+@@ -96,7 +129,10 @@
+ #         thread without killing Spyder kernel. Removed 30 s fetch test
+ #         from Diagnostics (the processEvents spin loop was starving
+ #         Spyder's heartbeat). Probe Traces button now synchronous.
+-APP_VERSION = "0.8.3"
++# 0.9.0 — Reset Active Traces; trace modes and data read from the selected
++#         screen; Screen choice applied at connect; Auto re-detects on refresh.
++APP_VERSION = "0.9.0"
++APP_DATE = "2026-10-26"
+ 
+ # ---------------------------------------------------------------------------
+ # %% Python version handling
+@@ -169,8 +205,16 @@
+ 
+     def __init__(self, resource: str, timeout_ms: int = 30000,
+                  backend: str = "@py", debug: bool = False,
+-                 continuous_sweep: bool = True):
+-        if not _HAS_PYVISA:
++                 continuous_sweep: bool = True, session=None):
++        """Open the VISA resource (or adopt ``session``).
++
++        ``session`` (0.9.0) is an already-open message-based resource with
++        pyvisa's write/query/query_ascii_values/timeout interface - Demo Mode
++        passes fsp_simulator.SimulatedFSPSession here, so Demo and the tests
++        run this real class rather than a separate mock. pyvisa is then not
++        needed.
++        """
++        if session is None and not _HAS_PYVISA:
+             raise FSPError(
+                 "pyvisa is not installed. `pip install pyvisa pyvisa-py` "
+                 "or use Demo Mode."
+@@ -190,7 +234,10 @@
+         # fetch_trace() call and reused for the rest of the session to
+         # avoid re-trying broken syntaxes (which can take >30 s each on
+         # this firmware).
+-        self._trace_fetch_cmd_template: Optional[str] = None
++        # 0.9.0: cached per screen, {screen: template}, so a template found
++        # on Screen A can never be reused for Screen B (0.8.3 kept one
++        # template across an automatic screen change and read Screen A).
++        self._trace_fetch_templates: Dict[int, str] = {}
+         # FSP supports two measurement screens (Screen A = WINDow1,
+         # Screen B = WINDow2). The user's spectrum config can live on
+         # either one. SCPI defaults to Screen A; if Screen A is at boot
+@@ -201,6 +248,24 @@
+         # 1 = Screen A (default), 2 = Screen B.
+         self.active_screen: int = 1
+         self._screen_discovered: bool = False
++        # 0.9.0: what the user selected - "auto" (re-detected at every
++        # connect / probe / start / reset / diagnostics) or 1 / 2 (forced).
++        self.screen_mode = "auto"
++        # Which DISPlay header form answered MODE? per screen ("window" =
++        # DISP:WIND<n>:TRAC<t>, "plain" = DISP:TRAC<t>, Screen A only).
++        self._mode_query_style: Dict[int, str] = {}
++        # Last trace modes read, {trace: token or None}, and their screen.
++        self.last_trace_modes: Dict[int, Optional[str]] = {}
++        self.last_trace_modes_screen: int = 1
++        # Frequencies read on both screens by the last auto-detection.
++        self.last_screen_probe: Dict[int, Dict[str, float]] = {}
++        # Sweep time x count from the last sweep_settings() (reset dwell).
++        self._last_sweep_total_s: Optional[float] = None
++        if session is not None:
++            self.rm = None
++            self.inst = session
++            self._configured = False
++            return
+ 
+         # CONNECT — keep this minimal. Anything that touches the SCPI parser
+         # here can hang the calling thread (and on Spyder's main thread, that
+@@ -329,177 +394,256 @@
+             pass
+         try: self.inst.close()
+         except Exception: pass
+-        try: self.rm.close()
+-        except Exception: pass
++        if self.rm is not None:
++            try: self.rm.close()
++            except Exception: pass
+ 
+     # ---- high level ----------------------------------------------------
+     def idn(self) -> str:
+         return self.query("*IDN?")
+ 
+-    def _query_trace_state(self, n: int) -> Tuple[Optional[str], Optional[str]]:
+-        """Return (mode_token, state_token) for trace n. Either may be None.
++    # ---- trace modes, routed to the selected screen (0.9.0) ------------
++    #: Short-form trace modes the FSP reports for ...:TRAC<t>:MODE?.
++    MODE_TOKENS = ("WRIT", "VIEW", "AVER", "MAXH", "MINH", "BLAN")
++    #: Readable names for status text and the reset confirmation.
++    MODE_NAMES = {"WRIT": "Clear/Write", "VIEW": "View", "AVER": "Average",
++                  "MAXH": "Max Hold", "MINH": "Min Hold", "BLAN": "Blank"}
++
++    @classmethod
++    def normalize_mode(cls, answer: Optional[str]) -> Optional[str]:
++        """Short token for a MODE? answer ('MAXH', 'MAXHOLD', '"WRIT"' ...).
++
++        Unknown non-empty answers are returned cleaned but unchanged; an
++        empty answer gives None.
++        """
++        if answer is None:
++            return None
++        text = str(answer).strip().strip('"').strip("'").strip().upper().lstrip("+")
++        if not text:
++            return None
++        for token in cls.MODE_TOKENS:
++            if text.startswith(token):
++                return token
++        return text
++
++    @staticmethod
++    def screen_letter(screen: Optional[int]) -> str:
++        """1 -> 'A', 2 -> 'B'."""
++        return "B" if screen == 2 else "A"
++
++    def _trace_header(self, trace: int, screen: Optional[int] = None,
++                      style: str = "window") -> str:
++        """DISPlay header of one trace on one screen.
++
++        'window' gives DISP:WIND<s>:TRAC<t>, the form whose WINDow<1|2>
++        suffix selects Screen A or B (FSP manual, DISPlay[:WINDow<1|2>]
++        commands). 'plain' gives DISP:TRAC<t>; an omitted numeric suffix is
++        interpreted as suffix 1, so it reaches Screen A only and is never
++        used for Screen B. 0.8.3 used the plain form for every screen,
++        which is why the detected traces were always Screen A's.
++        """
++        number = self.active_screen if screen is None else int(screen)
++        if style == "plain":
++            if number != 1:
++                raise ValueError("DISP:TRAC<t> without WINDow addresses Screen A only")
++            return f"DISP:TRAC{int(trace)}"
++        return f"DISP:WIND{number}:TRAC{int(trace)}"
++
++    def _mode_styles(self, screen: int) -> List[str]:
++        """Header forms to try for a screen, the last one that worked first."""
++        styles = ["window", "plain"] if screen == 1 else ["window"]
++        known = self._mode_query_style.get(screen)
++        if known in styles:
++            styles.remove(known)
++            styles.insert(0, known)
++        return styles
++
++    def _safe_drain(self) -> List[str]:
++        try:
++            return self._drain_error_queue()
++        except Exception:
++            return []
++
++    def trace_mode(self, trace: int, screen: Optional[int] = None) -> Optional[str]:
++        """Mode token of one trace on one screen (default: selected screen).
+ 
+-        mode_token is the upper-cased response to DISP:TRAC<n>:MODE? (e.g.
+-        'WRIT', 'MAXH', 'AVER', 'VIEW', 'BLAN'). state_token is '0' or '1'
+-        from DISP:TRAC<n>:STAT? (or 'ON'/'OFF').
++        Returns None when no header form is answered.
+         """
+-        mode_tok: Optional[str] = None
+-        for cmd in (f"DISP:TRAC{n}:MODE?", f"DISP:WIND:TRAC{n}:MODE?"):
++        number = self.active_screen if screen is None else int(screen)
++        for style in self._mode_styles(number):
++            cmd = self._trace_header(trace, number, style) + ":MODE?"
+             try:
+-                ans = (self.query(cmd) or "").strip().upper().lstrip("+")
++                answer = self.query(cmd)
+             except Exception as exc:
+                 self._log(f"{cmd} raised {exc}")
++                self._safe_drain()
+                 continue
+-            if ans:
+-                # Drain any errors silently — we already got a response.
+-                self._drain_error_queue()
+-                mode_tok = ans
+-                break
+-            # Empty response: check if this command was rejected.
+-            errs = self._drain_error_queue()
+-            if errs and any("MODE" in e.upper() or "TRAC" in e.upper() for e in errs):
+-                self._log(f"{cmd} rejected: {errs}")
+-                continue
++            token = self.normalize_mode(answer)
++            errors = self._safe_drain()
++            if token:
++                self._mode_query_style[number] = style
++                return token
++            if errors:
++                self._log(f"{cmd} rejected: {errors}")
++        return None
+ 
+-        state_tok: Optional[str] = None
+-        for cmd in (f"DISP:TRAC{n}:STAT?", f"DISP:WIND:TRAC{n}:STAT?"):
++    def _trace_state_flag(self, trace: int, screen: int) -> Optional[bool]:
++        """DISP[:WIND<s>]:TRAC<t>:STAT? as True/False, None if unanswered.
++
++        Only a fallback for firmware that does not answer MODE?.
++        """
++        for style in self._mode_styles(screen):
++            cmd = self._trace_header(trace, screen, style) + ":STAT?"
+             try:
+-                ans = (self.query(cmd) or "").strip().upper().lstrip("+")
++                answer = (self.query(cmd) or "").strip().upper().lstrip("+")
+             except Exception as exc:
+                 self._log(f"{cmd} raised {exc}")
++                self._safe_drain()
+                 continue
+-            if ans in ("0", "1", "ON", "OFF"):
+-                self._drain_error_queue()
+-                state_tok = ans
+-                break
+-            errs = self._drain_error_queue()
+-            if errs and any("STAT" in e.upper() or "TRAC" in e.upper() for e in errs):
+-                self._log(f"{cmd} rejected: {errs}")
+-                continue
+-            if ans:
+-                state_tok = ans
+-                break
+-        return mode_tok, state_tok
++            self._safe_drain()
++            if answer in ("1", "ON"):
++                return True
++            if answer in ("0", "OFF"):
++                return False
++        return None
+ 
+-    @staticmethod
+-    def _is_displayed(mode_tok: Optional[str], state_tok: Optional[str]) -> bool:
+-        """Decide whether a trace is currently shown on the FSP screen.
++    def trace_modes(self, screen: Optional[int] = None) -> Dict[int, Optional[str]]:
++        """{trace: mode token or None} for traces 1..3 of one screen.
+ 
+-        Logic (informed by FSP-38 testing):
+-        - If MODE? is reported and is anything OTHER than BLANK, the trace is
+-          displayed (handles MAXH/AVER/VIEW/MINH/WRIT cases — including
+-          max-hold and average traces which return STAT?=0 on FSP firmware).
+-        - Else if STAT? is 1/ON, treat as displayed (covers firmware versions
+-          that don't expose MODE? but do expose STATe?).
+-        - If MODE? is BLANK, the trace is hidden regardless of STAT?.
+-        """
+-        if mode_tok:
+-            # 'BLAN' is the FSP short form for 'BLANK'.
+-            if mode_tok.startswith("BLAN"):
+-                return False
+-            # Any recognised non-blank mode token => displayed.
+-            for tok in ("WRIT", "VIEW", "AVER", "MAXH", "MINH"):
+-                if mode_tok.startswith(tok):
+-                    return True
+-            # Unknown mode token but non-empty: fall through to STAT check.
+-        if state_tok:
+-            t = state_tok.lstrip("+")
+-            if t.startswith("1") or t.startswith("ON"):
+-                return True
+-        return False
++        Each MODE? returns a few bytes; the timeout is capped at 2 s so a
++        rejected form cannot stall the caller.
++        """
++        number = self.active_screen if screen is None else int(screen)
++        saved = self.inst.timeout
++        try:
++            self.inst.timeout = 2000
++            return {n: self.trace_mode(n, number) for n in range(1, self.MAX_TRACES + 1)}
++        finally:
++            self.inst.timeout = saved
+ 
+     def active_traces(self) -> List[int]:
+         """
+-        Return list of trace numbers currently *displayed* (1..3) on the FSP.
++        Trace numbers (1..3) displayed on the SELECTED screen.
+ 
+-        Detection strategy: query DISP:TRAC<n>:MODE? for each trace and
+-        treat anything other than 'BLAN' (blanked) as displayed.
++        A trace is displayed when DISP:WIND<s>:TRAC<n>:MODE? answers
++        anything other than BLAN (WRIT, MAXH, MINH, AVER, VIEW). Max-hold
++        and average traces count: on FSP firmware they can report STAT? = 0.
++        When MODE? is not answered the STAT? flag is used instead.
++
++        0.9.0: the query carries the WINDow suffix of the selected screen
++        (and, in Auto, the screen is detected first), so Screen B's traces
++        are read from Screen B. Cheap (three ~5-byte answers), so it may run
++        on the GUI thread as before.
+ 
+-        Why this works on FSP-38:
+-        - MODE? returns one of {WRIT, MAXH, MINH, AVER, VIEW, BLAN}.
+-        - On this firmware MODE? consistently returns the trace's actual
+-          mode for displayed traces. The user-confirmed configuration is
+-          T1=clear/write, T2=max hold, T3=average — if MODE? returns
+-          'WRIT' for all three (firmware quirk), they're STILL all displayed,
+-          which is the answer we need. Only 'BLAN' means hidden.
+-
+-        This is far cheaper than reading TRAC:DATA? — each MODE? query
+-        returns ~5 bytes and is non-blocking, vs hundreds of floats per
+-        trace. That matters: this method runs on the GUI thread when the
+-        user clicks Start or Diagnostics, and a heavy probe was killing
+-        the Spyder kernel's heartbeat.
++        Raises FSPError when no trace on the selected screen answers at all,
++        instead of reporting "no traces".
+         """
+-        # Drain any stale errors so a previous failure doesn't attribute
+-        # itself to our queries here.
+-        try:
+-            stale = self._drain_error_queue()
+-            if stale:
+-                self._log(f"drained stale errors before active_traces: {stale}")
+-        except Exception:
+-            pass
+-
+-        # Cap timeout: each MODE? should return in milliseconds.
++        self._discover_active_screen()
++        stale = self._safe_drain()
++        if stale:
++            self._log(f"drained stale errors before active_traces: {stale}")
++        number = self.active_screen
+         saved = self.inst.timeout
++        modes: Dict[int, Optional[str]] = {}
++        active: List[int] = []
++        unanswered = 0
+         try:
+             self.inst.timeout = 2000
+-            active: List[int] = []
+             for n in range(1, self.MAX_TRACES + 1):
+-                cmd = f"DISP:TRAC{n}:MODE?"
+-                try:
+-                    ans = self.query(cmd).strip().upper().strip('"').strip("'")
+-                except Exception as exc:
+-                    self._log(f"MODE? trace {n} failed: {exc}")
+-                    # On query failure, drain errors and skip this trace.
+-                    try:
+-                        self._drain_error_queue()
+-                    except Exception:
+-                        pass
+-                    continue
+-                # Anything other than 'BLAN' means the trace is displayed.
+-                # FSP returns one of: WRIT, MAXH, MINH, AVER, VIEW, BLAN.
+-                if ans and not ans.startswith("BLAN"):
+-                    self._log(f"trace {n}: MODE={ans!r} => DISPLAYED")
+-                    active.append(n)
++                token = self.trace_mode(n, number)
++                modes[n] = token
++                if token is not None:
++                    shown = not token.startswith("BLAN")
+                 else:
+-                    self._log(f"trace {n}: MODE={ans!r} => hidden")
+-            # Drain any straggling errors so they don't pollute later calls.
+-            try:
+-                self._drain_error_queue()
+-            except Exception:
+-                pass
++                    flag = self._trace_state_flag(n, number)
++                    if flag is None:
++                        unanswered += 1
++                    shown = bool(flag)
++                self._log(f"screen {self.screen_letter(number)} trace {n}: MODE={token!r} => "
++                          f"{'DISPLAYED' if shown else 'hidden'}")
++                if shown:
++                    active.append(n)
++            self._safe_drain()
+         finally:
+             self.inst.timeout = saved
++        self.last_trace_modes = modes
++        self.last_trace_modes_screen = number
++        if unanswered == self.MAX_TRACES:
++            raise FSPError(
++                f"No trace mode could be read on Screen {self.screen_letter(number)} "
++                f"(DISP:WIND{number}:TRAC<n>:MODE? and :STAT? unanswered). "
++                "Run Diagnostics, or select the other screen.")
+         return active
+ 
++    # ---- screen selection ------------------------------------------------
++    def set_screen_mode(self, mode) -> None:
++        """Apply the GUI's Screen choice: 'auto', 1 or 'A', 2 or 'B'.
++
++        0.9.0: the GUI calls this right after connecting as well as on every
++        change, so the radio button that is shown is the one in force (0.8.3
++        ignored a choice made before Connect until the buttons were toggled).
++        """
++        key = str(mode).strip().upper()
++        if key in ("AUTO", ""):
++            self.reset_screen_discovery()
++        elif key in ("1", "A"):
++            self.force_screen(1)
++        elif key in ("2", "B"):
++            self.force_screen(2)
++        else:
++            raise ValueError(f"screen mode must be auto, A or B, got {mode!r}")
++
+     def force_screen(self, screen: int) -> None:
+         """Force SCPI to address a specific FSP screen (1=A, 2=B).
+ 
+         On FSP, the SENSe<1|2>: numeric suffix routes per-query to a
+         specific measurement window — this is independent of which window
+         is the "active measurement window" (DISP:WIND:SEL state). So
+-        forcing a screen is just a matter of recording which SENSe prefix
+-        to use; subsequent FREQ:* / SWE:* / TRAC? queries are built with
+-        the right suffix in _read_screen_freq, sweep_settings, and
+-        fetch_trace.
++        forcing a screen is just a matter of recording which suffix
++        to use; subsequent FREQ:* / SWE:* / DISP:WIND<n>:TRAC / TRAC<n>?
++        queries are built with the right suffix.
+ 
+-        Resets the cached trace-fetch template since the previous one may
+-        have been keyed to a different screen.
++        Trace-fetch templates are cached per screen (0.9.0), so nothing
++        found for one screen is reused on the other.
+         """
+         if screen not in (1, 2):
+             raise ValueError(f"screen must be 1 or 2, got {screen}")
+         self._log(f"force_screen({screen}): SCPI will now use "
+                   f"{self._scpi_screen_prefix(screen) or '(no prefix = SENS1)'} "
+-                  f"for FREQ/SWE queries")
++                  f"for FREQ/SWE and DISP:WIND{screen} for trace modes")
++        self.screen_mode = screen
+         self.active_screen = screen
+         self._screen_discovered = True
+-        self._trace_fetch_cmd_template = None  # re-discover for new screen
+ 
+     def reset_screen_discovery(self) -> None:
+-        """Clear the cached active-screen choice so the next sweep_settings()
+-        call re-runs auto-discovery."""
++        """Return to Auto: the next screen-routed query re-runs detection."""
++        self.screen_mode = "auto"
+         self._screen_discovered = False
+         self.active_screen = 1
+-        self._trace_fetch_cmd_template = None
++
++    def refresh_screen_selection(self) -> None:
++        """Auto only: forget the last detection so the next query repeats it.
++
++        Called at connect, Probe, Start, Diagnostics and Reset, so a screen
++        changed on the analyzer's front panel is followed without toggling
++        the Screen buttons (0.8.3 detected once per connection). Never
++        called between captures, so a recording keeps one screen. A forced
++        A or B is left unchanged.
++        """
++        if self.screen_mode == "auto":
++            self._screen_discovered = False
++
++    @property
++    def screen_description(self) -> str:
++        """e.g. 'Screen B (auto)' or 'Screen A (forced)'."""
++        how = "auto" if self.screen_mode == "auto" else "forced"
++        return f"Screen {self.screen_letter(self.active_screen)} ({how})"
++
++    @property
++    def _trace_fetch_cmd_template(self) -> Optional[str]:
++        """Cached trace-fetch syntax of the selected screen (read-only view
++        kept for diagnostics and pre-0.9.0 callers)."""
++        return self._trace_fetch_templates.get(self.active_screen)
+ 
+     def _scpi_screen_prefix(self, screen: Optional[int] = None) -> str:
+         """Build the SENSe<n>: prefix for screen-routed queries.
+@@ -543,12 +687,16 @@
+         center will be vastly higher). If both look default, leave
+         Screen A active.
+ 
+-        Sets self.active_screen to 1 or 2, and (if 2) sends DISP:WIND2:SEL
+-        so that subsequent unsuffixed FREQ/SWE queries route to Screen B.
++        Sets self.active_screen to 1 or 2. Nothing is written to the
++        analyzer: every later query carries the screen's own suffix
++        (SENS<n>:, DISP:WIND<n>:, TRAC<n>?), so DISP:WIND<n>:SEL is not
++        needed. With both screens configured, the heuristic can pick the
++        screen you are NOT using; force A or B in that case.
+         """
+         if self._screen_discovered:
+             return
+         self._screen_discovered = True   # set first to prevent recursion
++        previous = self.active_screen
+         self._log("--- screen discovery: probing both FSP screens via SENSe suffix ---")
+         # Probe each screen using the SENSe<n>: prefix — this routes the
+         # query to the right screen WITHOUT changing DISP:WIND:SEL state.
+@@ -575,6 +723,7 @@
+                 return -1.0
+             return c
+         score_a, score_b = score(a), score(b)
++        self.last_screen_probe = {1: dict(a), 2: dict(b)}
+         if score_b > score_a:
+             self.active_screen = 2
+             self._log(f"  => Screen B wins (center {b['f_center']} > "
+@@ -582,6 +731,9 @@
+         else:
+             self.active_screen = 1
+             self._log(f"  => Screen A wins; active_screen = 1")
++        if self.active_screen != previous:
++            self._log(f"  screen changed {self.screen_letter(previous)} -> "
++                      f"{self.screen_letter(self.active_screen)}")
+ 
+     def sweep_settings(self) -> Dict[str, float]:
+         """Read sweep settings from the FSP.
+@@ -642,12 +794,14 @@
+         # Cache n_pts so active_traces() can validate probe lengths without
+         # an extra round-trip.
+         self._cached_n_pts = n_pts
++        self._last_sweep_total_s = float(sweep_time) * int(sweep_count)
+         return dict(f_start=f_start, f_stop=f_stop, n_pts=n_pts,
+                     sweep_time=sweep_time, sweep_count=sweep_count,
+                     f_center=f_center, f_span=f_span,
+                     f_start_raw=f_start_raw, f_stop_raw=f_stop_raw,
+                     freq_source=freq_source,
+-                    active_screen=self.active_screen)
++                    active_screen=self.active_screen,
++                    screen_mode=self.screen_mode)
+ 
+     def frequency_axis(self, settings: Optional[Dict[str, float]] = None) -> np.ndarray:
+         s = settings or self.sweep_settings()
+@@ -760,85 +914,61 @@
+             self.inst.timeout = saved
+         return arr
+ 
++    #: Trace-data query forms per screen. TRACe<1|2> selects the screen and
++    #: an omitted suffix counts as 1 (Screen A). 0.9.0: Screen B is never
++    #: read through an unsuffixed or TRAC1 form and Screen A never through
++    #: TRAC2, so a failing query cannot silently return the other screen's
++    #: trace (0.8.3 fell back across screens and cached the result).
++    TRACE_FETCH_CANDIDATES = {
++        1: ("TRAC? TRACE{n}", "TRAC:DATA? TRACE{n}", "TRAC1? TRACE{n}",
++            "TRAC1:DATA? TRACE{n}", ":TRAC? TRACE{n}"),
++        2: ("TRAC2? TRACE{n}", "TRAC2:DATA? TRACE{n}", ":TRAC2? TRACE{n}",
++            ":TRAC2:DATA? TRACE{n}"),
++    }
++
+     def _fetch_trace_with_syntax_discovery(
+             self, trace_num: int) -> np.ndarray:
+-        """Try multiple FSP trace-fetch syntaxes until one works; cache the
+-        winner on the instance for subsequent calls.
++        """Try the selected screen's trace-fetch syntaxes until one works;
++        cache the winner for that screen.
+ 
+         Returns the trace as a numpy float array.
+         Raises FSPError if all candidates fail, with the FSP error queue
+         contents from each attempt.
+         """
+-        # Build the candidate list. If we've already discovered a working
+-        # syntax for this session, use it directly — avoids -100 errors
+-        # piling up in the error queue on every recording capture.
+-        if self._trace_fetch_cmd_template:
+-            cmd = self._trace_fetch_cmd_template.format(n=trace_num)
+-            self._log(f"Q  {cmd}  (cached working syntax)")
++        screen = self.active_screen if self.active_screen in (1, 2) else 1
++        # A syntax already found for this screen is used directly — avoids
++        # -100 errors piling up in the error queue on every capture.
++        cached = self._trace_fetch_templates.get(screen)
++        if cached:
++            cmd = cached.format(n=trace_num)
++            self._log(f"Q  {cmd}  (cached working syntax, screen {self.screen_letter(screen)})")
+             return np.asarray(
+                 self.inst.query_ascii_values(
+                     cmd, container=np.array, separator=","),
+                 dtype=float)
+-        # Build candidates. If screen discovery determined Screen B is
+-        # active, prioritize TRAC2:* (Screen B trace). Otherwise prioritize
+-        # TRAC1:* / TRAC. We always include all forms as fallbacks because
+-        # firmware variants accept different spellings.
+-        if getattr(self, "active_screen", 1) == 2:
+-            candidates = [
+-                "TRAC2? TRACE{n}",
+-                "TRAC2:DATA? TRACE{n}",
+-                "TRAC? TRACE{n}",
+-                "TRAC:DATA? TRACE{n}",
+-                "TRAC1? TRACE{n}",
+-                ":TRAC2? TRACE{n}",
+-            ]
+-        else:
+-            candidates = [
+-                "TRAC? TRACE{n}",
+-                "TRAC:DATA? TRACE{n}",
+-                "TRAC1? TRACE{n}",
+-                "TRAC1:DATA? TRACE{n}",
+-                ":TRAC? TRACE{n}",
+-                "TRAC2? TRACE{n}",
+-            ]
++        candidates = self.TRACE_FETCH_CANDIDATES[screen]
+         all_errors: List[str] = []
+         # During discovery we use a short per-attempt timeout (5 s) so a
+         # broken syntax that hangs can't burn 30 s before falling through.
+-        # The caller (fetch_trace) will already have set a longer timeout
+-        # for the successful query — but we override it here for discovery
+-        # only, and restore it before the successful return.
+         outer_timeout = self.inst.timeout
+         try:
+             self.inst.timeout = 5000
+             for tmpl in candidates:
+                 cmd = tmpl.format(n=trace_num)
+                 self._log(f"Q  {cmd}  (syntax discovery, 5 s cap)")
+-                # Drain any errors from the previous candidate so they don't
+-                # contaminate this one's error queue.
+-                try:
+-                    self._drain_error_queue()
+-                except Exception:
+-                    pass
++                self._safe_drain()
+                 try:
+                     vals = self.inst.query_ascii_values(
+                         cmd, container=np.array, separator=",")
+                 except Exception as exc:
+-                    errs = []
+-                    try:
+-                        errs = self._drain_error_queue()
+-                    except Exception:
+-                        pass
++                    errs = self._safe_drain()
+                     self._log(f"  failed: {exc}; FSP errors: {errs}")
+                     all_errors.append(
+                         f"{tmpl!r}: {exc.__class__.__name__}: {exc}"
+                         + (f" | {errs}" if errs else ""))
+                     continue
+-                # Even if no exception, the FSP may have queued -100. Drain
+-                # and inspect.
+-                try:
+-                    errs = self._drain_error_queue()
+-                except Exception:
+-                    errs = []
++                # Even if no exception, the FSP may have queued -100.
++                errs = self._safe_drain()
+                 arr = np.asarray(vals, dtype=float)
+                 if errs:
+                     self._log(f"  returned {arr.size} pts BUT FSP errors: {errs}")
+@@ -849,29 +979,178 @@
+                     self._log("  returned 0 points (empty)")
+                     all_errors.append(f"{tmpl!r}: returned 0 points")
+                     continue
+-                # Success! Cache this template for the rest of the session.
+-                self._trace_fetch_cmd_template = tmpl
++                self._trace_fetch_templates[screen] = tmpl
+                 self._log(f"  SUCCESS: {arr.size} points; caching syntax "
+-                          f"{tmpl!r} for session")
++                          f"{tmpl!r} for screen {self.screen_letter(screen)}")
+                 return arr
+         finally:
+             self.inst.timeout = outer_timeout
+-        # All candidates failed. Raise with the full error log.
+         raise FSPError(
+-            f"All trace-fetch syntaxes failed for trace {trace_num}.\n"
++            f"All Screen {self.screen_letter(screen)} trace-fetch syntaxes failed "
++            f"for trace {trace_num}.\n"
+             + "\n".join(f"  - {e}" for e in all_errors))
+ 
++    # ---- trace reset (0.9.0) ---------------------------------------------
++    #: Longest wait for a fresh sweep before a View trace is frozen again.
++    RESET_VIEW_SETTLE_MAX_S = 60.0
++
++    def _sweep_total_s(self) -> float:
++        """Sweep time x count of the selected screen (cached when known)."""
++        if self._last_sweep_total_s is not None:
++            return float(self._last_sweep_total_s)
++        prefix = self._scpi_screen_prefix()
++        try:
++            sweep_time = float(self.query(f"{prefix}SWE:TIME?"))
++        except Exception:
++            sweep_time = 1.0
++        try:
++            count = max(1, int(float(self.query(f"{prefix}SWE:COUN?"))))
++        except Exception:
++            count = 1
++        self._last_sweep_total_s = sweep_time * count
++        return self._last_sweep_total_s
++
++    @staticmethod
++    def _sleep_interruptible(seconds: float, stop_event=None) -> None:
++        end = time.perf_counter() + max(0.0, float(seconds))
++        while time.perf_counter() < end:
++            if stop_event is not None and stop_event.is_set():
++                return
++            time.sleep(max(0.0, min(0.05, end - time.perf_counter())))
++
++    def reset_active_traces(self, traces: Optional[Sequence[int]] = None,
++                            stop_event=None,
++                            view_settle_s: Optional[float] = None) -> List[Dict[str, object]]:
++        """Restart every displayed trace of the selected screen.
++
++        Each displayed trace is switched to Clear/Write
++        (DISP:WIND<s>:TRAC<n>:MODE WRIT) and then back to the mode it had
++        (MAXH, MINH, AVER, VIEW; a WRIT trace stays WRIT). Leaving and
++        re-entering Max Hold, Min Hold or Average restarts the accumulation
++        on the analyzer, so this is the remote equivalent of pressing
++        CLEAR/WRITE and then the trace's own mode again. Blank traces are not
++        touched; the sweep, frequency and level settings are not changed.
++
++        View traces are frozen copies: after WRIT the analyzer needs one full
++        sweep before VIEW is restored, or the frozen trace would hold part of
++        a sweep. When a View trace is present this waits sweep time x count
++        (+10 %, at most RESET_VIEW_SETTLE_MAX_S, or ``view_settle_s``) and a
++        sweep boundary (*OPC?). Without View traces the restore follows at
++        once.
++
++        Must run on the thread that owns this VISA session (the acquisition
++        worker while recording, a short-lived worker when idle).
++
++        Parameters
++        ----------
++        traces:
++            Trace numbers to reset; default: every displayed trace.
++        stop_event:
++            threading.Event that cuts a View settle wait short.
++        view_settle_s:
++            Override of the View settle wait, in seconds.
++
++        Returns
++        -------
++        list of dict
++            One per trace: trace, screen ('A'/'B'), original, restored,
++            ok (restored == original) and note (problems, if any).
++
++        Raises
++        ------
++        FSPError
++            No trace mode could be read on the selected screen.
++        """
++        self._discover_active_screen()
++        number = self.active_screen
++        stale = self._safe_drain()
++        if stale:
++            self._log(f"drained stale errors before reset: {stale}")
++        modes = self.trace_modes(number)
++        if all(mode is None for mode in modes.values()):
++            raise FSPError(f"No trace mode could be read on Screen {self.screen_letter(number)}; "
++                           "nothing was changed.")
++        if traces is None:
++            targets = [n for n, mode in sorted(modes.items()) if mode and not mode.startswith("BLAN")]
++        else:
++            targets = sorted({int(n) for n in traces})
++        results: List[Dict[str, object]] = []
++        switched: List[Tuple[Dict[str, object], str]] = []
++        saved = self.inst.timeout
++        try:
++            self.inst.timeout = 5000
++            for n in targets:
++                original = modes.get(n)
++                entry: Dict[str, object] = dict(trace=n, screen=self.screen_letter(number),
++                                                original=original, restored=original,
++                                                ok=False, note="")
++                results.append(entry)
++                if original is None:
++                    entry["note"] = "mode unreadable; left unchanged"
++                    continue
++                if original == "BLAN":
++                    entry.update(ok=True, note="blank; left unchanged")
++                    continue
++                if original not in self.MODE_TOKENS:
++                    entry["note"] = f"unknown mode {original!r}; left unchanged"
++                    continue
++                header = self._trace_header(n, number, self._mode_query_style.get(number, "window"))
++                try:
++                    self.write(f"{header}:MODE WRIT")
++                    switched.append((entry, header))
++                except Exception as exc:
++                    entry["note"] = f"WRIT not accepted: {exc}"
++            errors = self._safe_drain()
++            if errors:
++                for entry, _header in switched:
++                    entry["note"] = f"errors after WRIT: {errors}"
++            if any(entry["original"] == "VIEW" for entry, _header in switched):
++                total = self._sweep_total_s()
++                wait = (view_settle_s if view_settle_s is not None
++                        else min(self.RESET_VIEW_SETTLE_MAX_S, 1.1 * total + 0.1))
++                self._sleep_interruptible(wait, stop_event)
++                try:
++                    self.trigger_and_wait(max(0.05, total))
++                except Exception as exc:
++                    self._log(f"sweep boundary before VIEW restore failed: {exc}")
++            for entry, header in switched:
++                if entry["original"] != "WRIT":
++                    try:
++                        self.write(f"{header}:MODE {entry['original']}")
++                    except Exception as exc:
++                        entry["note"] = f"restore not accepted: {exc}"
++            errors = self._safe_drain()
++            for entry, _header in switched:
++                now = self.trace_mode(int(entry["trace"]), number)
++                entry["restored"] = now
++                entry["ok"] = now == entry["original"]
++                if errors:
++                    entry["note"] = (str(entry["note"]) + f" errors after restore: {errors}").strip()
++                if not entry["ok"] and not entry["note"]:
++                    entry["note"] = f"reads back {now!r}, expected {entry['original']!r}"
++        finally:
++            self.inst.timeout = saved
++        self.last_trace_modes = dict(modes)
++        self.last_trace_modes_screen = number
++        return results
++
+ 
+ # ===========================================================================
+-# Mock instrument (for Demo Mode and testing)
++# Legacy mock instrument (kept for scripts; Demo Mode no longer uses it)
+ # ===========================================================================
+-# %% DEMO INSTRUMENT
++# %% LEGACY MOCK INSTRUMENT
+ class MockFSPInstrument:
+     """
+-    Emulates an R&S FSP just well enough to drive the GUI / logger
+-    without any hardware attached.
++    Single-screen stand-in kept for scripts that construct it directly.
++
++    0.9.0: Demo Mode no longer uses this class. It runs the real
++    FSPInstrument over fsp_simulator.SimulatedFSPSession (two screens, trace
++    modes, error queue), so screen selection and the trace reset are
++    exercised by the same code as on hardware. The screen and reset methods
++    below only keep this class interface-compatible with the GUI.
+     """
+     MAX_TRACES = 3
++    _MOCK_MODES = {1: "WRIT", 2: "MAXH", 3: "AVER"}
+ 
+     def __init__(self, resource: str = "MOCK::FSP", timeout_ms: int = 15000,
+                  active=(1, 2), n_pts: int = 801,
+@@ -887,8 +1166,29 @@
+         self._continuous = True
+         self._sweep_started = 0.0
+         self._frame = 0
++        self.active_screen = 1
++        self.screen_mode = "auto"
++        self.last_trace_modes = {n: (self._MOCK_MODES[n] if n in self._active else "BLAN")
++                                 for n in (1, 2, 3)}
++        self.last_trace_modes_screen = 1
+ 
+     # interface compatibility
++    @property
++    def screen_description(self) -> str:
++        return "Screen A (single-screen mock)"
++
++    def set_screen_mode(self, mode) -> None:
++        self.screen_mode = "auto" if str(mode).upper() in ("AUTO", "") else str(mode)
++
++    def refresh_screen_selection(self) -> None:
++        pass
++
++    def reset_active_traces(self, traces=None, stop_event=None, view_settle_s=None):
++        targets = list(self._active) if traces is None else [int(n) for n in traces]
++        return [dict(trace=n, screen="A", original=self.last_trace_modes.get(n),
++                     restored=self.last_trace_modes.get(n), ok=True, note="mock: no instrument")
++                for n in targets]
++
+     def idn(self) -> str:
+         return "Rohde&Schwarz,FSP-MOCK,1234567,1.99"
+ 
+@@ -960,6 +1260,7 @@
+     captureFinished = Signal(int, object, dict)  # idx, freq array, {trace: data}
+     recordingStateChanged = Signal(bool)
+     errorOccurred = Signal(str)
++    traceResetFinished = Signal(object)        # list[dict] results, or str error
+     finished = Signal()
+ 
+     def __init__(self, instrument, config: RunConfig, parent=None):
+@@ -974,6 +1275,48 @@
+         self._csv_path = config.filename
+         self._csv_writer = None
+         self.display_mailbox = LatestCaptureMailbox()
++        # 0.9.0: a trace reset asked for while recording runs on THIS thread
++        # (the VISA owner) between captures; requests are a thread-safe flag.
++        self._reset_request = threading.Event()
++        self._event_log = CaptureEventLog(config.filename)
++
++    def request_trace_reset(self) -> None:
++        """Thread-safe: ask for a trace reset at the next point between
++        captures (also served during scheduled waiting)."""
++        self._reset_request.set()
++
++    @property
++    def trace_reset_pending(self) -> bool:
++        return self._reset_request.is_set()
++
++    def _service_trace_reset(self) -> None:
++        """Run a requested trace reset; called only between captures."""
++        if not self._reset_request.is_set() or self._stop_event.is_set():
++            return
++        self._reset_request.clear()
++        if not hasattr(self.inst, "reset_active_traces"):
++            self.traceResetFinished.emit("This instrument object cannot reset traces.")
++            return
++        self.statusMessage.emit("Resetting active traces (Clear/Write, then original mode)…")
++        instant = datetime.now()
++        try:
++            results = self.inst.reset_active_traces(stop_event=self._stop_event)
++        except Exception as exc:
++            message = f"Trace reset failed: {exc}"
++            self._record_event(instant, "trace_reset_failed", [dict(note=str(exc))])
++            self.traceResetFinished.emit(message)
++            return
++        self._record_event(instant, "trace_reset", [
++            dict(screen=r.get("screen"), trace=r.get("trace"), original_mode=r.get("original"),
++                 restored_mode=r.get("restored"), ok=r.get("ok"), note=r.get("note"))
++            for r in results])
++        self.traceResetFinished.emit(results)
++
++    def _record_event(self, instant, event, rows) -> None:
++        try:
++            self._event_log.record(instant, event, rows)
++        except Exception as exc:
++            self.statusMessage.emit(f"Could not write the events file: {exc}")
+ 
+     # ----- control -----
+     @Slot()
+@@ -1032,6 +1375,7 @@
+         next_trigger = _perf()
+         while not self._stop_event.is_set():
+             self._csv_writer.raise_if_failed()
++            self._service_trace_reset()
+             # Wait until it's time for the next capture
+             now = _perf()
+             if now < next_trigger:
+@@ -1095,6 +1439,7 @@
+     def _wait_until(self, target: datetime):
+         self.statusMessage.emit(f"Waiting until {target.strftime('%H:%M:%S')}…")
+         while not self._stop_event.is_set():
++            self._service_trace_reset()
+             remaining = (target - datetime.now()).total_seconds()
+             if remaining <= 0:
+                 return
+@@ -1103,6 +1448,7 @@
+     def _sleep_responsive(self, seconds: float):
+         end = _perf() + seconds
+         while not self._stop_event.is_set() and _perf() < end:
++            self._service_trace_reset()
+             time.sleep(max(0.0, min(0.1, end - _perf())))
+ 
+     def _fetch_one(self, trace_num: int, timeout_s: float) -> np.ndarray:
+@@ -1159,6 +1505,25 @@
+         self.captureProgress.emit(idx, 1.0)
+ 
+ 
++class TraceResetWorker(QtCore.QObject):
++    """Runs FSPInstrument.reset_active_traces() off the GUI thread while no
++    acquisition is running (0.9.0). The GUI keeps every other VISA action
++    disabled until it finishes, so the session still has one owner."""
++    finished = Signal(object)                  # list[dict] results, or str error
++
++    def __init__(self, instrument, parent=None):
++        super().__init__(parent)
++        self.inst = instrument
++
++    @Slot()
++    def run(self):
++        try:
++            result = self.inst.reset_active_traces()
++        except Exception as exc:
++            result = f"Trace reset failed: {exc}"
++        self.finished.emit(result)
++
++
+ # ===========================================================================
+ # %% Custom LED widget
+ # ===========================================================================
+@@ -1221,6 +1586,11 @@
+         self.instrument = None  # FSPInstrument or MockFSPInstrument
+         self.thread: Optional[QThread] = None
+         self.worker: Optional[AcquisitionWorker] = None
++        # 0.9.0: idle-time trace reset worker, and a reset requested from a
++        # running acquisition that has not been served yet.
++        self.reset_thread: Optional[QThread] = None
++        self.reset_worker: Optional[TraceResetWorker] = None
++        self._reset_pending = False
+         self._sweep_settings: Dict[str, float] = {}
+         self._active_traces: List[int] = []
+         self.display_mailbox = None
+@@ -1271,6 +1641,8 @@
+         version_lbl.setObjectName("versionLabel")
+         version_lbl.setStyleSheet("font-family: monospace;")
+         version_lbl.setToolTip(
++            "0.9.0: Reset Active Traces; traces read from the selected screen;\n"
++            "       Screen choice applied at connect; Auto re-detects on refresh.\n"
+             "0.8.3: frequency-time pages; text menus; dark/light themes.\n"
+             "0.7.0: TRAC? (no :DATA), MODE-based detection, no spin loops.\n"
+             "0.6.0: continuous-sweep aware, probe-based trace detection.\n"
+@@ -1339,6 +1711,13 @@
+         scr_widget = QtWidgets.QWidget()
+         scr_widget.setLayout(scr_row)
+         cl.addWidget(scr_widget, 2, 1, 1, 5)
++        # 0.9.0: which screen the logger is actually reading, so a mismatch
++        # with the analyzer is visible before Start.
++        self.screen_in_use_label = QtWidgets.QLabel("In use: (not connected)")
++        self.screen_in_use_label.setObjectName("screenInUse")
++        self.screen_in_use_label.setToolTip(
++            "Screen the logger reads sweep settings, trace modes and trace data from.")
++        cl.addWidget(self.screen_in_use_label, 2, 6, 1, 3)
+ 
+         root.addWidget(conn_box)
+ 
+@@ -1407,6 +1786,16 @@
+             "Query the FSP to determine which traces are currently "
+             "displayed and update the LEDs.")
+         stl.addWidget(self.probe_btn, 0, 4)
++        # 0.9.0: restart every displayed trace (Clear/Write, then back to
++        # its own mode) - restarts max hold, min hold and average.
++        self.reset_traces_btn = QtWidgets.QPushButton("Reset Active Traces")
++        self.reset_traces_btn.setEnabled(False)
++        self.reset_traces_btn.setToolTip(
++            "Switch every displayed trace on the selected screen to Clear/Write,\n"
++            "then back to its own mode (Max Hold, Min Hold, Average, View).\n"
++            "Restarts the analyzer's max-hold / min-hold / average accumulation.\n"
++            "While recording it runs between captures and is logged to <csv>_events.csv.")
++        stl.addWidget(self.reset_traces_btn, 1, 4)
+ 
+         stl.addWidget(QtWidgets.QLabel("Capture progress:"), 1, 0)
+         self.progress = QtWidgets.QProgressBar()
+@@ -1437,6 +1826,7 @@
+         self.disconnect_btn.clicked.connect(self.on_disconnect)
+         self.diag_btn.clicked.connect(self.on_diagnostics)
+         self.probe_btn.clicked.connect(self.on_probe_traces)
++        self.reset_traces_btn.clicked.connect(self.on_reset_traces)
+         self.browse_btn.clicked.connect(self.on_browse)
+         self.now_btn.clicked.connect(
+             lambda: self.start_dt.setDateTime(QDateTime.currentDateTime()))
+@@ -1452,53 +1842,61 @@
+         self.screen_b_rb.toggled.connect(self._on_screen_changed)
+ 
+     # -------- Slots --------
++    def _visa_busy(self) -> bool:
++        """True while a worker thread owns the VISA session (0.9.0)."""
++        return self.thread is not None or self.reset_thread is not None
++
++    def _selected_screen_mode(self) -> str:
++        """The Screen radio choice as 'auto', 'A' or 'B'."""
++        if self.screen_a_rb.isChecked():
++            return "A"
++        if self.screen_b_rb.isChecked():
++            return "B"
++        return "auto"
++
++    def _update_screen_label(self) -> None:
++        """Show the screen the logger reads, e.g. 'In use: Screen B (auto)'."""
++        if self.instrument is None:
++            self.screen_in_use_label.setText("In use: (not connected)")
++            return
++        description = getattr(self.instrument, "screen_description", "")
++        self.screen_in_use_label.setText("In use: " + (description or "?"))
++
+     @Slot()
+     def _on_screen_changed(self):
+         """Handle a click on the Screen radio group (Auto / A / B).
+ 
+-        Pushes the choice to the FSPInstrument and re-runs sweep_settings
+-        so the user immediately sees the resulting frequency readback.
+-        Toggling fires the slot twice (off + on); we no-op the off side.
++        0.9.0: pushes the choice to the instrument AND re-reads sweep
++        settings, trace modes and LEDs, so what the window shows is what a
++        Start will record. Toggling fires the slot twice (off + on); the off
++        side is ignored. The choice made while disconnected is applied by
++        on_connect().
+         """
+-        if self.thread is not None:
++        if self._visa_busy():
+             return
+         sender = self.sender()
+         if sender is None or not sender.isChecked():
+             return
+-        if self.instrument is None or not isinstance(self.instrument, FSPInstrument):
++        if self.instrument is None:
+             return
+         try:
+-            if self.screen_auto_rb.isChecked():
+-                self.instrument.reset_screen_discovery()
+-                self.statusBar().showMessage(
+-                    "Screen: Auto — will re-detect on next query.", 4000)
+-            elif self.screen_a_rb.isChecked():
+-                self.instrument.force_screen(1)
+-                self.statusBar().showMessage(
+-                    "Screen: forced to A (WINDow1).", 4000)
+-            elif self.screen_b_rb.isChecked():
+-                self.instrument.force_screen(2)
+-                self.statusBar().showMessage(
+-                    "Screen: forced to B (WINDow2).", 4000)
+-            # Refresh sweep readback so the user sees the new frequency.
+-            try:
+-                s = self.instrument.sweep_settings()
+-                self._sweep_settings = s
+-                fc = s.get("f_center")
+-                fsp = s.get("f_span")
+-                src = s.get("freq_source", "?")
+-                if fc and fc == fc and fc > 0:
+-                    self.statusBar().showMessage(
+-                        f"Screen {self.instrument.active_screen}: "
+-                        f"center={fc/1e6:.3f} MHz, span={fsp/1e6:.3f} MHz "
+-                        f"({src})", 8000)
+-            except Exception as exc:
+-                self.statusBar().showMessage(
+-                    f"Screen change OK but sweep readback failed: {exc}", 6000)
++            self.instrument.set_screen_mode(self._selected_screen_mode())
+         except Exception as exc:
+             QtWidgets.QMessageBox.warning(
+                 self, "Screen change failed",
+                 f"Could not switch FSP screen: {exc}")
++            return
++        self._refresh_instrument_state(interactive=False)
++        s = self._sweep_settings
++        if isinstance(s, dict):
++            fc = s.get("f_center")
++            fsp = s.get("f_span")
++            src = s.get("freq_source", "?")
++            if fc is not None and fc == fc and fsp is not None and fsp == fsp:
++                self.statusBar().showMessage(
++                    f"{getattr(self.instrument, 'screen_description', '')}: "
++                    f"center={fc/1e6:.3f} MHz, span={fsp/1e6:.3f} MHz ({src}); "
++                    f"traces={self._active_traces or 'none'}", 8000)
+ 
+     @Slot()
+     def on_diagnostics(self):
+@@ -1507,14 +1905,14 @@
+         Wrapped in an outer try/finally that ALWAYS shows the dialog — even
+         if the probe code itself crashes — so the user always gets visible
+         feedback. Also disables the Diagnostics button for the duration to
+-        prevent reentrant clicks (processEvents pumping queued clicks during
+-        the long fetch test was triggering recursive on_diagnostics calls,
+-        flooding stderr and never letting any single dialog actually open).
++        prevent reentrant clicks.
++
++        0.9.0: shows both screens side by side (frequencies, every trace's
++        MODE? through DISP:WIND<n>, STAT?), which screen is selected and
++        why, and the trace-fetch syntax cached for each screen.
+         """
+-        if self.thread is not None or self.instrument is None:
++        if self._visa_busy() or self.instrument is None:
+             return
+-        # Hard-disable the button so queued clicks can't recurse during
+-        # processEvents in the fetch-test loop.
+         try:
+             self.diag_btn.setEnabled(False)
+         except Exception:
+@@ -1525,84 +1923,95 @@
+         except Exception as exc:
+             lines.append(f"*IDN?         -> ERROR: {exc}")
+ 
+-        # Sweep mode
+-        if isinstance(self.instrument, FSPInstrument):
++        inst = self.instrument
++        if isinstance(inst, FSPInstrument):
++            if isinstance(inst.inst, SimulatedFSPSession):
++                lines.append("DEMO MODE: simulated FSP session, synthetic data.")
+             lines.append("")
+-            mode_label = "continuous" if self.instrument.continuous_sweep else "single"
+-            lines.append(f"Sweep handling: {mode_label} ("
+-                         f"continuous_sweep={self.instrument.continuous_sweep})")
++            mode_label = "continuous" if inst.continuous_sweep else "single"
++            lines.append(f"Sweep handling: {mode_label} (continuous_sweep={inst.continuous_sweep})")
+ 
+             # Instrument personality — critical for diagnosing the
+-            # "FREQ:* returns wrong values + TRAC? -100" failure mode, where
+-            # SCPI is talking to a non-Spectrum-Analyzer personality.
++            # "FREQ:* returns wrong values + TRAC? -100" failure mode.
++            # INST:LIST? is intentionally omitted — on FSP-38 firmware 4.50
++            # it hangs until VI_ERROR_TMO.
+             lines.append("")
+             lines.append("Instrument personality (must be SAN for spectrum traces):")
+-            # NOTE: INST:LIST? is intentionally omitted — on FSP-38 firmware
+-            # 4.50 it hangs until VI_ERROR_TMO and pollutes the error queue
+-            # with -113 'Undefined header' for every subsequent query.
+             for cmd in ("INST?", "INST:NSEL?"):
+                 try:
+-                    ans = self.instrument.inst.query(cmd).strip()
+-                    errs = self.instrument._drain_error_queue()
++                    ans = inst.inst.query(cmd).strip()
++                    errs = inst._drain_error_queue()
+                     suffix = f"  [errors: {errs}]" if errs else ""
+                     lines.append(f"  {cmd:14s} -> {ans!r}{suffix}")
+                 except Exception as exc:
+                     lines.append(f"  {cmd:14s} -> EXC: {exc}")
+ 
+-            # Show which screen we're currently routing to.
+-            lines.append(f"  active_screen = {self.instrument.active_screen} "
+-                         f"(1=A/WIND1, 2=B/WIND2)")
+-
+-        # Trace detection — lightweight MODE? probe (BLAN = hidden, anything
+-        # else = displayed). This is the same logic active_traces() uses.
+-        lines.append("")
+-        lines.append("Trace mode probe (DISP:TRAC<n>:MODE?  — 'BLAN' means hidden):")
+-        if isinstance(self.instrument, FSPInstrument):
+-            inst = self.instrument
++            # Screen selection.
++            inst.refresh_screen_selection()
++            try:
++                inst.sweep_settings()
++            except Exception as exc:
++                lines.append(f"  sweep_settings() failed: {exc}")
++            lines.append("")
++            lines.append(f"Screen choice: {self._selected_screen_mode()}  ->  in use: "
++                         f"{inst.screen_description}  (1=A/WIND1/SENS1/TRAC1, 2=B/WIND2/SENS2/TRAC2)")
++            if inst.screen_mode == "auto":
++                lines.append("  Auto rule: the screen with the higher centre frequency wins; "
++                             "force A or B when both screens are configured.")
++            lines.append("")
++            lines.append("Per-screen settings and trace modes:")
++            lines.append(f"  {'':10s} {'Screen A (1)':>26s} {'Screen B (2)':>26s}")
++            freq = {}
++            for number in (1, 2):
++                freq[number] = inst._read_screen_freq(number)
++                inst._safe_drain()
++            for key, label in (("f_center", "center Hz"), ("f_span", "span Hz"),
++                               ("f_start_raw", "start Hz"), ("f_stop_raw", "stop Hz")):
++                lines.append(f"  {label:10s} {freq[1][key]:>26.3f} {freq[2][key]:>26.3f}")
+             saved = inst.inst.timeout
+             try:
+-                inst.inst.timeout = max(2000, int(saved or 0))
++                inst.inst.timeout = max(2000, int(saved or 0)) if saved else 2000
+                 for n in (1, 2, 3):
+-                    cmd = f"DISP:TRAC{n}:MODE?"
+-                    t0 = time.perf_counter()
+-                    err_msg = ""
+-                    ans = ""
+-                    try:
+-                        ans = inst.inst.query(cmd).strip()
+-                    except Exception as exc:
+-                        err_msg = f" EXC={exc.__class__.__name__}"
+-                    dt = time.perf_counter() - t0
+-                    errs = inst._drain_error_queue()
+-                    norm = ans.upper().strip('"').strip("'")
+-                    decision = ("hidden" if (not norm or norm.startswith("BLAN"))
+-                                else "DISPLAYED")
+-                    err_suffix = f"  errs={errs}" if errs else ""
+-                    lines.append(
+-                        f"  DISP:TRAC{n}:MODE? -> {ans!r:>10s} in "
+-                        f"{dt*1000:.0f} ms{err_msg}  =>  {decision}{err_suffix}"
+-                    )
+-                # Reference: STAT? readings for the curious. Cheap.
++                    cells = []
++                    for number in (1, 2):
++                        t0 = time.perf_counter()
++                        token = inst.trace_mode(n, number)
++                        dt = (time.perf_counter() - t0) * 1000.0
++                        shown = "hidden" if (not token or token.startswith("BLAN")) else "DISPLAYED"
++                        cells.append(f"{(token or '(no answer)'):>6s} {shown:9s} {dt:5.0f} ms")
++                    lines.append(f"  trace {n} MODE {cells[0]:>21s} {cells[1]:>26s}")
++                answered = ", ".join(
++                    f"Screen {inst.screen_letter(k)} via "
++                    f"{'DISP:WIND%d:TRAC<n>' % k if v == 'window' else 'DISP:TRAC<n>'}"
++                    for k, v in sorted(inst._mode_query_style.items()))
++                lines.append("  Mode queries: " + (answered or "none answered"))
+                 lines.append("")
+-                lines.append("Reference (DISP:TRAC<n>:STAT? — only flags currently selected):")
+-                for n in (1, 2, 3):
+-                    cmd = f"DISP:TRAC{n}:STAT?"
+-                    try:
+-                        ans = inst.inst.query(cmd).strip()
+-                        errs = inst._drain_error_queue()
+-                        suffix = f"  [errors: {errs}]" if errs else ""
+-                        lines.append(f"  {cmd:25s} -> {ans!r}{suffix}")
+-                    except Exception as exc:
+-                        lines.append(f"  {cmd:25s} -> EXC: {exc}")
++                lines.append("Reference (DISP:WIND<s>:TRAC<n>:STAT? — only flags currently selected):")
++                for number in (1, 2):
++                    for n in (1, 2, 3):
++                        cmd = f"DISP:WIND{number}:TRAC{n}:STAT?"
++                        try:
++                            ans = inst.inst.query(cmd).strip()
++                            errs = inst._drain_error_queue()
++                            suffix = f"  [errors: {errs}]" if errs else ""
++                            lines.append(f"  {cmd:25s} -> {ans!r}{suffix}")
++                        except Exception as exc:
++                            inst._safe_drain()
++                            lines.append(f"  {cmd:25s} -> EXC: {exc.__class__.__name__}")
+             finally:
+                 inst.inst.timeout = saved
++            lines.append("")
++            lines.append("Cached trace-fetch syntax: " + (", ".join(
++                f"Screen {inst.screen_letter(k)}: {v}" for k, v in sorted(inst._trace_fetch_templates.items()))
++                or "none yet (found at the first capture)"))
+         else:
+-            lines.append(f"  active_traces() -> {self.instrument.active_traces()}")
++            lines.append(f"  active_traces() -> {inst.active_traces()}")
+ 
+-        # Sweep settings
++        # Sweep settings of the screen in use
+         lines.append("")
+-        lines.append("Sweep settings:")
++        lines.append("Sweep settings (screen in use):")
+         try:
+-            s = self.instrument.sweep_settings()
++            s = inst.sweep_settings()
+             for k, v in s.items():
+                 lines.append(f"  {k:12s} = {v}")
+         except Exception as exc:
+@@ -1611,18 +2020,16 @@
+         # Active traces (parsed)
+         lines.append("")
+         try:
+-            lines.append(f"Parsed active traces: {self.instrument.active_traces()}")
++            active = inst.active_traces()
++            self._active_traces = active
++            self._update_trace_leds(active)
++            lines.append(f"Parsed active traces ({getattr(inst, 'screen_description', '')}): {active}")
+         except Exception as exc:
+             lines.append(f"Parsed active traces: ERROR {exc}")
++        self._update_screen_label()
+ 
+-        # NOTE: We deliberately do NOT run an end-to-end fetch test here.
+-        # Doing so on the GUI thread (or even via a worker thread with a
+-        # processEvents spin loop on the GUI thread) was killing the Spyder
+-        # kernel — the spin loop starves Spyder's heartbeat. The lightweight
+-        # MODE? probe and sweep-settings query above are sufficient diagnostic
+-        # info for nearly every troubleshooting case. If the user needs a
+-        # full fetch test, they can simply press Start (which uses worker
+-        # threads properly via QThread/moveToThread).
++        # NOTE: no end-to-end fetch test here (a long fetch on the GUI
++        # thread starved Spyder's heartbeat). Use Start to record.
+         lines.append("")
+         lines.append("(Skipping end-to-end fetch test — use Start to record.)")
+ 
+@@ -1632,10 +2039,11 @@
+                 lines = ["Diagnostics produced no output."]
+             dlg = QtWidgets.QDialog(self)
+             dlg.setWindowTitle("FSP Diagnostics")
+-            dlg.resize(820, 620)
++            dlg.resize(900, 640)
+             dlg.setModal(True)
+             v = QtWidgets.QVBoxLayout(dlg)
+             text = QtWidgets.QPlainTextEdit("\n".join(lines))
++            text.setObjectName("diagnosticsText")
+             text.setReadOnly(True)
+             text.setFont(QtGui.QFont("Monospace"))
+             text.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
+@@ -1643,15 +2051,13 @@
+             btns = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok)
+             btns.accepted.connect(dlg.accept)
+             v.addWidget(btns)
+-            # Force the dialog to the front so it can't get hidden behind
+-            # the IDE / main window on Windows.
+             dlg.setWindowFlags(dlg.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
++            self.last_diagnostics_text = "\n".join(lines)
+             dlg.show()
+             dlg.raise_()
+             dlg.activateWindow()
+             (dlg.exec_() if hasattr(dlg, "exec_") else dlg.exec())
+         except Exception as exc:
+-            # Last-ditch fallback: at least pop a message box.
+             try:
+                 QtWidgets.QMessageBox.critical(
+                     self, "FSP Diagnostics (fallback)",
+@@ -1676,13 +2082,15 @@
+         spin loop. (The previous spin-loop pattern was the actual cause of
+         Spyder kernel deaths because it starved the kernel's heartbeat.)
+         """
+-        if self.thread is not None or self.instrument is None:
++        if self._visa_busy() or self.instrument is None:
+             return
+         self.probe_btn.setEnabled(False)
+         original_status = self.status_label.text()
+         self.status_label.setText("Probing traces…")
+         # Do not pump nested events while this slot owns the VISA session.
+         try:
++            # 0.9.0: Auto re-detects the screen on every probe.
++            self.instrument.refresh_screen_selection()
+             try:
+                 self._sweep_settings = self.instrument.sweep_settings()
+             except Exception as exc:
+@@ -1698,10 +2106,12 @@
+                 self.status_label.setText(original_status)
+                 return
+             self._update_trace_leds(self._active_traces)
++            self._update_screen_label()
+             s = self._sweep_settings
+             if isinstance(s, dict):
+                 self.status_label.setText(
+-                    f"Probe complete. Sweep: {s['f_start']/1e6:.3f}–"
++                    f"Probe complete ({getattr(self.instrument, 'screen_description', '')}). "
++                    f"Sweep: {s['f_start']/1e6:.3f}–"
+                     f"{s['f_stop']/1e6:.3f} MHz, {int(s['n_pts'])} pts, "
+                     f"sweep_time={s['sweep_time']*1000:.1f} ms. "
+                     f"Active traces: {self._active_traces or 'none'}."
+@@ -1744,11 +2154,15 @@
+         floats per trace and can take seconds. The user can press
+         Diagnostics or Start to trigger probing on demand.
+         """
+-        if self.thread is not None or self.instrument is not None:
++        if self._visa_busy() or self.instrument is not None:
+             return
+         try:
+             if self.demo_check.isChecked():
+-                self.instrument = MockFSPInstrument()
++                # 0.9.0: Demo runs the real FSPInstrument over a simulated
++                # two-screen SCPI session (synthetic data only).
++                self.instrument = FSPInstrument(
++                    "SIMULATED::FSP", session=SimulatedFSPSession(),
++                    debug=self.debug_check.isChecked())
+             else:
+                 if not _HAS_PYVISA:
+                     raise FSPError(
+@@ -1759,6 +2173,10 @@
+                     backend=backend_token,
+                     debug=self.debug_check.isChecked(),
+                 )
++            # Step 0 (0.9.0): apply the Screen choice shown in the window
++            # BEFORE the first query. 0.8.3 left a new connection in Auto
++            # whatever was selected, so A/B had to be toggled after Connect.
++            self.instrument.set_screen_mode(self._selected_screen_mode())
+             # Step 1: identify the instrument. Just one short query.
+             idn = self.instrument.idn()
+             self.idn_label.setText(idn)
+@@ -1770,15 +2188,21 @@
+                 self.status_label.setText(
+                     f"Connected. Sweep: {s['f_start']/1e6:.3f}–"
+                     f"{s['f_stop']/1e6:.3f} MHz, {int(s['n_pts'])} pts, "
+-                    f"sweep_time={s['sweep_time']*1000:.1f} ms. "
+-                    f"(Trace LEDs will populate on Start or Diagnostics.)"
++                    f"sweep_time={s['sweep_time']*1000:.1f} ms "
++                    f"({getattr(self.instrument, 'screen_description', '')})."
+                 )
+             except Exception as exc:
+                 self.status_label.setText(
+                     f"Connected, but sweep query failed: {exc}")
+-            # Trace LEDs: leave dim until the user actively probes.
+-            self._active_traces = []
+-            self._update_trace_leds([])
++            # 0.9.0: trace modes are three ~5-byte MODE? answers, so the
++            # LEDs are filled at connect (non-fatal if it fails).
++            try:
++                self._active_traces = self.instrument.active_traces()
++            except Exception as exc:
++                self._active_traces = []
++                self._log_status(f"Trace detection at connect failed: {exc}")
++            self._update_trace_leds(self._active_traces)
++            self._update_screen_label()
+ 
+             self.connect_btn.setEnabled(False)
+             self.disconnect_btn.setEnabled(True)
+@@ -1786,6 +2210,7 @@
+             self.probe_btn.setEnabled(True)
+             self.start_manual_btn.setEnabled(True)
+             self.start_scheduled_btn.setEnabled(True)
++            self._update_reset_button()
+             self.demo_check.setEnabled(False)
+             self.resource_edit.setEnabled(False)
+             self.backend_combo.setEnabled(False)
+@@ -1798,6 +2223,9 @@
+             QtWidgets.QMessageBox.warning(
+                 self, "Recording active", "Stop recording before disconnecting.")
+             return
++        if self.reset_thread is not None:
++            self.status_label.setText("Wait for the trace reset to finish before disconnecting.")
++            return
+         if self.instrument is not None:
+             try:
+                 self.instrument.close()
+@@ -1817,18 +2245,29 @@
+         self.backend_combo.setEnabled(True)
+         for led in (self.led_t1, self.led_t2, self.led_t3):
+             led.setOn(False)
++        self._update_trace_leds([])
++        self._update_screen_label()
++        self._update_reset_button()
+         self.status_label.setText("Disconnected.")
+ 
+-    def _refresh_instrument_state(self):
++    def _refresh_instrument_state(self, interactive: bool = True):
++        """Re-read sweep settings and trace modes of the screen in use.
++
++        interactive=False (screen changes) reports problems in the status
++        line instead of a dialog.
++        """
+         # Sweep settings: cheap and essential. If this fails, we surface a
+         # warning but don't break the connection.
+         try:
+             self._sweep_settings = self.instrument.sweep_settings()
+         except Exception as exc:
+-            QtWidgets.QMessageBox.warning(
+-                self, "Sweep query failed",
+-                f"Could not read sweep settings: {exc}\n\n"
+-                "You can still try Diagnostics or recording.")
++            if interactive:
++                QtWidgets.QMessageBox.warning(
++                    self, "Sweep query failed",
++                    f"Could not read sweep settings: {exc}\n\n"
++                    "You can still try Diagnostics or recording.")
++            else:
++                self.status_label.setText(f"Sweep query failed: {exc}")
+             self._sweep_settings = None
+         # Active traces: probe-based and slower. Non-fatal if it fails —
+         # the user can configure traces and retry, or just hit Diagnostics.
+@@ -1839,9 +2278,11 @@
+             self.status_label.setText(
+                 f"Trace detection failed: {exc} — try Diagnostics.")
+         self._update_trace_leds(self._active_traces)
++        self._update_screen_label()
+         s = self._sweep_settings
+         if s:
+             self.status_label.setText(
++                f"{getattr(self.instrument, 'screen_description', '')}: "
+                 f"Sweep: {s['f_start']/1e6:.3f}–{s['f_stop']/1e6:.3f} MHz, "
+                 f"{int(s['n_pts'])} pts, sweep_time={s['sweep_time']*1000:.1f} ms × "
+                 f"count={int(s['sweep_count'])} (total {s['sweep_time']*s['sweep_count']*1000:.1f} ms),"
+@@ -1852,6 +2293,16 @@
+         self.led_t1.setOn(1 in active)
+         self.led_t2.setOn(2 in active)
+         self.led_t3.setOn(3 in active)
++        # 0.9.0: tooltips name each trace's mode and screen.
++        modes = getattr(self.instrument, "last_trace_modes", {}) if self.instrument is not None else {}
++        screen = FSPInstrument.screen_letter(getattr(self.instrument, "last_trace_modes_screen", 1))
++        for number, led in ((1, self.led_t1), (2, self.led_t2), (3, self.led_t3)):
++            token = modes.get(number) if isinstance(modes, dict) else None
++            if self.instrument is None or token is None:
++                led.setToolTip(f"Trace {number}")
++            else:
++                led.setToolTip(f"Trace {number}: {FSPInstrument.MODE_NAMES.get(token, token)} "
++                               f"({token}) on Screen {screen}")
+ 
+     def _min_required_interval(self) -> float:
+         s = self._sweep_settings
+@@ -1864,10 +2315,12 @@
+     def on_start(self, scheduled: bool):
+         if self.instrument is None:
+             return
+-        if self.thread is not None or self.report_process is not None:
+-            self.status_label.setText("Wait for acquisition/report processing to finish.")
++        if self._visa_busy() or self.report_process is not None:
++            self.status_label.setText("Wait for acquisition/report processing/trace reset to finish.")
+             return
+-        # Refresh once more so the sanity check uses live values
++        # Refresh once more so the sanity check uses live values. 0.9.0: in
++        # Auto the screen is re-detected here, then kept for the whole run.
++        self.instrument.refresh_screen_selection()
+         self._refresh_instrument_state()
+         if not self._active_traces:
+             QtWidgets.QMessageBox.warning(
+@@ -1908,7 +2361,7 @@
+                         QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
+             if answer != QtWidgets.QMessageBox.Yes:
+                 return
+-        if self.thread is not None or self.report_process is not None:
++        if self._visa_busy() or self.report_process is not None:
+             return
+         self.last_acquisition_error = ""
+         self.report_result_message = ""
+@@ -1928,6 +2381,7 @@
+         self.worker.captureProgress.connect(self.on_capture_progress)
+         self.worker.recordingStateChanged.connect(self.led_rec.setOn)
+         self.worker.errorOccurred.connect(self.on_worker_error)
++        self.worker.traceResetFinished.connect(self._on_trace_reset_finished)
+         self.worker.finished.connect(self.thread.quit, Qt.DirectConnection)
+         self.worker.finished.connect(self.worker.deleteLater)
+         self.thread.finished.connect(self.on_worker_finished)
+@@ -1944,6 +2398,7 @@
+         for control in self.acquisition_locked_controls:
+             control.setEnabled(False)
+         self._update_report_availability()
++        self._update_reset_button()
+ 
+     @Slot()
+     def on_stop(self):
+@@ -1958,6 +2413,7 @@
+     @Slot(dict)
+     def on_sweep_info(self, info: dict):
+         self._sweep_settings = info
++        self._update_screen_label()
+ 
+     @Slot(int, float)
+     def on_capture_started(self, idx: int, total_s: float):
+@@ -1998,6 +2454,9 @@
+         self._refresh_live_display()
+         self.thread = None
+         self.worker = None
++        if self._reset_pending:
++            self._reset_pending = False
++            self._log_status("A trace reset requested during the run was not served before it stopped.")
+         self.display_mailbox = None
+         self.capture_progress_started = None
+         self._capture_in_progress = False
+@@ -2011,6 +2470,7 @@
+         for control in self.acquisition_locked_controls:
+             control.setEnabled(True)
+         self._update_report_availability()
++        self._update_reset_button()
+         self.status_label.setText("Idle; CSV writer closed." if not self.last_acquisition_error else "Stopped with acquisition/output error.")
+         if self.last_acquisition_error:
+             QtWidgets.QMessageBox.critical(self, "Acquisition error", self.last_acquisition_error)
+@@ -2026,6 +2486,157 @@
+             if frame is not None:
+                 self.on_capture_finished(*frame)
+ 
++    # %% TRACE RESET (0.9.0)
++    def _update_reset_button(self) -> None:
++        """Reset is available when connected, no reset is running or pending,
++        and (while recording) the worker can serve it between captures."""
++        if not hasattr(self, "reset_traces_btn"):
++            return
++        enabled = (self.instrument is not None and self.reset_thread is None
++                   and not self._reset_pending)
++        self.reset_traces_btn.setEnabled(enabled)
++
++    def _set_idle_visa_controls(self, enabled: bool) -> None:
++        """Enable/disable everything that talks to the analyzer from the GUI
++        thread (used while the idle-time reset worker owns the session)."""
++        for widget in (self.disconnect_btn, self.diag_btn, self.probe_btn,
++                       self.start_manual_btn, self.start_scheduled_btn,
++                       self.screen_auto_rb, self.screen_a_rb, self.screen_b_rb):
++            widget.setEnabled(enabled)
++
++    def _confirm_trace_reset(self) -> bool:
++        """Ask before discarding accumulated max-hold / average data.
++
++        The prompt has a 'Do not ask again' box; Tools > Confirm before trace
++        reset turns the prompt back on.
++        """
++        if not self._confirm_reset_enabled():
++            return True
++        modes = getattr(self.instrument, "last_trace_modes", {}) or {}
++        screen = getattr(self.instrument, "screen_description", "the selected screen")
++        listed = [f"Trace {n}: {FSPInstrument.MODE_NAMES.get(m, m)}"
++                  for n, m in sorted(modes.items()) if m and m != "BLAN"]
++        box = QtWidgets.QMessageBox(self)
++        box.setIcon(QtWidgets.QMessageBox.Question)
++        box.setWindowTitle("Reset active traces")
++        box.setText(f"Reset every displayed trace on {screen}?")
++        box.setInformativeText(
++            "Each trace is switched to Clear/Write and then back to its own mode.\n"
++            "Max-hold, min-hold and average data accumulated on the analyzer are\n"
++            "discarded and start again; View traces are re-frozen after one fresh sweep.\n\n"
++            + ("Last read: " + "; ".join(listed) if listed else "Trace modes are read again first.")
++            + ("\n\nRecording is running: the reset happens between captures and is\n"
++               "written to the run's _events.csv." if self.thread is not None else ""))
++        box.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.Cancel)
++        box.setDefaultButton(QtWidgets.QMessageBox.Yes)
++        dont_ask = QtWidgets.QCheckBox("Do not ask again")
++        box.setCheckBox(dont_ask)
++        answer = box.exec_() if hasattr(box, "exec_") else box.exec()
++        accepted = answer == QtWidgets.QMessageBox.Yes
++        if accepted and dont_ask.isChecked():
++            self._set_confirm_reset(False)
++        return accepted
++
++    def _confirm_reset_enabled(self) -> bool:
++        value = self.settings.value("confirm_trace_reset", True)
++        return str(value).strip().lower() not in ("false", "0", "no")
++
++    def _set_confirm_reset(self, enabled: bool) -> None:
++        self.settings.setValue("confirm_trace_reset", bool(enabled))
++        action = getattr(self, "confirm_reset_action", None)
++        if action is not None and action.isChecked() != bool(enabled):
++            action.setChecked(bool(enabled))
++
++    @Slot()
++    def on_reset_traces(self):
++        """Reset Active Traces: Clear/Write, then each trace's own mode.
++
++        Idle: a short-lived worker thread owns the VISA session and the
++        other analyzer controls are disabled until it finishes. Recording:
++        the acquisition worker (the VISA owner) runs it between captures.
++        """
++        if self.instrument is None or self.reset_thread is not None or self._reset_pending:
++            return
++        if not self._confirm_trace_reset():
++            return
++        if self.instrument is None or self.reset_thread is not None or self._reset_pending:
++            return                       # state changed while the prompt was open
++        if self.thread is not None:
++            if self.worker is None:
++                return
++            self._reset_pending = True
++            self.worker.request_trace_reset()
++            self.status_label.setText("Trace reset requested; it runs between captures…")
++            self._update_reset_button()
++            return
++        self.instrument.refresh_screen_selection()
++        self.reset_thread = QThread(self)
++        self.reset_worker = TraceResetWorker(self.instrument)
++        self.reset_worker.moveToThread(self.reset_thread)
++        self.reset_thread.started.connect(self.reset_worker.run)
++        self.reset_worker.finished.connect(self._on_trace_reset_finished)
++        self.reset_worker.finished.connect(self.reset_thread.quit, Qt.DirectConnection)
++        self.reset_worker.finished.connect(self.reset_worker.deleteLater)
++        self.reset_thread.finished.connect(self._on_reset_thread_finished)
++        self.reset_thread.finished.connect(self.reset_thread.deleteLater)
++        self._set_idle_visa_controls(False)
++        self._update_reset_button()
++        self._update_report_availability()
++        self.status_label.setText("Resetting active traces (Clear/Write, then original mode)…")
++        self.reset_thread.start()
++
++    @Slot()
++    def _on_reset_thread_finished(self):
++        self.reset_thread = None
++        self.reset_worker = None
++        connected = self.instrument is not None
++        self._set_idle_visa_controls(connected)
++        self._update_report_availability()
++        self._update_reset_button()
++        if self.close_after_acquisition:
++            QTimer.singleShot(0, self.close)
++
++    @staticmethod
++    def format_reset_summary(results) -> str:
++        """One line per reset, e.g. 'Screen B: T1 WRIT ok; T2 MAXH->WRIT->MAXH ok'."""
++        if not results:
++            return "No displayed traces to reset."
++        parts = []
++        for r in results:
++            original = r.get("original")
++            if original in (None, "BLAN") or original == r.get("restored") == "WRIT":
++                path = f"{original}"
++            else:
++                path = f"{original}->WRIT->{r.get('restored')}"
++            status = "ok" if r.get("ok") else "CHECK"
++            note = f" ({r.get('note')})" if r.get("note") else ""
++            parts.append(f"T{r.get('trace')} {path} {status}{note}")
++        return f"Screen {results[0].get('screen', '?')}: " + "; ".join(parts)
++
++    @Slot(object)
++    def _on_trace_reset_finished(self, result):
++        """Results of a reset from either worker (list of dicts, or an error)."""
++        self._reset_pending = False
++        stamp = datetime.now().strftime("%H:%M:%S")
++        if isinstance(result, str):
++            self.last_trace_reset_summary = result
++            self.status_label.setText(f"{stamp} {result}")
++            self._update_reset_button()
++            if self.thread is None:
++                QtWidgets.QMessageBox.warning(self, "Trace reset", result)
++            return
++        summary = self.format_reset_summary(result)
++        self.last_trace_reset_summary = summary
++        self.status_label.setText(f"{stamp} Traces reset — {summary}")
++        self.statusBar().showMessage(f"Trace reset {stamp}: {summary}", 10000)
++        self._update_trace_leds(self._active_traces)
++        self._update_reset_button()
++        problems = [r for r in result if not r.get("ok")]
++        if problems and self.thread is None:
++            QtWidgets.QMessageBox.warning(
++                self, "Trace reset — check the analyzer",
++                "Some traces did not read back their original mode:\n\n" + summary)
++
+     # %% REPORT PROCESS ADMISSION AND COMPLETION
+     def _report_unavailable_reason(self):
+         if self.thread is not None:
+@@ -2053,9 +2664,11 @@
+         self.report_btn.setEnabled(not reason)
+         self.report_btn.setToolTip(reason or "All native plots including every frequency versus time.")
+         self.render_reports_check.setEnabled(self.thread is None and self.report_process is None)
+-        can_start = self.instrument is not None and self.thread is None and self.report_process is None
++        can_start = (self.instrument is not None and self.thread is None
++                     and self.reset_thread is None and self.report_process is None)
+         self.start_manual_btn.setEnabled(can_start)
+         self.start_scheduled_btn.setEnabled(can_start)
++        self._update_reset_button()
+         self.report_status_label.setText(self.report_result_message if self.report_process is None and self.report_result_message
+                                          else reason or "Ready: idle-only native Veusz plots and reports.")
+         self._sync_menu_actions()
+@@ -2211,6 +2824,9 @@
+         start_action = button_action(acquisition_menu, "Start now", self.start_manual_btn, "F5")
+         button_action(acquisition_menu, "Start at planned time", self.start_scheduled_btn)
+         stop_action = button_action(acquisition_menu, "Stop and drain CSV", self.stop_btn, "F6")
++        # Short text: the action also sits on the toolbar; the button's
++        # tooltip (copied by _sync_menu_actions) explains it in full.
++        reset_action = button_action(acquisition_menu, "Reset active traces", self.reset_traces_btn, "F7")
+         acquisition_menu.addSeparator()
+         result = action(acquisition_menu, "Sampling interval…", self._edit_interval)
+         self.menu_control_bindings.append((result, self.interval_spin))
+@@ -2232,7 +2848,8 @@
+         self.toolbar = self.addToolBar("Acquisition and reports")
+         self.toolbar.setObjectName("acquisition_reports_toolbar")
+         self.toolbar.setToolButtonStyle(Qt.ToolButtonTextOnly)
+-        for result in (connect_action, disconnect_action, start_action, stop_action, self.report_action):
++        for result in (connect_action, disconnect_action, start_action, stop_action, reset_action,
++                       self.report_action):
+             self.toolbar.addAction(result)
+         view_menu.addAction(self.toolbar.toggleViewAction())
+         self.statusbar_action = action_class("Status bar", self)
+@@ -2245,6 +2862,12 @@
+         self.veusz_action = action(tools_menu, "Select standalone Veusz executable…", self._select_veusz)
+         button_action(tools_menu, "Instrument diagnostics…", self.diag_btn)
+         button_action(tools_menu, "Probe displayed traces", self.probe_btn)
++        button_action(tools_menu, "Reset active traces…", self.reset_traces_btn)
++        self.confirm_reset_action = action_class("Confirm before trace reset", self)
++        self.confirm_reset_action.setCheckable(True)
++        self.confirm_reset_action.setChecked(self._confirm_reset_enabled())
++        self.confirm_reset_action.toggled.connect(self._set_confirm_reset)
++        tools_menu.addAction(self.confirm_reset_action)
+         action(help_menu, "Usage / output documentation", self._show_help, "F1")
+         action(help_menu, "About R&S FSP Trace Logger…", self._show_about)
+         action(help_menu, "About Qt…", lambda: QtWidgets.QMessageBox.aboutQt(self))
+@@ -2325,6 +2948,7 @@
+         readme = Path(__file__).resolve().with_name("README.md")
+         content = readme.read_text(encoding="utf-8") if readme.is_file() else (
+             "Connect or enable Demo. Choose CSV, interval and screen; start/stop.\n"
++            "Reset Active Traces (F7): Clear/Write, then each trace's own mode.\n"
+             "Wait for CSV drain, then Create Veusz Plots / Reports into a new folder.\n"
+             "Freq_N_GHz pages and Combined_Freq_vs_Time retain every frequency.\n"
+             "Time axes use recorded datetime; means use linear power.\n"
+@@ -2337,13 +2961,28 @@
+         layout.addWidget(buttons)
+         dialog.exec_()
+ 
++    @staticmethod
++    def sibling_module_version(filename: str) -> str:
++        """__version__ of a companion module read from its source (no import,
++        so h5py is not needed to show it)."""
++        import re
++        try:
++            text = Path(__file__).resolve().with_name(filename).read_text(encoding="utf-8")
++        except OSError:
++            return "missing"
++        match = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']', text, re.M)
++        return match.group(1) if match else "?"
++
+     def _show_about(self):
+         QtWidgets.QMessageBox.about(self, "About R&S FSP Trace Logger",
+             "<b>R&amp;S FSP Trace Logger " + APP_VERSION + "</b><br>"
+             "Author / application owner: William W. Wallace<br>"
+             "Company: NRAO/GBO<br>Email: wwallace@nrao.edu<br>"
+-            "Native Veusz writer: 0.0.17; report engine: 0.1.3<br>"
+-            "Python 3.8–3.12; generated integration update 2026-10-23.<br>"
++            "Native Veusz writer: " + self.sibling_module_version("vszh5_writer.py")
++            + "; report engine: " + self.sibling_module_version("fsp_reports.py")
++            + "; background I/O: " + self.sibling_module_version("fsp_background.py")
++            + "; simulator: " + self.sibling_module_version("fsp_simulator.py") + "<br>"
++            "Python 3.8–3.12; integration update " + APP_DATE + " (AI-assisted).<br>"
+             "Source attribution/license notices remain in the supplied modules.")
+ 
+     # %% PERSISTENT DARK / LIGHT / SYSTEM THEMES
+@@ -2428,6 +3067,11 @@
+ 
+     # %% COOPERATIVE WINDOW CLOSE
+     def closeEvent(self, event):
++        if self.reset_thread is not None:
++            self.close_after_acquisition = True
++            self.status_label.setText("Closing after the trace reset finishes…")
++            event.ignore()
++            return
+         if self.report_process is not None:
+             self.report_status_label.setText("Wait for report generation before closing.")
+             event.ignore()

@@ -1,0 +1,188 @@
+--- 0.8.3/vszh5_writer.py
++++ 0.9.0/vszh5_writer.py
+@@ -11,12 +11,12 @@
+ ===============================================================================
+  Title          : Veusz HDF5 Document Writer
+  Filename       : vszh5_writer.py
+- Version        : 0.0.17 (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
++ Version        : 0.0.18 (Semantic Versioning 2.0.0, MAJOR.MINOR.PATCH)
+  Author         : William W. Wallace
+  Company        : NRAO/GBO
+  Email          : wwallace@nrao.edu
+  Created        : 2026-10-11
+- Modified       : 2026-10-23
++ Modified       : 2026-10-26
+  Language       : Python 3.8 through 3.12
+  Requires       : numpy, h5py   (Veusz only to open or render the result;
+                   pypdf only for PDF bookmarks)
+@@ -28,7 +28,8 @@
+                   Wallace, Adaptive Electrodynamics LLC dba AdaptEd.
+  Status         : Internal draft - checked against real Veusz 3.6.2 and 4.2.1
+                   (2-D datasets and the page helpers of 0.0.11/0.0.12: 4.2.1;
+-                  the 0.0.14 fills, bar pages and step masks: 3.6.2)
++                  the 0.0.14 fills, bar pages and step masks: 3.6.2;
++                  0.0.18 render fixes and the FSP logger report: 3.6.2)
+ ===============================================================================
+ 
+ LICENCE
+@@ -141,12 +142,16 @@
+   image with a colour bar placed where Veusz 4.2.1 draws it).
+ * (0.0.12) grid_page (several graphs on one page, e.g. an overview) and
+   text_page (a page of text lines, e.g. a results summary in the PDF).
++* (0.0.13) dataset_names, read_text_dataset and page_names: read a written
++  document back with h5py (no Veusz): datasets, text metadata, page order.
+ * (0.0.14) Trace.fill (shaded region below/above a trace, e.g. where a
+   level exceeds a protection mask), bar_page (category bar charts with a
+   labels-mode axis), step_mask (stepped mask lines with gaps) and
+   reference_line (horizontal or vertical threshold/marker lines).
+-* (0.0.13) dataset_names, read_text_dataset and page_names: read a written
+-  document back with h5py (no Veusz): datasets, text metadata, page order.
++* (0.0.16) frequency_ghz_text and frequency_time_pages: one page per
++  frequency bin against recorded datetime, plus a combined page.
++* (0.0.17) linear_power_mean_dbm: chunked, max-referenced linear-power mean
++  of dBm samples (never an arithmetic mean of dB values).
+ 
+ REFERENCES
+ ----------
+@@ -160,15 +165,42 @@
+ 
+ REVISION HISTORY
+ ----------------
+-0.0.17 2026-10-23  Consolidate numerically stable, chunked linear-power dBm
+-                   averaging for the merged logger/report release 0.8.3.
+-
+-0.0.17 2026-10-23  Add precise frequency_ghz_text() and frequency_time_pages():
++0.0.18 2026-10-26  Released with the R&S FSP logger bundle 0.9.0. Fixes
++                   only; the HDF5 layout and every public signature are
++                   unchanged:
++                   * FIX render_pages(png_pages="first"): the --listen
++                     script limited the PNG loop with min(1, len(names)).
++                     Veusz 4.2.1 runs listen scripts with NumPy's names
++                     imported, so min was numpy.min(1, axis=n) -> AxisError,
++                     printed and swallowed by --listen: no PNG was written.
++                     The bound is now (1 if names else 0). Reported against
++                     0.0.5 by SA Time Stability Tools 0.0.3; still present
++                     through 0.0.17.
++                   * FIX render_pages(): the PDF path was
++                     stem.with_suffix(".pdf"), so "run v0.0.2.vszh5" gave
++                     "run v0.0.pdf". It is now "<file stem>.pdf" whatever
++                     dots the name holds (the PNG names already were).
++                   * FIX render_pages(): a load or Export() error inside
++                     `veusz --listen` is printed, not raised, and the done
++                     marker still arrives, so 0.0.17 returned success with
++                     no files (found with a Veusz lacking h5py: the FSP
++                     report said "rendering completed, files []"). Zero
++                     loaded pages is now a failed program render (method
++                     "auto" then tries the veusz package), and a missing
++                     PDF or PNG raises RuntimeError.
++                   * Revision history repaired: 0.0.17 listed two blocks
++                     with the same number; the frequency-page block is
++                     0.0.16 (bundle 0.8.2, see docs/vszh5_writer.py.patch of
++                     bundle 0.8.3). DIFFERENCES list in version order.
++0.0.17 2026-10-23  Released with R&S FSP logger bundle 0.8.3:
++                   linear_power_mean_dbm() - numerically stable, chunked
++                   linear-power dBm averaging (max-referenced scaling).
++0.0.16 2026-10-23  Released with R&S FSP logger bundle 0.8.2: precise
++                   frequency_ghz_text() and frequency_time_pages() -
+                    Freq_N_GHz and Combined_Freq_vs_Time with datetime axes.
+                    Independent analyzer traces are never averaged together.
+ 0.0.15 2026-10-23  Python 3.8-safe typing alias; private atomic temp files;
+                    flushed renderer markers to prevent export-complete hangs.
+-
+ 0.0.14 2026-10-19  Released with the GBT RFI Interference Evaluator 0.0.1.
+                    Additions only; every 0.0.13 call is unchanged:
+                    * Trace.fill ("below" | "above" | ""), fill_colour and
+@@ -299,7 +331,7 @@
+ except ImportError:  # pragma: no cover - reported when a writer is created
+     h5py = None
+ 
+-__version__ = "0.0.17"                 # Semantic Versioning 2.0.0
++__version__ = "0.0.18"                 # Semantic Versioning 2.0.0
+ __author__ = "William W. Wallace"
+ __email__ = "wwallace@nrao.edu"
+ __company__ = "NRAO/GBO"
+@@ -315,6 +347,7 @@
+     "TRACE_COLOURS", "Trace", "add_title", "xy_page", "image_page",
+     # 0.0.12: multi-panel and text pages
+     "Panel", "grid_page", "text_page",
++    # 0.0.16 / 0.0.17: frequency-time pages, linear-power mean
+     "frequency_ghz_text", "frequency_time_pages", "linear_power_mean_dbm",
+     # 0.0.13: reading a written document back
+     "dataset_names", "read_text_dataset", "page_names",
+@@ -1001,10 +1034,7 @@
+     doc.up()                                     # page -> where we started
+ 
+ 
+-# %% FREQUENCY-VERSUS-TIME PAGES — 0.0.17
+-
+-# %% LINEAR-POWER AVERAGING — SHARED BY REPORTS AND FUTURE CALLERS
+-
++# %% LINEAR-POWER AVERAGING (0.0.17) — SHARED BY REPORTS AND FUTURE CALLERS
+ def linear_power_mean_dbm(levels_dbm: Any, axis: int = 0,
+                           chunk_size: int = 128) -> np.ndarray:
+     """Equal-weight power mean of finite dBm samples, returned in dBm.
+@@ -1045,6 +1075,7 @@
+     return maximum_levels + 10.0 * np.log10(relative_power_sum / sample_count)
+ 
+ 
++# %% FREQUENCY-VERSUS-TIME PAGES (0.0.16)
+ def frequency_ghz_text(frequency_hz: Any) -> str:
+     """Scale decimal Hz to GHz without coarse rounding/name collisions.
+ 
+@@ -1353,7 +1384,9 @@
+     if pdf is not None:
+         lines.append(f"Export({str(pdf)!r}, page=list(range(len(names))), pdfdpi={PDF_DPI})")
+     if png_stem is not None:
+-        upto = "len(names)" if png_pages == "all" else "min(1, len(names))"
++        # 0.0.18: not min(1, ...) - Veusz 4.2.1 evaluates listen scripts with
++        # NumPy's names imported, where min is numpy.min (axis argument).
++        upto = "len(names)" if png_pages == "all" else "(1 if names else 0)"
+         # The path is bound on its own line, where repr() gives a valid
+         # literal; the exec() string carries no path, so a Windows back-slash
+         # is never unescaped a second time (C:\\Users would become \\U...).
+@@ -1508,7 +1541,8 @@
+     out = Path(outdir).resolve() if outdir else src.parent
+     out.mkdir(parents=True, exist_ok=True)
+     stem = out / src.stem
+-    pdf_path = stem.with_suffix(".pdf") if pdf else None
++    # 0.0.18: append, not with_suffix() - "run v0.0.2" must not become "run v0.0".
++    pdf_path = stem.parent / (stem.name + ".pdf") if pdf else None
+     png_stem = stem if png_pages in ("all", "first") else None
+     started = time.time()
+ 
+@@ -1524,6 +1558,14 @@
+         script = _render_script(src, pdf_path, png_stem, png_pages, dpi)
+         ok, log = _run_listen(exe, script, env, timeout)
+         names = _page_names_from_log(log)
++        if ok and not names:
++            # 0.0.18: a load error inside --listen (e.g. Veusz without h5py,
++            # or an unreadable file) is printed, not raised, and the done
++            # marker still arrives; 0.0.17 then reported success with no
++            # files. No pages loaded is a failed render.
++            ok = False
++            log += ("\n[vszh5_writer] Veusz finished the script but loaded no pages "
++                    "(see the load error above; Veusz needs h5py to open .vszh5).")
+         if not ok:
+             program_error = (f"Veusz program {exe} did not finish the render "
+                              f"(check that `{os.path.basename(exe)} --version` runs; set "
+@@ -1563,8 +1605,18 @@
+         # minimum width, not a two-digit limit. Include p100, p1000, ... .
+         written += sorted(path for path in out.glob(f"{glob.escape(png_stem.name)}_p*_*.png")
+                           if re.match(re.escape(png_stem.name) + r"_p[0-9]+_", path.name))
+-    return sorted(p for p in written
+-                  if p.is_file() and p.stat().st_mtime >= started - 2.0)
++    result = sorted(p for p in written
++                    if p.is_file() and p.stat().st_mtime >= started - 2.0)
++    # 0.0.18: an Export() error inside --listen is also printed, not raised.
++    missing = []
++    if pdf_path is not None and pdf_path not in result:
++        missing.append(pdf_path.name)
++    if png_stem is not None and names and not any(p.suffix.lower() == ".png" for p in result):
++        missing.append(png_stem.name + "_p*.png")
++    if missing:
++        raise RuntimeError(f"Veusz reported a finished render of {src.name} but did not write "
++                           f"{', '.join(missing)}")
++    return result
+ 
+ 
+ def _page_names_from_log(log: str) -> list[str]:

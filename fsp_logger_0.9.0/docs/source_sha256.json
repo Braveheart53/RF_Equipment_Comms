@@ -1,0 +1,38 @@
+{
+  "source": "github.com/Braveheart53/RF_Equipment_Comms, folder fsp_logger_0.8.3, commit a7ccece (pulled 2026-10-26)",
+  "source_0.8.3_sha256": {
+    "rs_fsp_logger.py": "a0d9ae7e09e0041d405e15ac8b1f5614515011ad2b0cad701901d2f3cee84532",
+    "fsp_background.py": "9b1b12df9deb282d39070309dc0ac741123ac1e37e2c65b9b728c9fcdd79d745",
+    "fsp_reports.py": "995e7945f557e3ef883847386f94dd2d3378bfdaa9680608dc370fda452039ef",
+    "vszh5_writer.py": "c0d79e7004c06ca9ef62b5bd622dc79a193f8cc705cc9fba837830c94f530ed9",
+    "requirements.txt": "bc6e0525ce886ae6934daaded2c0a28165a07578d16de1db04fc37e052a12cd6",
+    "README.md": "7dc2c07fbdf17aa3276ee262cfbb19037bc33cce885dbb2064df49a21c70068c",
+    "tests/test_merge.py": "f5543863ac1f187ff76a2d23d92281c1449d06d70f1977c60834934887dd3da8"
+  },
+  "source_0.8.3_manifest_check": "all 14 MANIFEST.sha256 entries of 0.8.3 verified before editing",
+  "release_0.9.0_sha256": {
+    "rs_fsp_logger.py": "796540b662b3f0d51c5e425c38cf7c14861412fb136f207fe5d5267c0116d575",
+    "fsp_background.py": "f36ac9e19069fdc73c98ec021f5429312819ac65293a3db9181e3bf8d28878c2",
+    "fsp_reports.py": "6aac614be116a1d08978a90d6bdd54345116be77de2fe2ffa6401fc8b2ed6b05",
+    "vszh5_writer.py": "e6fede1a66bc180cb863fcf63b57cd690aebf571092b1e671591b7e01ec2959c",
+    "fsp_simulator.py": "17518fe2025b7fabd799d6d5433f7943ba90f0999b52547478cbe1569f21bf84",
+    "requirements.txt": "bfdace02ff7b5e6efd8069d37798198e708ac2473ca3e1f5439bde21228c3c21",
+    "tests/test_merge.py": "ca36904989d4a46aaeea3586689266f2c1eca2e053c8b132dd73e875555e1861",
+    "tests/test_screen_and_reset.py": "2d113403acd6026c588802d3f44faf8a48eb5b117bd5d1e88913343ff05726b5",
+    "tests/test_writer_render.py": "7d454ef434a0f595bfefd22654e034005ffb4dce2cbdad3dda52e63a0aff7f5e"
+  },
+  "new_files": [
+    "fsp_simulator.py",
+    "tests/test_screen_and_reset.py",
+    "tests/test_writer_render.py",
+    "CHANGELOG.md",
+    "docs/DEFECT_ANALYSIS_0.9.0.md",
+    "docs/repro_0.8.3_screen_defects.py",
+    "docs/validation_0.9.0.txt",
+    "docs/patches_0.8.3_to_0.9.0/",
+    "docs/screenshots/"
+  ],
+  "moved": {
+    "docs/*.patch, docs/merge_comparison.json, docs/source_sha256.json, docs/validation.txt": "docs/history_0.8.3/"
+  }
+}

@@ -1,0 +1,215 @@
+R&S FSP Logger 0.9.0 - validation log (2026-10-26T23:07:15Z, Linux 6.18.44-fc-v165, offscreen Qt)
+All instrument data come from fsp_simulator (synthetic). No physical FSP was used.
+Filtered from the log: Qt offscreen-platform notices and pyqtgraph-internal warnings
+(PySide6: QColor.setNamedColor deprecation, 'Failed to disconnect' at window teardown).
+
+=== [py312-PyQt5] Python 3.12.3 | numpy 1.26.4 | h5py 3.10.0 | QtPy 2.4.3 -> PyQt5 5.15.14 | pyqtgraph 0.13.3 ===
+test_csv_order_and_immutable_copy (test_merge.OutputTests.test_csv_order_and_immutable_copy) ... ok
+test_invalid_channels (test_merge.OutputTests.test_invalid_channels) ... ok
+test_mailbox (test_merge.OutputTests.test_mailbox) ... ok
+test_queue_terminal_capture (test_merge.OutputTests.test_queue_terminal_capture) ... ok
+test_801_bins (test_merge.PlotTests.test_801_bins) ... ok
+test_page_union_and_raw_series (test_merge.PlotTests.test_page_union_and_raw_series) ... ok
+test_precise_names (test_merge.PlotTests.test_precise_names) ... ok
+test_utc_dates (test_merge.PlotTests.test_utc_dates) ... ok
+test_channels_stay_separate (test_merge.PowerTests.test_channels_stay_separate) ... ok
+test_chunks_and_axis (test_merge.PowerTests.test_chunks_and_axis) ... ok
+test_extreme_levels (test_merge.PowerTests.test_extreme_levels) ... ok
+test_linear_not_log_mean (test_merge.PowerTests.test_linear_not_log_mean) ... ok
+test_reject_invalid (test_merge.PowerTests.test_reject_invalid) ... ok
+test_statistics_use_shared_helper (test_merge.PowerTests.test_statistics_use_shared_helper) ... ok
+test_actual_hdf5 (test_merge.SourceTests.test_actual_hdf5) ... ok
+test_gui_interlocks_and_display_no_averaging (test_merge.SourceTests.test_gui_interlocks_and_display_no_averaging) ... ok
+test_python38_grammar (test_merge.SourceTests.test_python38_grammar) ... ok
+test_about_versions_read_from_modules (test_screen_and_reset.GuiTests.test_about_versions_read_from_modules) ... ok
+test_confirmation_prompt_and_do_not_ask_again (test_screen_and_reset.GuiTests.test_confirmation_prompt_and_do_not_ask_again) ... ok
+ok
+test_idle_reset_runs_in_worker_and_restores (test_screen_and_reset.GuiTests.test_idle_reset_runs_in_worker_and_restores) ... ok
+test_reset_during_recording (test_screen_and_reset.GuiTests.test_reset_during_recording) ... ok
+test_screen_choice_before_connect_is_applied (test_screen_and_reset.GuiTests.test_screen_choice_before_connect_is_applied) ... ok
+test_reset_served_between_captures_and_logged (test_screen_and_reset.RecordingResetTests.test_reset_served_between_captures_and_logged) ... ok
+test_auto_reads_trace_modes_from_detected_screen (test_screen_and_reset.ScreenRoutingTests.test_auto_reads_trace_modes_from_detected_screen) ... ok
+test_auto_redetects_only_when_refreshed (test_screen_and_reset.ScreenRoutingTests.test_auto_redetects_only_when_refreshed) ... ok
+test_choice_applied_before_first_query (test_screen_and_reset.ScreenRoutingTests.test_choice_applied_before_first_query) ... ok
+test_fetch_never_falls_back_to_other_screen (test_screen_and_reset.ScreenRoutingTests.test_fetch_never_falls_back_to_other_screen) ... ok
+test_fetch_template_is_per_screen (test_screen_and_reset.ScreenRoutingTests.test_fetch_template_is_per_screen) ... ok
+test_forced_screen_a_reads_screen_a (test_screen_and_reset.ScreenRoutingTests.test_forced_screen_a_reads_screen_a) ... ok
+test_normalize_mode (test_screen_and_reset.ScreenRoutingTests.test_normalize_mode) ... ok
+test_screen_a_window_form_survives_deviating_unsuffixed_routing (test_screen_and_reset.ScreenRoutingTests.test_screen_a_window_form_survives_deviating_unsuffixed_routing) ... ok
+test_unreadable_modes_raise_instead_of_reporting_none (test_screen_and_reset.ScreenRoutingTests.test_unreadable_modes_raise_instead_of_reporting_none) ... ok
+test_blank_traces_untouched (test_screen_and_reset.TraceResetTests.test_blank_traces_untouched) ... ok
+test_reset_goes_through_clear_write_and_restores_each_mode (test_screen_and_reset.TraceResetTests.test_reset_goes_through_clear_write_and_restores_each_mode) ... ok
+test_reset_raises_when_nothing_readable (test_screen_and_reset.TraceResetTests.test_reset_raises_when_nothing_readable) ... ok
+test_reset_restarts_max_hold (test_screen_and_reset.TraceResetTests.test_reset_restarts_max_hold) ... ok
+test_summary_text (test_screen_and_reset.TraceResetTests.test_summary_text) ... ok
+test_view_trace_refrozen_after_a_fresh_sweep (test_screen_and_reset.TraceResetTests.test_view_trace_refrozen_after_a_fresh_sweep) ... ok
+test_real_render_pdf_and_first_png (test_writer_render.RealVeuszTests.test_real_render_pdf_and_first_png) ... skipped 'set VEUSZ_EXE to a Veusz with h5py for a real render'
+test_dotted_stem_keeps_full_name (test_writer_render.RenderPagesTests.test_dotted_stem_keeps_full_name) ... ok
+test_missing_outputs_are_a_failure (test_writer_render.RenderPagesTests.test_missing_outputs_are_a_failure) ... ok
+test_no_pages_loaded_is_a_failure (test_writer_render.RenderPagesTests.test_no_pages_loaded_is_a_failure) ... ok
+test_first_page_bound_is_not_min (test_writer_render.RenderScriptTests.test_first_page_bound_is_not_min) ... ok
+----------------------------------------------------------------------
+Ran 44 tests in 5.862s
+OK (skipped=1)
+
+=== [py312-PySide6] Python 3.12.3 | numpy 1.26.4 | h5py 3.10.0 | QtPy 2.4.3 -> PySide6 6.7.3 | pyqtgraph 0.13.3 ===
+test_csv_order_and_immutable_copy (test_merge.OutputTests.test_csv_order_and_immutable_copy) ... ok
+test_invalid_channels (test_merge.OutputTests.test_invalid_channels) ... ok
+test_mailbox (test_merge.OutputTests.test_mailbox) ... ok
+test_queue_terminal_capture (test_merge.OutputTests.test_queue_terminal_capture) ... ok
+test_801_bins (test_merge.PlotTests.test_801_bins) ... ok
+test_page_union_and_raw_series (test_merge.PlotTests.test_page_union_and_raw_series) ... ok
+test_precise_names (test_merge.PlotTests.test_precise_names) ... ok
+test_utc_dates (test_merge.PlotTests.test_utc_dates) ... ok
+test_channels_stay_separate (test_merge.PowerTests.test_channels_stay_separate) ... ok
+test_chunks_and_axis (test_merge.PowerTests.test_chunks_and_axis) ... ok
+test_extreme_levels (test_merge.PowerTests.test_extreme_levels) ... ok
+test_linear_not_log_mean (test_merge.PowerTests.test_linear_not_log_mean) ... ok
+test_reject_invalid (test_merge.PowerTests.test_reject_invalid) ... ok
+test_statistics_use_shared_helper (test_merge.PowerTests.test_statistics_use_shared_helper) ... ok
+test_actual_hdf5 (test_merge.SourceTests.test_actual_hdf5) ... ok
+test_gui_interlocks_and_display_no_averaging (test_merge.SourceTests.test_gui_interlocks_and_display_no_averaging) ... ok
+test_python38_grammar (test_merge.SourceTests.test_python38_grammar) ... ok
+test_about_versions_read_from_modules (test_screen_and_reset.GuiTests.test_about_versions_read_from_modules) ... ok
+ok
+ok
+test_idle_reset_runs_in_worker_and_restores (test_screen_and_reset.GuiTests.test_idle_reset_runs_in_worker_and_restores) ... ok
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+ok
+ok
+test_reset_served_between_captures_and_logged (test_screen_and_reset.RecordingResetTests.test_reset_served_between_captures_and_logged) ... ok
+test_auto_reads_trace_modes_from_detected_screen (test_screen_and_reset.ScreenRoutingTests.test_auto_reads_trace_modes_from_detected_screen) ... ok
+test_auto_redetects_only_when_refreshed (test_screen_and_reset.ScreenRoutingTests.test_auto_redetects_only_when_refreshed) ... ok
+test_choice_applied_before_first_query (test_screen_and_reset.ScreenRoutingTests.test_choice_applied_before_first_query) ... ok
+test_fetch_never_falls_back_to_other_screen (test_screen_and_reset.ScreenRoutingTests.test_fetch_never_falls_back_to_other_screen) ... ok
+test_fetch_template_is_per_screen (test_screen_and_reset.ScreenRoutingTests.test_fetch_template_is_per_screen) ... ok
+test_forced_screen_a_reads_screen_a (test_screen_and_reset.ScreenRoutingTests.test_forced_screen_a_reads_screen_a) ... ok
+test_normalize_mode (test_screen_and_reset.ScreenRoutingTests.test_normalize_mode) ... ok
+test_screen_a_window_form_survives_deviating_unsuffixed_routing (test_screen_and_reset.ScreenRoutingTests.test_screen_a_window_form_survives_deviating_unsuffixed_routing) ... ok
+test_unreadable_modes_raise_instead_of_reporting_none (test_screen_and_reset.ScreenRoutingTests.test_unreadable_modes_raise_instead_of_reporting_none) ... ok
+test_blank_traces_untouched (test_screen_and_reset.TraceResetTests.test_blank_traces_untouched) ... ok
+test_reset_goes_through_clear_write_and_restores_each_mode (test_screen_and_reset.TraceResetTests.test_reset_goes_through_clear_write_and_restores_each_mode) ... ok
+test_reset_raises_when_nothing_readable (test_screen_and_reset.TraceResetTests.test_reset_raises_when_nothing_readable) ... ok
+test_reset_restarts_max_hold (test_screen_and_reset.TraceResetTests.test_reset_restarts_max_hold) ... ok
+test_summary_text (test_screen_and_reset.TraceResetTests.test_summary_text) ... ok
+test_view_trace_refrozen_after_a_fresh_sweep (test_screen_and_reset.TraceResetTests.test_view_trace_refrozen_after_a_fresh_sweep) ... ok
+test_real_render_pdf_and_first_png (test_writer_render.RealVeuszTests.test_real_render_pdf_and_first_png) ... skipped 'set VEUSZ_EXE to a Veusz with h5py for a real render'
+test_dotted_stem_keeps_full_name (test_writer_render.RenderPagesTests.test_dotted_stem_keeps_full_name) ... ok
+test_missing_outputs_are_a_failure (test_writer_render.RenderPagesTests.test_missing_outputs_are_a_failure) ... ok
+test_no_pages_loaded_is_a_failure (test_writer_render.RenderPagesTests.test_no_pages_loaded_is_a_failure) ... ok
+test_first_page_bound_is_not_min (test_writer_render.RenderScriptTests.test_first_page_bound_is_not_min) ... ok
+----------------------------------------------------------------------
+Ran 44 tests in 5.840s
+OK (skipped=1)
+
+=== [py38-PyQt5] Python 3.8.20 | numpy 1.24.4 | h5py 3.10.0 | QtPy 2.4.3 -> PyQt5 5.15.14 | pyqtgraph 0.13.3 ===
+test_csv_order_and_immutable_copy (test_merge.OutputTests) ... ok
+test_invalid_channels (test_merge.OutputTests) ... ok
+test_mailbox (test_merge.OutputTests) ... ok
+test_queue_terminal_capture (test_merge.OutputTests) ... ok
+test_801_bins (test_merge.PlotTests) ... ok
+test_page_union_and_raw_series (test_merge.PlotTests) ... ok
+test_precise_names (test_merge.PlotTests) ... ok
+test_utc_dates (test_merge.PlotTests) ... ok
+test_channels_stay_separate (test_merge.PowerTests) ... ok
+test_chunks_and_axis (test_merge.PowerTests) ... ok
+test_extreme_levels (test_merge.PowerTests) ... ok
+test_linear_not_log_mean (test_merge.PowerTests) ... ok
+test_reject_invalid (test_merge.PowerTests) ... ok
+test_statistics_use_shared_helper (test_merge.PowerTests) ... ok
+test_actual_hdf5 (test_merge.SourceTests) ... ok
+test_gui_interlocks_and_display_no_averaging (test_merge.SourceTests) ... ok
+test_python38_grammar (test_merge.SourceTests) ... ok
+test_about_versions_read_from_modules (test_screen_and_reset.GuiTests) ... ok
+test_confirmation_prompt_and_do_not_ask_again (test_screen_and_reset.GuiTests) ... ok
+ok
+test_idle_reset_runs_in_worker_and_restores (test_screen_and_reset.GuiTests) ... ok
+test_reset_during_recording (test_screen_and_reset.GuiTests) ... ok
+test_screen_choice_before_connect_is_applied (test_screen_and_reset.GuiTests) ... ok
+test_reset_served_between_captures_and_logged (test_screen_and_reset.RecordingResetTests) ... ok
+test_auto_reads_trace_modes_from_detected_screen (test_screen_and_reset.ScreenRoutingTests) ... ok
+test_auto_redetects_only_when_refreshed (test_screen_and_reset.ScreenRoutingTests) ... ok
+test_choice_applied_before_first_query (test_screen_and_reset.ScreenRoutingTests) ... ok
+test_fetch_never_falls_back_to_other_screen (test_screen_and_reset.ScreenRoutingTests) ... ok
+test_fetch_template_is_per_screen (test_screen_and_reset.ScreenRoutingTests) ... ok
+test_forced_screen_a_reads_screen_a (test_screen_and_reset.ScreenRoutingTests) ... ok
+test_normalize_mode (test_screen_and_reset.ScreenRoutingTests) ... ok
+test_screen_a_window_form_survives_deviating_unsuffixed_routing (test_screen_and_reset.ScreenRoutingTests) ... ok
+test_unreadable_modes_raise_instead_of_reporting_none (test_screen_and_reset.ScreenRoutingTests) ... ok
+test_blank_traces_untouched (test_screen_and_reset.TraceResetTests) ... ok
+test_reset_goes_through_clear_write_and_restores_each_mode (test_screen_and_reset.TraceResetTests) ... ok
+test_reset_raises_when_nothing_readable (test_screen_and_reset.TraceResetTests) ... ok
+test_reset_restarts_max_hold (test_screen_and_reset.TraceResetTests) ... ok
+test_summary_text (test_screen_and_reset.TraceResetTests) ... ok
+test_view_trace_refrozen_after_a_fresh_sweep (test_screen_and_reset.TraceResetTests) ... ok
+test_real_render_pdf_and_first_png (test_writer_render.RealVeuszTests) ... skipped 'set VEUSZ_EXE to a Veusz with h5py for a real render'
+test_dotted_stem_keeps_full_name (test_writer_render.RenderPagesTests) ... ok
+test_missing_outputs_are_a_failure (test_writer_render.RenderPagesTests) ... ok
+test_no_pages_loaded_is_a_failure (test_writer_render.RenderPagesTests) ... ok
+test_first_page_bound_is_not_min (test_writer_render.RenderScriptTests) ... ok
+----------------------------------------------------------------------
+Ran 44 tests in 5.841s
+OK (skipped=1)
+
+=== Real render, Veusz 3.6.2 (Ubuntu package via python3.12, h5py): tests.test_writer_render.RealVeuszTests ===
+test_real_render_pdf_and_first_png (tests.test_writer_render.RealVeuszTests.test_real_render_pdf_and_first_png) ... ok
+----------------------------------------------------------------------
+Ran 1 test in 0.803s
+OK
+
+=== Real render, Veusz 4.2.1 (PyPI source build, PyQt6, h5py): tests.test_writer_render.RealVeuszTests ===
+test_real_render_pdf_and_first_png (tests.test_writer_render.RealVeuszTests.test_real_render_pdf_and_first_png) ... ok
+----------------------------------------------------------------------
+Ran 1 test in 2.709s
+OK
+
+=== Simulated run through AcquisitionWorker (41 bins, traces WRIT/MAXH/AVER on Screen A, reset requested mid-run) ===
+captures: 7 violations: 0
+events file:
+timestamp_iso,event,screen,trace,original_mode,restored_mode,ok,note
+2026-10-26T19:07:53.593,trace_reset,A,1,WRIT,WRIT,True,
+2026-10-26T19:07:53.593,trace_reset,A,2,MAXH,MAXH,True,
+2026-10-26T19:07:53.593,trace_reset,A,3,AVER,AVER,True,
+
+=== fsp_reports.py --render with Veusz 3.6.2 ===
+status completed | pages 53 | rendering completed | files 54
+PDF pages 53 | bookmarks 53 | page size 709 x 425 pt | logger_version 0.9.0 | writer 0.0.18 | report engine 0.1.4
+
+=== fsp_reports.py --render with Veusz 4.2.1 ===
+status completed | pages 53 | rendering completed | files 54
+PDF pages 53 | bookmarks 53 | page size 709 x 425 pt | logger_version 0.9.0 | writer 0.0.18 | report engine 0.1.4
+
+=== Writer 0.0.17 (bundle 0.8.3) against tests/test_writer_render.py: expected to FAIL ===
+(writer 0.0.17 copied next to this test file; real test with VEUSZ_EXE = Veusz 4.2.1)
+FAIL: test_real_render_pdf_and_first_png (tests.test_writer_render.RealVeuszTests.test_real_render_pdf_and_first_png)
+- ['real v1.pdf']
++ ['real v1.2.pdf', 'real v1.2_p00_spectrum.png']
+FAIL: test_dotted_stem_keeps_full_name (tests.test_writer_render.RenderPagesTests.test_dotted_stem_keeps_full_name)
+- ['run v0.0.2_p00_first_page.png',
++ ['run v0.0.2.pdf', 'run v0.0.2_p00_first_page.png']
+FAIL: test_missing_outputs_are_a_failure (tests.test_writer_render.RenderPagesTests.test_missing_outputs_are_a_failure)
+FAIL: test_no_pages_loaded_is_a_failure (tests.test_writer_render.RenderPagesTests.test_no_pages_loaded_is_a_failure)
+FAIL: test_first_page_bound_is_not_min (tests.test_writer_render.RenderScriptTests.test_first_page_bound_is_not_min)
+Ran 5 tests in 2.635s
+FAILED (failures=5)
+
+=== docs/repro_0.8.3_screen_defects.py against the 0.8.3 sources ===
+logger version under test: 0.8.3
+1) Auto selects screen 2 centre 13900000000.0 Hz
+   active_traces() -> [1]    (Screen B shows traces 1, 2, 3)
+   MODE queries sent: ['DISP:TRAC1:MODE?', 'DISP:TRAC2:MODE?', 'DISP:TRAC3:MODE?']
+4) cached template 'TRAC? TRACE{n}' used on Screen B -> 501 points (Screen B has 801, Screen A 501)
+   Screen B candidates include Screen A forms: ['"TRAC? TRACE{n}"', '"TRAC1? TRACE{n}"']
+2) on_connect() in 0.8.3 never calls force_screen(): True
+3) after the front-panel change Auto still uses screen 2 (A now has the higher centre); probe/start do not re-detect
