@@ -1,0 +1,118 @@
+SHR Converter 0.0.1 validation - 2026-10-28T07:46:38Z
+Python 3.12.3; numpy 2.5.4, h5py 3.16.0, PySide6 6.12.0, Qt.py 2.0.7, pyqtgraph 0.14.0, py-shr-parser 1.0.0, vszh5_writer 0.0.20
+Real file: py-shr-parser tests/test_files/sweep0v2.shr (Spike, format v2)
+
+== python shr_converter.py --selftest --gui-smoke
+PASS title decoded (UTF-16LE)
+PASS frequency axis = first + i*bin
+PASS CSV sweeps_as_rows workers=1: values exact
+PASS CSV sweeps_as_rows workers=1: frequencies exact
+PASS CSV sweeps_as_rows workers=2: values exact
+PASS CSV sweeps_as_rows workers=2: frequencies exact
+PASS CSV frequencies_as_rows workers=1: values exact
+PASS CSV frequencies_as_rows workers=1: frequencies exact
+PASS CSV frequencies_as_rows workers=2: values exact
+PASS CSV frequencies_as_rows workers=2: frequencies exact
+PASS CSV long workers=1: values exact
+PASS CSV long workers=1: frequencies exact
+PASS CSV long workers=2: values exact
+PASS CSV long workers=2: frequencies exact
+PASS max hold
+PASS min hold
+PASS power mean (linear power)
+PASS dB mean and std
+PASS per-sweep peak and frequency
+PASS spectrogram peak hold = block_reduce
+PASS overflow flags
+PASS .vszh5 datasets
+PASS .vszh5 pages
+PASS spectrogram power mean = block_reduce
+PASS sweep and frequency sub-range
+PASS truncated file: complete sweeps only
+PASS header count 0: sweeps recovered
+PASS truncated file converts
+PASS mV: RMS power mean
+PASS GPU code path (stand-in) = CPU
+PASS statistics in sub-blocks = one pass
+PASS CSV split by time: 4 files of 15 s, same rows
+PASS disk check refuses a CSV that cannot fit
+PASS per-sweep table memory-mapped on disk = in RAM
+PASS time series thinned with peak hold (Veusz and result)
+PASS GPU failure falls back to the CPU per block
+PASS locked CSV kept under a time-stamped name
+PASS cancel removes partial files
+38 passed, 0 failed
+PASS file listed with its header
+PASS inspect shows a preview
+PASS inspect wrote nothing
+PASS convert wrote CSV, companions and .vszh5
+PASS outputs tab lists the files
+PASS conversion ran in worker processes
+PASS themes switch (dark/light/system)
+PASS About names the versions
+PASS free memory clears the preview
+PASS preview reloads from the disk cache
+PASS preview cache removed on close
+ALL CHECKS PASSED
+
+== pytest -v tests (VEUSZ_EXE = Veusz 3.6.2)
+tests/test_shr_converter.py::test_self_test_passes PASSED                [  3%]
+tests/test_shr_converter.py::test_title_decoding PASSED                  [  7%]
+tests/test_shr_converter.py::test_options_round_trip_and_validation PASSED [ 10%]
+tests/test_shr_converter.py::test_empty_selection_and_frequency_range_errors PASSED [ 14%]
+tests/test_shr_converter.py::test_semicolon_fixed_decimals PASSED        [ 17%]
+tests/test_shr_converter.py::test_command_line PASSED                    [ 21%]
+tests/test_shr_converter.py::test_real_file_round_trip PASSED            [ 25%]
+tests/test_shr_converter.py::test_real_file_renders PASSED               [ 28%]
+tests/test_shr_converter.py::test_gui_smoke PASSED                       [ 32%]
+tests/test_vszh5_writer.py::VersionTests::test_cell_markers_above_their_code PASSED [ 35%]
+tests/test_vszh5_writer.py::VersionTests::test_history_unique_and_descending PASSED [ 39%]
+tests/test_vszh5_writer.py::VersionTests::test_version_and_exports PASSED [ 42%]
+tests/test_vszh5_writer.py::RenderScriptTests::test_first_page_bound_is_not_min PASSED [ 46%]
+tests/test_vszh5_writer.py::RenderScriptTests::test_png_background PASSED [ 50%]
+tests/test_vszh5_writer.py::RenderPagesTests::test_dotted_stem_keeps_full_name PASSED [ 53%]
+tests/test_vszh5_writer.py::RenderPagesTests::test_missing_outputs_are_a_failure PASSED [ 57%]
+tests/test_vszh5_writer.py::RenderPagesTests::test_no_pages_loaded_with_traceback PASSED [ 60%]
+tests/test_vszh5_writer.py::RenderPagesTests::test_no_pages_loaded_without_traceback PASSED [ 64%]
+tests/test_vszh5_writer.py::BlockReduceTests::test_against_brute_force PASSED [ 67%]
+tests/test_vszh5_writer.py::BlockReduceTests::test_factor_one_is_identity_and_bad_input PASSED [ 71%]
+tests/test_vszh5_writer.py::BlockReduceTests::test_power_mean_db_large_values_do_not_overflow PASSED [ 75%]
+tests/test_vszh5_writer.py::RegularizeRowsTests::test_crowded_rows_spread_evenly PASSED [ 78%]
+tests/test_vszh5_writer.py::RegularizeRowsTests::test_regular_jitter_and_gaps PASSED [ 82%]
+tests/test_vszh5_writer.py::DocumentTests::test_appender_still_works PASSED [ 85%]
+tests/test_vszh5_writer.py::DocumentTests::test_image_page_datetime_axes PASSED [ 89%]
+tests/test_vszh5_writer.py::DocumentTests::test_published_file_mode_is_not_private PASSED [ 92%]
+tests/test_vszh5_writer.py::DocumentTests::test_xy_page_datetime_format PASSED [ 96%]
+tests/test_vszh5_writer.py::RealVeuszTests::test_date_axis_spectrogram_white_png PASSED [100%]
+=================== 28 passed, 30 subtests passed in 20.33s ====================
+
+== pytest -v tests (VEUSZ_EXE = Veusz 4.2.1)
+tests/test_shr_converter.py::test_self_test_passes PASSED                [  3%]
+tests/test_shr_converter.py::test_title_decoding PASSED                  [  7%]
+tests/test_shr_converter.py::test_options_round_trip_and_validation PASSED [ 10%]
+tests/test_shr_converter.py::test_empty_selection_and_frequency_range_errors PASSED [ 14%]
+tests/test_shr_converter.py::test_semicolon_fixed_decimals PASSED        [ 17%]
+tests/test_shr_converter.py::test_command_line PASSED                    [ 21%]
+tests/test_shr_converter.py::test_real_file_round_trip PASSED            [ 25%]
+tests/test_shr_converter.py::test_real_file_renders PASSED               [ 28%]
+tests/test_shr_converter.py::test_gui_smoke PASSED                       [ 32%]
+tests/test_vszh5_writer.py::VersionTests::test_cell_markers_above_their_code PASSED [ 35%]
+tests/test_vszh5_writer.py::VersionTests::test_history_unique_and_descending PASSED [ 39%]
+tests/test_vszh5_writer.py::VersionTests::test_version_and_exports PASSED [ 42%]
+tests/test_vszh5_writer.py::RenderScriptTests::test_first_page_bound_is_not_min PASSED [ 46%]
+tests/test_vszh5_writer.py::RenderScriptTests::test_png_background PASSED [ 50%]
+tests/test_vszh5_writer.py::RenderPagesTests::test_dotted_stem_keeps_full_name PASSED [ 53%]
+tests/test_vszh5_writer.py::RenderPagesTests::test_missing_outputs_are_a_failure PASSED [ 57%]
+tests/test_vszh5_writer.py::RenderPagesTests::test_no_pages_loaded_with_traceback PASSED [ 60%]
+tests/test_vszh5_writer.py::RenderPagesTests::test_no_pages_loaded_without_traceback PASSED [ 64%]
+tests/test_vszh5_writer.py::BlockReduceTests::test_against_brute_force PASSED [ 67%]
+tests/test_vszh5_writer.py::BlockReduceTests::test_factor_one_is_identity_and_bad_input PASSED [ 71%]
+tests/test_vszh5_writer.py::BlockReduceTests::test_power_mean_db_large_values_do_not_overflow PASSED [ 75%]
+tests/test_vszh5_writer.py::RegularizeRowsTests::test_crowded_rows_spread_evenly PASSED [ 78%]
+tests/test_vszh5_writer.py::RegularizeRowsTests::test_regular_jitter_and_gaps PASSED [ 82%]
+tests/test_vszh5_writer.py::DocumentTests::test_appender_still_works PASSED [ 85%]
+tests/test_vszh5_writer.py::DocumentTests::test_image_page_datetime_axes PASSED [ 89%]
+tests/test_vszh5_writer.py::DocumentTests::test_published_file_mode_is_not_private PASSED [ 92%]
+tests/test_vszh5_writer.py::DocumentTests::test_xy_page_datetime_format PASSED [ 96%]
+tests/test_vszh5_writer.py::RealVeuszTests::test_date_axis_spectrogram_white_png PASSED [100%]
+=================== 28 passed, 30 subtests passed in 24.68s ====================

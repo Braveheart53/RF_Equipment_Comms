@@ -1,0 +1,55 @@
+== tests/long_capture_check.py --workers 2 --render  (3 h, 2 sweeps/s x 4001 bins)
+wrote long_capture.shr: 21600 sweeps x 4001 bins, 330.7 MiB in 2.1 s
+Selected        : 21600 sweep(s) (start 0, step 1) x 4001 bin(s) (bins 0..4000)
+Spectrogram     : 1964 x 1334 pixels (11 sweep(s) x 3 bin(s) per pixel)
+Processing      : 15 block(s) of up to 1522 sweep(s), 2 worker process(es)
+Capture         : 3 h 01 min 59.5 s selected, about 5.56 s per spectrogram row
+CSV estimate    : 991.3 MiB in 7 file(s)
+Per-sweep table : 1.2 MiB
+converted in 25.8 s: 3.35 M samples/s, CSV 981.2 MiB in 7 file(s) (estimate 991.3 MiB), backend NumPy (CPU; CuPy unavailable: ModuleNotFoundError)
+peak RSS of the process tree: 879 MiB with 3 children
+PASS CSV split into 7 files of 30 min  [7 files]
+PASS every sweep exactly once, in order  [21600 rows]
+PASS all 18 bursts in the peak-hold spectrogram  [levels [np.float64(-20.0)]]
+PASS no burst where there was none  [max elsewhere -81.7]
+PASS level-vs-time series <= 100000 points  [21600 points, 1 sweeps each]
+PASS every burst survives the thinning (peak hold)  [18 of 18]
+PASS the recording pause is visible on the time axis  [120 s]
+PASS rendered PDF
+ALL PASSED
+files in /tmp/shr_long_r6ef_l8_/out
+
+== tests/long_capture_check.py --rate 50 --bins 512 --workers 2 --fixed 2  (3 h, 540 000 sweeps)
+wrote long_capture.shr: 540000 sweeps x 512 bins, 1.1 GiB in 8.0 s
+Selected        : 540000 sweep(s) (start 0, step 1) x 512 bin(s) (bins 0..511)
+Spectrogram     : 2000 x 512 pixels (270 sweep(s) x 1 bin(s) per pixel)
+Processing      : 132 block(s) of up to 4096 sweep(s), 2 worker process(es)
+Capture         : 3 h 01 min 60.0 s selected, about 5.46 s per spectrogram row
+CSV estimate    : 2.1 GiB in 7 file(s)
+Per-sweep table : 29.4 MiB
+converted in 52.8 s: 5.23 M samples/s, CSV 1.8 GiB in 7 file(s) (estimate 2.1 GiB), backend NumPy (CPU; CuPy unavailable: ModuleNotFoundError)
+peak RSS of the process tree: 526 MiB with 3 children
+PASS CSV split into 7 files of 30 min  [7 files]
+PASS every sweep exactly once, in order  [540000 rows]
+PASS all 18 bursts in the peak-hold spectrogram  [levels [np.float64(-20.0)]]
+PASS no burst where there was none  [max elsewhere -80.0]
+PASS level-vs-time series <= 100000 points  [90000 points, 6 sweeps each]
+PASS every burst survives the thinning (peak hold)  [18 of 18]
+PASS the recording pause is visible on the time axis  [120 s]
+ALL PASSED
+files in /tmp/shr_long_g11ia_gt/out
+
+== tests/memory_check.py --sweeps 3000 --bins 65536 --workers 2 --ram-mb 256
+Selected        : 3000 sweep(s) (start 0, step 1) x 65536 bin(s) (bins 0..65535)
+Spectrogram     : 1500 x 1986 pixels (2 sweep(s) x 33 bin(s) per pixel)
+Processing      : 273 block(s) of up to 11 sweep(s), 2 worker process(es)
+Capture         : 4 min 59.9 s selected, about 0.2 s per spectrogram row
+CSV estimate    : 2.2 GiB in 1 file(s)
+Per-sweep table : 167.0 KiB
+Warning         : 65542 columns: more than Excel's 16384 (pandas/Veusz/MATLAB read it; or use a frequency range)
+SHR file          : 750 MiB (3000 x 65536)
+CSV written       : 2,230 MiB in 41.4 s (NumPy (CPU; CuPy unavailable: ModuleNotFoundError))
+Baseline RSS      : 51 MiB (this process before converting)
+Peak RSS of tree  : 418 MiB with 3 child process(es)
+Limit             : 1,156 MiB
+PASS memory bounded by the budget
