@@ -1,7 +1,7 @@
 from shr_parser import ShrFileParser
 from pprint import pprint
 
-file_path = r"C:\Measurements\recording.shr"
+file_path = r"C:\FULL\FILE\PATH"
 
 with ShrFileParser(file_path) as parser:
     sweeps = parser.get_all_sweeps()
