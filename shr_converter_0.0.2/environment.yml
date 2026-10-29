@@ -1,0 +1,24 @@
+# ===========================================================================
+# environment.yml - SHR Converter 0.0.2, Python 3.12
+# ---------------------------------------------------------------------------
+# Mamba creates the interpreter and pip; pip installs the packages from
+# requirements.txt (Qt.py is taken from PyPI, so pip owns the packages, as in
+# the author's AB Power Meter toolset). 0.0.2 no longer needs py-shr-parser:
+# .shr files are read by shr_reader.py, shipped with the program.
+#
+# Create:   mamba env create -f environment.yml
+# Update:   mamba env update -f environment.yml --prune
+# Activate: mamba activate shr-converter
+# Optional: mamba install -n shr-converter -c conda-forge veusz   (viewer/render)
+#           mamba install -n shr-converter -c conda-forge cupy    (NVIDIA GPU)
+# Run from the folder that contains requirements.txt.
+# ===========================================================================
+name: shr-converter
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - -r requirements.txt
+      - -r requirements-test.txt

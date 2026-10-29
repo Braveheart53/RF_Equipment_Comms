@@ -1,0 +1,23 @@
+vszh5_writer 0.0.21 drop-in check - 2026-10-28 (Linux container, Python 3.12.3, Veusz 4.2.1)
+
+0.0.21 changes regularize_rows() only. No program below calls it (grep: 0 callers in
+each). Each program's own suite was run with 0.0.21 copied over its writer.
+
+program                          suite                                  result with 0.0.21          same as 0.0.20?
+-------------------------------  -------------------------------------  --------------------------  ---------------
+R&S FSP logger 0.9.0 (PySide6)   pytest tests (44)                      44 passed                   yes (*)
+AB Power Meter Monitor 1.7.0     8 suites                               45 PASS, 0 FAIL, 8 exit 0   yes
+SA Time Stability Tools 0.0.3    run_all.py (7 scripts)                 7 of 7 passed or skipped(**) yes
+SA Time Stability Tools 0.0.3    validate_vszh5_in_veusz.py (4.2.1)     22 passed, 0 failed         yes
+QuickSyn package 0.0.10          tests/run_all.py                       44 pass, 3 pinned fail      yes (***)
+
+(*)   test_about_versions_read_from_modules expects the writer version string; set it to "0.0.21"
+      in tests/test_screen_and_reset.py (the FSP logger's only test that names the version).
+(**)  validate_vszh5_in_veusz.py is skipped inside run_all.py (that interpreter has no veusz
+      module); it was run separately with Veusz 4.2.1's interpreter: 22/22.
+(***) The same three checks fail with 0.0.19, 0.0.20 and 0.0.21: check_release_metadata.py
+      expects the writer to say 0.0.10 (header Version and __version__), and check_vszh5.py
+      looks for the literal temporary name unit.vszh5.part (the writer has used private
+      unit.vszh5.<random>.part names since 0.0.15).
+
+Writer file checked: see writer_sha256.txt.

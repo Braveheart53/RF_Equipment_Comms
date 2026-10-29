@@ -1,0 +1,72 @@
+== tests/long_capture_check.py (3 h, 2 sweeps/s x 4001 bins, 1.5 ms jitter, 2 workers, render) 2026-10-28T11:33:49Z
+wrote long_capture.shr: 21600 sweeps x 4001 bins, 330.7 MiB in 1.9 s
+Selected        : 21600 sweep(s) (start 0, step 1) x 4001 bin(s) (bins 0..4000)
+Spectrogram     : 1964 x 1334 pixels (11 sweep(s) x 3 bin(s) per pixel)
+Processing      : 15 block(s) of up to 1522 sweep(s), 2 worker process(es)
+Capture         : 3 h 01 min 59.5 s selected, about 5.56 s per spectrogram row
+CSV estimate    : 991.3 MiB in 7 file(s)
+Per-sweep table : 1.2 MiB
+converted in 27.9 s: 3.09 M samples/s, CSV 981.2 MiB in 7 file(s) (estimate 991.3 MiB), backend NumPy (CPU; CuPy unavailable: ModuleNotFoundError)
+peak RSS of the process tree: 865 MiB with 3 children
+PASS CSV split into 7 files of 30 min  [7 files]
+PASS every sweep (or CSV group) exactly once, in order  [21600 rows]
+PASS all 18 bursts in the peak-hold spectrogram  [levels [np.float64(-20.0)]]
+PASS no burst where there was none  [max elsewhere -81.7]
+PASS blank spectrogram rows only for the pause (no false gaps from jitter)  [22 blank rows in a span of 23, expected about 22]
+PASS level-vs-time series <= 100000 points  [21600 points, 1 sweeps each]
+PASS every burst survives the thinning (peak hold)  [18 of 18]
+PASS the recording pause is visible on the time axis  [120 s]
+PASS rendered PDF
+ALL PASSED
+
+== tests/long_capture_check.py --rate 50 --bins 512 (540 000 sweeps, 2 workers) 2026-10-28T11:34:21Z
+wrote long_capture.shr: 540000 sweeps x 512 bins, 1.1 GiB in 6.2 s
+Selected        : 540000 sweep(s) (start 0, step 1) x 512 bin(s) (bins 0..511)
+Spectrogram     : 2000 x 512 pixels (270 sweep(s) x 1 bin(s) per pixel)
+Processing      : 132 block(s) of up to 4096 sweep(s), 2 worker process(es)
+Capture         : 3 h 01 min 60.0 s selected, about 5.46 s per spectrogram row
+CSV estimate    : 3.1 GiB in 7 file(s)
+Per-sweep table : 29.4 MiB
+converted in 58.9 s: 4.70 M samples/s, CSV 3.1 GiB in 7 file(s) (estimate 3.1 GiB), backend NumPy (CPU; CuPy unavailable: ModuleNotFoundError)
+peak RSS of the process tree: 560 MiB with 3 children
+PASS CSV split into 7 files of 30 min  [7 files]
+PASS every sweep (or CSV group) exactly once, in order  [540000 rows]
+PASS all 18 bursts in the peak-hold spectrogram  [levels [np.float64(-20.0)]]
+PASS no burst where there was none  [max elsewhere -80.1]
+PASS blank spectrogram rows only for the pause (no false gaps from jitter)  [22 blank rows in a span of 22, expected about 22]
+PASS level-vs-time series <= 100000 points  [90000 points, 6 sweeps each]
+PASS every burst survives the thinning (peak hold)  [18 of 18]
+PASS the recording pause is visible on the time axis  [120 s]
+ALL PASSED
+
+== tests/memory_check.py (1500 x 65536 bins, 2 workers, 256 MB budget) 2026-10-28T11:35:33Z
+Spectrogram     : 1500 x 1986 pixels (1 sweep(s) x 33 bin(s) per pixel)
+Processing      : 137 block(s) of up to 11 sweep(s), 2 worker process(es)
+Capture         : 2 min 29.9 s selected, about 0.0999 s per spectrogram row
+CSV estimate    : 1.1 GiB in 1 file(s)
+Per-sweep table : 83.5 KiB
+Warning         : 65542 columns: more than Excel's 16384 (pandas/Veusz/MATLAB read it; or use a frequency range)
+SHR file          : 375 MiB (1500 x 65536)
+CSV written       : 1,115 MiB in 21.4 s (NumPy (CPU; CuPy unavailable: ModuleNotFoundError))
+Baseline RSS      : 50 MiB (this process before converting)
+Peak RSS of tree  : 417 MiB with 3 child process(es)
+Limit             : 1,156 MiB
+PASS memory bounded by the budget
+
+== tests/sm200c_rate_check.py (2 files x 10 min at the SM200C sample's rate, join, csv_decimate 30, 2 workers) 2026-10-28T11:36:37Z
+wrote 2 file(s): 35902 sweeps x 8384 bins, 1.1 GiB in 8.8 s
+Selected        : 35902 sweep(s) (start 0, step 1) x 8384 bin(s) (bins 0..8383)
+Spectrogram     : 1995 x 1677 pixels (18 sweep(s) x 5 bin(s) per pixel)
+Processing      : 50 block(s) of up to 720 sweep(s), 2 worker process(es)
+Capture         : 19 min 59.9 s selected, about 0.601 s per spectrogram row
+CSV decimation  : 30 sweeps per CSV row -> 1197 row(s)
+CSV estimate    : 115.1 MiB in 1 file(s)
+Per-sweep table : 2.0 MiB
+converted in 11.4 s: 26.30 M samples/s, 100.5 MiB/s of SHR; CSV 113.9 MiB (estimate 115.1 MiB)
+peak RSS of the process tree: 477 MiB with 3 children
+PASS the files group into one recording  [1 group(s)]
+PASS one CSV row per 30 sweeps, in order  [1197 of 1197]
+PASS every burst kept by the peak-hold decimation  [20 of 20]
+PASS no blank spectrogram rows (no false gaps from the jitter)  [0 blank rows]
+PASS detector label and 0.01 dB note in the header table
+ALL PASSED

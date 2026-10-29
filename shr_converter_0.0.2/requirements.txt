@@ -1,0 +1,18 @@
+# ===========================================================================
+# requirements.txt - SHR Converter 0.0.2, Python 3.12 (tested 2026-10-28)
+# ---------------------------------------------------------------------------
+# Tested versions (Linux, Python 3.12.3):
+#   numpy 2.5.4  h5py 3.16.0  PySide6 6.12.0  Qt.py 2.0.7
+#   pyqtgraph 0.14.0  psutil 7.2.2  pypdf 6.21.3  (pytest + pillow for tests)
+# Veusz (viewer and PDF/PNG render) is a separate program: the Windows
+# installer from https://veusz.github.io/ or mamba install -c conda-forge veusz.
+# GPU (optional): mamba install -c conda-forge cupy  (NVIDIA CUDA only)
+# ===========================================================================
+# .shr files are read by shr_reader.py (shipped, NumPy only): no SHR package needed.
+numpy>=1.26
+h5py>=3.10                # native .vszh5 output (vszh5_writer)
+PySide6>=6.6              # Qt binding
+Qt.py>=2.0.7              # Qt abstraction layer (imports as Qt)
+pyqtgraph>=0.13.7         # GUI preview plots
+psutil>=5.9.6             # memory read-out in the status bar and tests
+pypdf>=4.0                # PDF bookmarks when rendering with Veusz

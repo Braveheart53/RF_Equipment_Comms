@@ -1,0 +1,31 @@
+SHR Converter 0.0.2 validation - 2026-10-28T11:37:11Z
+Linux container, 2 CPU cores, Python 3.12.3, NumPy 2.5.4, PySide6 6.12.0, Veusz 4.2.1, py-shr-parser 1.0.0 (cross-check only)
+
+== python shr_reader.py --selftest
+shr_reader 0.0.1 self-test: 39/39 passed
+
+== python shr_converter_core.py --selftest --real-file sweep0v2.shr
+58 passed, 0 failed
+
+== python shr_converter_core.py --selftest --real-file <SM200C sample>
+INFO py-shr-parser cannot read 75fb3092-2026-10-28T00_59_00-4_00-W50_2026-10-28_01h01m58s.shr (ValueError: 2 is not a valid ShrVideoDetector); cross-check skipped
+57 passed, 0 failed
+
+== python shr_converter.py --gui-smoke
+PASS file listed with its header
+PASS inspect shows a preview
+PASS inspect wrote nothing
+PASS convert wrote CSV, companions and .vszh5
+PASS outputs tab lists the files
+PASS conversion ran in worker processes
+PASS join + combine 4 sweeps per row: one CSV of 20 rows
+PASS themes switch (dark/light/system)
+PASS About names the versions
+PASS free memory clears the preview
+PASS preview reloads from the disk cache
+PASS preview cache removed on close
+ALL CHECKS PASSED
+
+== pytest tests/ (SHR_REAL_FILE=sweep0v2.shr, SHR_SM200C_FILE=SM200C sample, VEUSZ_EXE=Veusz 4.2.1)
+..................................         [100%]
+34 passed, 30 subtests passed in 29.55s

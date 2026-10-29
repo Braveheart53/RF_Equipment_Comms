@@ -1,0 +1,6 @@
+# Extra packages for tests/ (pip install -r requirements-test.txt)
+pytest>=8
+pillow>=10
+# Optional independent cross-check in tests/test_shr_converter.py (skipped when absent;
+# it cannot read Max/Min-detector recordings such as tests/data/*01h01m58s.shr):
+# py-shr-parser==1.0.0
