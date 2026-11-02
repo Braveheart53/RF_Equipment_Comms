@@ -6,15 +6,16 @@ R&S FSP Spectrum Analyzer Trace Logger
 ===============================================================================
  Title          : R&S FSP Spectrum Analyzer Trace Logger
  Filename       : rs_fsp_logger.py
- Version        : 0.9.0 (Semantic Versioning 2.0.0)
+ Version        : 0.10.0 (Semantic Versioning 2.0.0)
  Author         : William W. Wallace (application owner)
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
- Modified       : 2026-10-26
+ Modified       : 2026-10-29
  Language       : Python 3.8 through 3.12 (tested endpoints)
  Requires       : See requirements.txt; optional standalone Veusz for PDF/PNG
- Companions     : fsp_background 0.2.0, fsp_reports 0.1.4, vszh5_writer 0.0.18,
-                  fsp_simulator 0.0.1
+ Companions     : fsp_background 0.2.0, fsp_reports 0.1.5, vszh5_writer 0.0.21,
+                  fsp_simulator 0.0.1, fsp_gui_theme 0.0.1, fsp_batch_core 0.0.1,
+                  fsp_batch_convert 0.0.1
  Licence        : Supplied logger's license not declared; no grant inferred.
  Attribution    : Author/contact copied from supplied writer at user's request;
                   this integration includes AI-generated modifications.
@@ -22,6 +23,19 @@ R&S FSP Spectrum Analyzer Trace Logger
 
 REVISION HISTORY (newest first)
 ----------------
+0.10.0 2026-10-29
+       NEW  File / Tools > "Batch convert CSV files to Veusz plots…"
+            (Ctrl+Shift+R) opens fsp_batch_convert.BatchConvertDialog: one
+            CSV, several CSVs or whole folders (with sub-folders) in one
+            dialog, each into a new report folder by fsp_reports.py, in
+            parallel processes. It follows this window's theme (and its
+            View > Theme sets it here too). Sampling cannot start while a
+            batch runs and a batch cannot start while sampling, like single
+            reports; closing waits for a running batch. The dialog is also a
+            stand-alone program: python fsp_batch_convert.py.
+       CHG  Theme palette/style sheet moved unchanged to fsp_gui_theme.py
+            (shared with the dialog); vszh5_writer 0.0.21 (the one writer
+            for every project; FSP render fixes kept).
 0.9.0  2026-10-26
        NEW  Reset Active Traces (button, F7, Acquisition/Tools menus,
             toolbar): every displayed trace of the selected screen is set
@@ -80,6 +94,7 @@ Features
 * Active-trace LEDs (1, 2, 3) + Recording LED (tooltips give each mode)
 * Screen A / B / Auto selection, applied at connect, with an "In use" label
 * Reset Active Traces: Clear/Write, then each trace's own mode (0.9.0)
+* Batch convert CSV files to Veusz plots: files or whole folders (0.10.0)
 * Per-capture progress bar (driven by sweep time)
 * Live plot of last captured traces (pyqtgraph)
 * Sanity check: ensures N >= sweep_time * sweep_count (+ safety margin),
@@ -111,6 +126,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import numpy as np
 from fsp_background import AsyncCaptureCsvWriter, CaptureEventLog, LatestCaptureMailbox
 from fsp_simulator import SimulatedFSPSession
+import fsp_gui_theme
 
 # ---------------------------------------------------------------------------
 # %% Version
@@ -131,8 +147,10 @@ from fsp_simulator import SimulatedFSPSession
 #         Spyder's heartbeat). Probe Traces button now synchronous.
 # 0.9.0 — Reset Active Traces; trace modes and data read from the selected
 #         screen; Screen choice applied at connect; Auto re-detects on refresh.
-APP_VERSION = "0.9.0"
-APP_DATE = "2026-10-26"
+# 0.10.0 — Batch convert CSV files to Veusz plots (dialog; also stand-alone);
+#          shared theme module; vszh5_writer 0.0.21.
+APP_VERSION = "0.10.0"
+APP_DATE = "2026-10-29"
 
 # ---------------------------------------------------------------------------
 # %% Python version handling
@@ -1591,6 +1609,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.reset_thread: Optional[QThread] = None
         self.reset_worker: Optional[TraceResetWorker] = None
         self._reset_pending = False
+        # 0.10.0: batch CSV -> Veusz converter (fsp_batch_convert), opened
+        # from File / Tools; created on first use and reused.
+        self.batch_dialog = None
         self._sweep_settings: Dict[str, float] = {}
         self._active_traces: List[int] = []
         self.display_mailbox = None
@@ -1603,7 +1624,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.close_after_acquisition = False
         self.capture_progress_started = None
         self.capture_progress_duration = 1.0
-        self.settings = QtCore.QSettings("William W Wallace", "R&S FSP Trace Logger")
+        self.settings = fsp_gui_theme.shared_settings()
         self.base_palette = QtGui.QPalette(self.palette())
         self.display_trace_colors = list(TRACE_COLORS)
         self._build_ui()
@@ -1641,6 +1662,7 @@ class MainWindow(QtWidgets.QMainWindow):
         version_lbl.setObjectName("versionLabel")
         version_lbl.setStyleSheet("font-family: monospace;")
         version_lbl.setToolTip(
+            "0.10.0: Batch convert CSV files to Veusz plots (File menu; also stand-alone).\n"
             "0.9.0: Reset Active Traces; traces read from the selected screen;\n"
             "       Screen choice applied at connect; Auto re-detects on refresh.\n"
             "0.8.3: frequency-time pages; text menus; dark/light themes.\n"
@@ -2315,8 +2337,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def on_start(self, scheduled: bool):
         if self.instrument is None:
             return
-        if self._visa_busy() or self.report_process is not None:
-            self.status_label.setText("Wait for acquisition/report processing/trace reset to finish.")
+        if self._visa_busy() or self.report_process is not None or self._batch_running():
+            self.status_label.setText("Wait for acquisition/report processing/trace reset/batch conversion to finish.")
             return
         # Refresh once more so the sanity check uses live values. 0.9.0: in
         # Auto the screen is re-detected here, then kept for the whole run.
@@ -2361,7 +2383,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
             if answer != QtWidgets.QMessageBox.Yes:
                 return
-        if self._visa_busy() or self.report_process is not None:
+        if self._visa_busy() or self.report_process is not None or self._batch_running():
             return
         self.last_acquisition_error = ""
         self.report_result_message = ""
@@ -2637,6 +2659,52 @@ class MainWindow(QtWidgets.QMainWindow):
                 self, "Trace reset — check the analyzer",
                 "Some traces did not read back their original mode:\n\n" + summary)
 
+    # %% BATCH CSV -> VEUSZ CONVERSION (0.10.0)
+    def _batch_running(self) -> bool:
+        """True while the batch dialog converts (sampling is blocked meanwhile)."""
+        return bool(getattr(self, "batch_dialog", None) is not None and self.batch_dialog.running)
+
+    def _sync_batch_dialog(self) -> None:
+        """Tell an open batch dialog whether it may start (not while sampling)."""
+        dialog = getattr(self, "batch_dialog", None)
+        if dialog is None:
+            return
+        if self.thread is not None:
+            reason = ("The logger is sampling (or waiting / draining its CSV): batch conversion "
+                      "starts when it is idle, as single reports do.")
+        else:
+            reason = ""
+        dialog.set_blocked(reason)
+
+    @Slot()
+    def open_batch_converter(self):
+        """File / Tools > Batch convert CSV files to Veusz plots…
+
+        Opens (or raises) the batch dialog in the logger's current theme. It
+        converts single files, several files or whole folders; each CSV gets
+        a new report folder from fsp_reports.py, as the single-file button.
+        """
+        if self.batch_dialog is None:
+            try:
+                import fsp_batch_convert
+            except Exception as exc:  # pragma: no cover - missing module or Qt binding
+                QtWidgets.QMessageBox.critical(self, "Batch converter unavailable",
+                                               f"fsp_batch_convert.py could not be loaded:\n{exc}")
+                return
+            dialog = fsp_batch_convert.BatchConvertDialog(
+                self, standalone=False, theme_mode=self.theme_mode, settings=self.settings)
+            dialog.theme_handler = self.apply_theme
+            dialog.runningChanged.connect(lambda _running: self._update_report_availability())
+            source = Path(self.file_edit.text().strip()).expanduser()
+            if source.parent.is_dir() and dialog.last_folder == str(Path.home()):
+                dialog.last_folder = str(source.parent)
+            self.batch_dialog = dialog
+        self._sync_batch_dialog()
+        self.batch_dialog.apply_theme(self.theme_mode)
+        self.batch_dialog.show()
+        self.batch_dialog.raise_()
+        self.batch_dialog.activateWindow()
+
     # %% REPORT PROCESS ADMISSION AND COMPLETION
     def _report_unavailable_reason(self):
         if self.thread is not None:
@@ -2665,7 +2733,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.report_btn.setToolTip(reason or "All native plots including every frequency versus time.")
         self.render_reports_check.setEnabled(self.thread is None and self.report_process is None)
         can_start = (self.instrument is not None and self.thread is None
-                     and self.reset_thread is None and self.report_process is None)
+                     and self.reset_thread is None and self.report_process is None
+                     and not self._batch_running())
+        self._sync_batch_dialog()
         self.start_manual_btn.setEnabled(can_start)
         self.start_scheduled_btn.setEnabled(can_start)
         self._update_reset_button()
@@ -2793,6 +2863,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         button_action(file_menu, "Choose output CSV…", self.browse_btn, "Ctrl+O")
         self.report_action = button_action(file_menu, "Create Veusz plots / reports…", self.report_btn, "Ctrl+R")
+        self.batch_action = action(file_menu, "Batch convert CSV files to Veusz plots…",
+                                   self.open_batch_converter, "Ctrl+Shift+R")
+        self.batch_action.setToolTip("Convert one CSV, several CSVs or whole folders in one dialog "
+                                     "(also runs stand-alone: python fsp_batch_convert.py).")
         self.open_report_action = action(file_menu, "Open last report folder", self._open_report_folder)
         file_menu.addSeparator()
         action(file_menu, "E&xit", self.close, "Ctrl+Q")
@@ -2858,6 +2932,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.statusbar_action.toggled.connect(self.statusBar().setVisible)
         view_menu.addAction(self.statusbar_action)
         button_action(tools_menu, "Create all Veusz plots / reports…", self.report_btn)
+        action(tools_menu, "Batch convert CSV files to Veusz plots…", self.open_batch_converter)
         check_action(tools_menu, "Also render PDF + PNG", self.render_reports_check)
         self.veusz_action = action(tools_menu, "Select standalone Veusz executable…", self._select_veusz)
         button_action(tools_menu, "Instrument diagnostics…", self.diag_btn)
@@ -2949,6 +3024,7 @@ class MainWindow(QtWidgets.QMainWindow):
         content = readme.read_text(encoding="utf-8") if readme.is_file() else (
             "Connect or enable Demo. Choose CSV, interval and screen; start/stop.\n"
             "Reset Active Traces (F7): Clear/Write, then each trace's own mode.\n"
+            "File > Batch convert CSV files to Veusz plots (Ctrl+Shift+R): files or folders.\n"
             "Wait for CSV drain, then Create Veusz Plots / Reports into a new folder.\n"
             "Freq_N_GHz pages and Combined_Freq_vs_Time retain every frequency.\n"
             "Time axes use recorded datetime; means use linear power.\n"
@@ -2981,7 +3057,8 @@ class MainWindow(QtWidgets.QMainWindow):
             "Native Veusz writer: " + self.sibling_module_version("vszh5_writer.py")
             + "; report engine: " + self.sibling_module_version("fsp_reports.py")
             + "; background I/O: " + self.sibling_module_version("fsp_background.py")
-            + "; simulator: " + self.sibling_module_version("fsp_simulator.py") + "<br>"
+            + "; simulator: " + self.sibling_module_version("fsp_simulator.py")
+            + "; batch converter: " + self.sibling_module_version("fsp_batch_convert.py") + "<br>"
             "Python 3.8–3.12; integration update " + APP_DATE + " (AI-assisted).<br>"
             "Source attribution/license notices remain in the supplied modules.")
 
@@ -2993,54 +3070,14 @@ class MainWindow(QtWidgets.QMainWindow):
         controls, menu/toolbar and disabled states. OS-native file dialogs
         may retain the operating-system theme. Document export is independent
         of GUI display theme and stays publication-oriented.
+
+        0.10.0: palette and style sheet come from fsp_gui_theme (unchanged
+        values), and an open batch-convert dialog is restyled with them.
         """
-        if mode not in ("dark", "light", "system"):
-            mode = "system"
+        theme = fsp_gui_theme.apply_theme(self, self.base_palette, mode)
+        mode, dark = theme.mode, theme.dark
         self.theme_mode = mode
-        palette = QtGui.QPalette(self.base_palette)
-        if mode == "system":
-            dark = palette.color(QtGui.QPalette.Window).lightness() < 128
-        else:
-            dark = mode == "dark"
-            colors = {"window": "#24272e" if dark else "#f3f4f6", "base": "#171a20" if dark else "#ffffff",
-                      "text": "#f1f3f7" if dark else "#17212b", "button": "#353b46" if dark else "#e5e9ef",
-                      "disabled": "#9098a5" if dark else "#6b7280", "highlight": "#406bb5" if dark else "#245eb4"}
-            for role, color in ((QtGui.QPalette.Window, colors["window"]), (QtGui.QPalette.WindowText, colors["text"]),
-                                (QtGui.QPalette.Base, colors["base"]), (QtGui.QPalette.AlternateBase, colors["window"]),
-                                (QtGui.QPalette.Text, colors["text"]), (QtGui.QPalette.Button, colors["button"]),
-                                (QtGui.QPalette.ButtonText, colors["text"]), (QtGui.QPalette.ToolTipBase, colors["base"]),
-                                (QtGui.QPalette.ToolTipText, colors["text"]), (QtGui.QPalette.Highlight, colors["highlight"]),
-                                (QtGui.QPalette.HighlightedText, "#ffffff"), (QtGui.QPalette.Link, "#66b7ff" if dark else "#154caa")):
-                palette.setColor(role, QtGui.QColor(color))
-            for role in (QtGui.QPalette.Text, QtGui.QPalette.ButtonText, QtGui.QPalette.WindowText):
-                palette.setColor(QtGui.QPalette.Disabled, role, QtGui.QColor(colors["disabled"]))
-        self.setPalette(palette)
-        foreground = palette.color(QtGui.QPalette.WindowText).name()
-        base = palette.color(QtGui.QPalette.Base).name()
-        background = palette.color(QtGui.QPalette.Window).name()
-        button = palette.color(QtGui.QPalette.Button).name()
-        disabled = palette.color(QtGui.QPalette.Disabled, QtGui.QPalette.Text).name()
-        border = "#626b7a" if dark else "#9ba5b4"
-        self.setStyleSheet("""
-QWidget { background-color: %s; color: %s; }
-QProgressBar { background: %s; color: %s; border: 1px solid %s; text-align: center; }
-QProgressBar::chunk { background: #406bb5; }
-QCheckBox::indicator, QRadioButton::indicator { width: 13px; height: 13px; border: 1px solid #8d99aa; background: palette(base); }
-QRadioButton::indicator { border-radius: 7px; }
-QCheckBox::indicator:checked, QRadioButton::indicator:checked { background: #406bb5; border: 2px solid #82b8ff; }
-QCheckBox::indicator:disabled, QRadioButton::indicator:disabled { border-color: #626b7a; }
-QMenuBar, QMenu, QToolBar { background: %s; color: %s; }
-QMenuBar::item:selected, QMenu::item:selected { background: #406bb5; color: white; }
-QMenu::item:disabled { color: %s; }
-QLineEdit, QAbstractSpinBox, QComboBox, QTextEdit, QTextBrowser { background: %s; color: %s; selection-background-color: #406bb5; }
-QPushButton, QToolButton { background: %s; color: %s; border: 1px solid %s; border-radius: 3px; padding: 5px; }
-QPushButton:disabled, QToolButton:disabled { color: %s; }
-QPushButton:hover:enabled, QToolButton:hover:enabled { border: 1px solid #5b9beb; }
-QGroupBox { border: 1px solid %s; border-radius: 4px; margin-top: 9px; padding-top: 7px; }
-QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 3px; }
-QToolTip { background: %s; color: %s; border: 1px solid %s; }
-""" % (background, foreground, base, foreground, border, background, foreground, disabled,
-       base, foreground, button, foreground, border, disabled, border, base, foreground, border))
+        foreground, border = theme.foreground, theme.border
         plot_background = "#171a20" if dark else "#ffffff"
         self.plot.setBackground(plot_background)
         for name in ("bottom", "left", "top", "right"):
@@ -3062,11 +3099,19 @@ QToolTip { background: %s; color: %s; border: 1px solid %s; }
             led.update()
         for name, action in self.theme_actions.items():
             action.setChecked(name == mode)
+        if getattr(self, "batch_dialog", None) is not None:
+            self.batch_dialog.apply_theme(mode)
         if persist:
-            self.settings.setValue("theme", mode)
+            self.settings.setValue(fsp_gui_theme.SETTINGS_THEME_KEY, mode)
 
     # %% COOPERATIVE WINDOW CLOSE
     def closeEvent(self, event):
+        if self._batch_running():
+            self.status_label.setText("Batch conversion running: cancel it or let it finish before closing.")
+            self.batch_dialog.show()
+            self.batch_dialog.raise_()
+            event.ignore()
+            return
         if self.reset_thread is not None:
             self.close_after_acquisition = True
             self.status_label.setText("Closing after the trace reset finishes…")

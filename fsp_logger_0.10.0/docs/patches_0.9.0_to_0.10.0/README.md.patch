@@ -1,0 +1,210 @@
+--- 0.9.0/README.md
++++ 0.10.0/README.md
+@@ -1,12 +1,23 @@
+-# R&S FSP Logger 0.9.0
++# R&S FSP Logger 0.10.0
+ 
+ Author / application owner: William W. Wallace, NRAO/GBO, wwallace@nrao.edu.
+-AI-assisted (Claude) update, 2026-10-26, from the `fsp_logger_0.8.3` folder of
+-`Braveheart53/RF_Equipment_Comms` (commit `a7ccece`). Owner attribution and the
++AI-assisted (Claude) update, 2026-10-29 to 2026-11-02, from the `fsp_logger_0.9.0` folder of
++`Braveheart53/RF_Equipment_Comms` (commit `b4223e9`). Owner attribution and the
+ existing writer GPL notices are retained. The logger's own licence is not
+ declared by the owner; none is inferred or changed.
+ 
+-## What changed in 0.9.0
++## What changed in 0.10.0
++
++| Area | Change |
++|---|---|
++| **New: batch conversion** | *File* (and *Tools*) > **Batch convert CSV files to Veusz plots…** (Ctrl+Shift+R) opens one dialog that converts a single CSV, several CSVs or whole folders, optionally with sub-folders. It produces the same native Veusz reports as the single-file button, several CSVs at a time. See [Batch convert CSV files](#batch-convert-csv-files-to-veusz-plots). |
++| **New: stand-alone batch converter** | The same dialog is its own program. Run `python fsp_batch_convert.py` or double-click `run_batch_converter.bat`; no logger window is needed. `--cli` runs it without a window. |
++| Theme | The dialog follows the logger's Dark / Light / System choice, and changing it in either window changes both. The palette and style sheet moved, with unchanged values, to `fsp_gui_theme.py`. |
++| Interlocks | Sampling cannot start while a batch runs, and a batch cannot start while the logger samples, waits for its start time or drains its CSV. Single reports already follow the same rule. Closing the logger waits for a running batch. |
++| Writer `vszh5_writer.py` 0.0.21 | Replaces 0.0.18 with the one writer used across the projects. It keeps the three FSP render fixes and adds the AB-monitor appender and the SHR Converter helpers. The file is byte-identical to the copy in `shr_converter_0.0.2`. |
++| Launchers | `run_fsp_logger.bat` and `run_batch_converter.bat` use the mamba environment `fsp-logger` when it exists. |
++
++## Changes in 0.9.0
+ 
+ | Area | Change |
+ |---|---|
+@@ -19,7 +30,7 @@
+ 
+ ## Install and run (Python 3.8–3.12)
+ 
+-Keep all five Python modules together. Dependencies are not bundled.
++Keep all eight Python modules together. Dependencies are not bundled.
+ 
+ With mamba (Miniforge), using the pip pins that were tested:
+ 
+@@ -28,9 +39,13 @@
+ mamba activate fsp-logger
+ python -m pip install -r requirements.txt
+ python rs_fsp_logger.py --demo
++python fsp_batch_convert.py            # batch converter on its own
+ python -m unittest discover -s tests -v
+ ```
+ 
++On Windows you can double-click `run_fsp_logger.bat` or `run_batch_converter.bat` instead. You
++can also drop CSV files or folders on `run_batch_converter.bat`.
++
+ Plain pip works the same way: `python -m pip install -r requirements.txt`.
+ 
+ Remove `--demo` to use hardware. Then choose the CSV, pick **Screen (Auto / A / B)**
+@@ -46,19 +61,57 @@
+ 
+ | Component | Version | Role |
+ |---|---:|---|
+-| `rs_fsp_logger.py` | 0.9.0 | GUI, instrument layer, acquisition worker |
+-| `fsp_background.py` | 0.2.0 | Ordered CSV writer, display mailbox, **event log** |
+-| `fsp_reports.py` | 0.1.4 | Report process (native `.vszh5`, statistics, optional PDF/PNG) |
+-| `vszh5_writer.py` | 0.0.18 | Native Veusz HDF5 writer (shared with the owner's other projects) |
+-| `fsp_simulator.py` | 0.0.1 | Simulated two-screen FSP SCPI session (Demo Mode and tests) |
+-| `tests/test_merge.py` | 0.0.2 | The 0.8.3 suite (17 tests): power averaging, pages, CSV output; a header was added, and the grammar check now covers `fsp_simulator.py` |
+-| `tests/test_screen_and_reset.py` | 0.0.1 | Screen routing, trace reset, worker and GUI regressions (22 tests) |
+-| `tests/test_writer_render.py` | 0.0.1 | Writer 0.0.18 render fixes (with an optional real-Veusz test) |
++| `rs_fsp_logger.py` | **0.10.0** | GUI, instrument layer, acquisition worker; batch menu item |
++| `fsp_batch_convert.py` | **0.0.1 (new)** | Batch dialog, stand-alone window and `--cli` |
++| `fsp_batch_core.py` | **0.0.1 (new)** | Batch logic without Qt: discovery, planning, report processes, headless runner |
++| `fsp_gui_theme.py` | **0.0.1 (new)** | Dark / Light / System theme shared by the logger and the dialog |
++| `fsp_background.py` | 0.2.0 | Ordered CSV writer, display mailbox, event log (unchanged) |
++| `fsp_reports.py` | 0.1.5 | Report process (native `.vszh5`, statistics, optional PDF/PNG); header only |
++| `vszh5_writer.py` | **0.0.21** | Native Veusz HDF5 writer, the same file in every project |
++| `fsp_simulator.py` | 0.0.1 | Simulated two-screen FSP SCPI session (unchanged) |
++| `tests/test_merge.py` | 0.0.3 | The 0.8.3 suite (17 tests); the grammar check also covers the three new modules |
++| `tests/test_screen_and_reset.py` | 0.0.2 | Screen routing, trace reset, worker and GUI regressions (22 tests); expects writer 0.0.21 |
++| `tests/test_writer_render.py` | 0.0.1 | Writer render fixes, with an optional real-Veusz test (5 tests, unchanged) |
++| `tests/test_batch_convert.py` | **0.0.1 (new)** | Batch core, command line, dialog, stand-alone launcher and logger integration (24 tests) |
+ | `docs/repro_0.8.3_screen_defects.py` | 0.0.1 | Evidence script for the 0.8.3 defects |
+ 
+ Every Python file carries its version and revision history (newest first) in its header,
+ and Spyder `# %%` cells are kept.
+ 
++## Batch convert CSV files to Veusz plots
++
++Open it from the logger with *File* or *Tools* > **Batch convert CSV files to Veusz plots…**
++(Ctrl+Shift+R), or on its own:
++
++```console
++python fsp_batch_convert.py                         # window
++python fsp_batch_convert.py D:\runs a.csv b.csv     # window with these inputs listed
++python fsp_batch_convert.py --theme dark            # override the stored theme once
++python fsp_batch_convert.py --cli D:\runs --output-dir D:\reports --render --jobs 3
++python fsp_batch_convert.py --cli --help            # all command-line options
++```
++
++![Batch converter opened from the logger (light theme)](docs/screenshots/batch_converter_0.10.0_light_from_logger.png)
++
++| Part of the dialog | What it does |
++|---|---|
++| **Inputs** | *Add files…* (one or many), *Add folder…* (with *Include sub-folders*), drag and drop onto the dialog, or paths given on the command line. Only logger CSVs are listed, recognised by the header `date,time,timestamp_iso,freq_hz,trace<n>_dBm`. Other CSVs found in a folder (report tables, `<run>_events.csv`, unrelated files) are skipped and named in the log. *Remove*, *Clear* and the Delete key edit the list. |
++| **Output** | Each CSV gets a **new** folder `<csv name>_reports_<date_time>`. *Next to each CSV*, or *All in one folder*; the latter optionally keeps the scanned sub-folder structure, so equal names in different folders never collide. An existing folder is never overwritten (`_2`, `_3` … are added). *Skip CSVs that already have a report folder there* skips a CSV when a `<name>_reports_*` folder holding `report.json` exists. |
++| **Processing** | *Parallel conversions* (default: half the logical CPUs, 1 to 4). Each CSV runs `fsp_reports.py` in its own process with one BLAS thread, so memory is released per file and one bad CSV cannot stop the others. *Matrix limit per CSV* is `--max-matrix-mib`. *Also render PDF + PNG* needs Veusz with h5py; the Veusz program setting is shared with the logger. |
++| **Run** | *Convert* (F5) processes every row that is not Done; failed or cancelled rows can be re-run. *Cancel* empties the queue, ends running conversions and removes their unfinished hidden staging folders. The table shows each file's status and report folder; *Open report folder* or a double-click opens it. |
++| **Menus** | *File* (add, remove, convert, cancel, exit or close), *View > Theme*, *Tools* (Veusz program, open report folder), *Help* (usage, About). |
++
++| Situation | Behaviour |
++|---|---|
++| Opened from the logger | Uses the logger's theme. *View > Theme* in either window changes both and is stored once. Cannot start while the logger samples; the reason is shown in the dialog. While it converts, *Start* in the logger is disabled. |
++| Stand-alone | Reads and stores the same theme preference as the logger, so both open alike. *File > Exit* closes it. When started from Spyder with an event loop already running, the window is kept open and `main()` returns immediately. |
++| Closing while converting | Asks whether to cancel; on Yes it cancels and closes once the processes have ended. |
++| `--cli` | Prints a plan line per CSV and one line per result, then a JSON summary. Exit code 0 when all converted or skipped, 1 on any failure, 2 when no logger CSV was found. `--dry-run` only lists the plan. Ctrl+C removes unfinished folders. |
++
++Every report is exactly the logger's single-file report (same `fsp_reports.py`, same pages,
++`report.json`, `report.md`, statistics tables and optional bookmarked PDF + PNG). The batch adds
++no averaging or resampling of its own.
++
+ ## Screen A / B / Auto
+ 
+ The FSP has two independent measurement screens. Screen A is suffix 1 and Screen B is suffix 2 in
+@@ -196,10 +249,13 @@
+ Dark / Light / System themes and the About dialog (which now reads every module's version from
+ its source) are retained.
+ 
+-## Veusz writer 0.0.18
++## Veusz writer 0.0.21 (0.0.18 history)
+ 
+-This is the most recent writer from the owner's projects, with fixes only. The HDF5 layout and all
+-signatures are unchanged.
++0.10.0 ships `vszh5_writer.py` 0.0.21 (SHA-256 `338d8fd5…ccfec70d`), the same file as SHR
++Converter 0.0.2. It contains everything below plus the AB Power Meter Monitor's `VeuszAppender`
++and the 0.0.20/0.0.21 additions (`regularize_rows`, `block_reduce`, date/time image axes, PNG
++background, file permissions). No call used by this logger changed. The 0.0.18 render fixes
++below are kept:
+ 
+ | Fix | Before (0.0.17) | Now |
+ |---|---|---|
+@@ -211,7 +267,29 @@
+ frequency-page block is 0.0.16 (bundle 0.8.2). To bring another project to this writer, copy
+ the file unchanged and compare its SHA-256 against `MANIFEST.sha256`.
+ 
+-## Validation (this delivery, 2026-10-26)
++## Validation 0.10.0 (2026-11-02)
++
++| Environment | Result |
++|---|---|
++| CPython 3.12.3, PyQt5 5.15.11 (Qt 5.15.14), numpy 1.26.4, h5py 3.10.0, pyqtgraph 0.13.3 (Linux, offscreen Qt) | **68 tests: 67 pass, 1 skipped** (the real-Veusz test, run separately below) |
++| Same, `QT_API=pyside6` (PySide6 6.7.3) | 67 pass, 1 skipped |
++| CPython 3.8.20, PyQt5 5.15.11, numpy 1.24.4, h5py 3.10.0 | 67 pass, 1 skipped |
++| Veusz 3.6.2 and 4.2.1 (`RealVeuszTests`, writer 0.0.21) | Pass on both |
++| Batch with rendering, Veusz 3.6.2 and 4.2.1 (3 synthetic CSVs in a folder tree, 2 at a time) | 3 converted on each. Every PDF has 53 pages and 53 bookmarks; 159 PNGs per run; the sub-folder structure was kept. |
++| Stand-alone window started as its own process | Runs on its own event loop. In-process tests also check the listed inputs and the theme. |
++
++The batch tests cover header recognition, recursive and flat folder scans, duplicates, output
++planning (beside, one folder, mirrored, unique names, skip-existing), the command line (a folder,
++then skip-existing; dry run; a broken CSV reported and cleaned up; Ctrl+C ends running jobs at
++once), and the dialog (a folder and a
++loose file in one batch; cancel kills the processes and removes staging; blocked while sampling;
++theme storage). They also cover the stand-alone launcher and the logger's menu item, theme
++hand-off both ways and both interlocks. Full logs: `docs/validation_0.10.0.txt`.
++
++**Not verified in 0.10.0:** Windows (paths, `.bat` launchers, the Spyder event loop) and real logger
++CSVs from the analyzer. The test CSVs were written by the logger's own CSV writer.
++
++## Validation 0.9.0 (2026-10-26)
+ 
+ | Environment | Result |
+ |---|---|
+@@ -223,7 +301,7 @@
+ | Veusz 4.2.1 (built from PyPI source with Qt 6 tools) | `RealVeuszTests` pass on 0.0.18 and **fail on 0.0.17** (wrong PDF name, no PNG). Full demo report: 53 pages, 53 bookmarks, full-page scale. |
+ | Defect tests against 0.8.3 / writer 0.0.17 | All five writer tests fail on 0.0.17 (four stand-in tests plus the real Veusz 4.2.1 test). The four screen defects are reproduced by `docs/repro_0.8.3_screen_defects.py`. |
+ 
+-Full logs: `docs/validation_0.9.0.txt`.
++Full logs: `docs/history_0.9.0/validation_0.9.0.txt`.
+ 
+ **Not verified here:** a physical FSP. In particular, whether firmware 4.50 answers
+ `DISP:WIND2:TRAC<n>:MODE?` and `MODE WRIT/MAXH/...` on Screen B has not been checked, and the
+@@ -248,16 +326,17 @@
+ 
+ | Path | Content |
+ |---|---|
+-| `rs_fsp_logger.py`, `fsp_background.py`, `fsp_reports.py`, `vszh5_writer.py`, `fsp_simulator.py` | Program |
++| `rs_fsp_logger.py`, `fsp_batch_convert.py`, `fsp_batch_core.py`, `fsp_gui_theme.py`, `fsp_background.py`, `fsp_reports.py`, `vszh5_writer.py`, `fsp_simulator.py` | Program |
++| `run_fsp_logger.bat`, `run_batch_converter.bat` | Windows launchers (activate `fsp-logger` if present) |
+ | `requirements.txt` | Tested pip pins (PyQt5 default) |
+-| `tests/` | `unittest` suites (44 tests) |
++| `tests/` | `unittest` suites (68 tests) |
+ | `CHANGELOG.md` | Bundle history, newest first |
+-| `docs/DEFECT_ANALYSIS_0.9.0.md` | Root cause, evidence and fix of the screen/trace defect |
+-| `docs/repro_0.8.3_screen_defects.py` | Evidence script (0.8.3 code against the simulator) |
+-| `docs/patches_0.8.3_to_0.9.0/` | Unified diffs of every changed file |
+-| `docs/source_sha256.json` | Hashes of the 0.8.3 sources this release starts from, and of the 0.9.0 files |
+-| `docs/validation_0.9.0.txt` | Test and render logs of this delivery |
+-| `docs/screenshots/` | GUI after an idle reset on forced Screen B (dark and light themes, offscreen render) |
++| `docs/validation_0.10.0.txt` | Test and render logs of this delivery |
++| `docs/patches_0.9.0_to_0.10.0/` | Unified diffs of every changed file (new files are in the package itself) |
++| `docs/source_sha256.json` | Hashes of the 0.9.0 sources this release starts from, and of the 0.10.0 files |
++| `docs/screenshots/` | Batch dialog opened from the logger (light and dark); 0.9.0 GUI after a reset |
++| `docs/DEFECT_ANALYSIS_0.9.0.md`, `docs/repro_0.8.3_screen_defects.py` | 0.9.0 screen/trace defect analysis and evidence script |
++| `docs/history_0.9.0/` | The 0.9.0 validation log, hashes and 0.8.3→0.9.0 diffs |
+ | `docs/history_0.8.3/` | The 0.8.3 merge evidence, unchanged |
+ | `fsp_traces_reports_20261024_094331_948513/` | 0.8.3 demo report (synthetic) |
+ | `MANIFEST.sha256` | SHA-256 of every file in the package |
+@@ -271,4 +350,6 @@
+ | [3] | *IEEE Standard Codes, Formats, Protocols, and Common Commands for Use With IEEE Std 488.1-1987*, IEEE Std 488.2-1992. [Online]. Available: https://standards.ieee.org/ieee/488.2/718/ | `*OPC?`, `*CLS`, `*IDN?`, error queue |
+ | [4] | *Higher performance protocol for the standard digital interface for programmable instrumentation – Part 2: Codes, formats, protocols and common commands*, IEC 60488-2:2004 (IEEE Std 488.2). [Online]. Available: https://www.vde-verlag.de/iec-normen/preview-pdf/info_iec60488-2{ed1.0}en.pdf | Same as [3], IEC edition |
+ | [5] | J. Sanders *et al.*, "Veusz – a scientific plotting package," v3.6.2 and v4.2.1. [Online]. Available: https://veusz.github.io/ and https://pypi.org/project/veusz/4.2.1/ | `.vszh5` loading, `--listen` rendering |
+-| [6] | T. Preston-Werner, "Semantic Versioning 2.0.0." [Online]. Available: https://semver.org/spec/v2.0.0.html | Version numbers (0.9.0: new feature → MINOR) |
++| [6] | T. Preston-Werner, "Semantic Versioning 2.0.0." [Online]. Available: https://semver.org/spec/v2.0.0.html | Version numbers (0.9.0 and 0.10.0: new feature → MINOR) |
++| [7] | The Qt Company, "QProcess Class," Qt 5.15 / Qt 6 documentation. [Online]. Available: https://doc.qt.io/qt-6/qprocess.html | One report process per CSV, cancellation |
++| [8] | Python Software Foundation, "concurrent.futures — Launching parallel tasks," Python 3.12 documentation. [Online]. Available: https://docs.python.org/3/library/concurrent.futures.html | Parallel jobs of the `--cli` runner |

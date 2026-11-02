@@ -5,11 +5,12 @@
 Regression tests for logger bundle 0.9.0: screen routing and trace reset
 ========================================================================
  Filename       : tests/test_screen_and_reset.py
- Version        : 0.0.1 (Semantic Versioning 2.0.0)
+ Version        : 0.0.2 (Semantic Versioning 2.0.0)
  Author         : William W. Wallace (application owner)
  Company        : NRAO/GBO
  Email          : wwallace@nrao.edu
  Created        : 2026-10-26
+ Modified       : 2026-10-29
  Language       : Python 3.8 through 3.12
  Requires       : numpy, qtpy + a Qt binding, pyqtgraph (the logger module
                   imports them); skipped when they are missing.
@@ -21,6 +22,10 @@ fsp_simulator.SimulatedFSPSession. Each defect test fails on 0.8.3 (see the
 "0.8.3:" notes) and passes on 0.9.0.
 
 Run:  python -m unittest discover -s tests -v
+
+REVISION HISTORY (newest first)
+0.0.2  2026-10-29  Bundle 0.10.0: the About test expects vszh5_writer 0.0.21.
+0.0.1  2026-10-26  First version, bundle 0.9.0.
 """
 
 # %% IMPORTS
@@ -420,7 +425,7 @@ class GuiTests(unittest.TestCase):
             win.close()
 
     def test_about_versions_read_from_modules(self):
-        self.assertEqual(L.MainWindow.sibling_module_version("vszh5_writer.py"), "0.0.18")
+        self.assertEqual(L.MainWindow.sibling_module_version("vszh5_writer.py"), "0.0.21")
         self.assertEqual(L.MainWindow.sibling_module_version("fsp_simulator.py"), "0.0.1")
 
 

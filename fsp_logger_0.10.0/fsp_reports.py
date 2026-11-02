@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # %% MODULE HEADER
-"""FSP CSV reporting, version 0.1.4, modified 2026-10-26.
+"""FSP CSV reporting, version 0.1.5, modified 2026-10-29.
 Author: William W. Wallace (application owner; generated integration update).
-Python: 3.8–3.12. Native writer: 0.0.18; logger bundle: 0.9.0.
+Python: 3.8–3.12. Native writer: 0.0.21; logger bundle: 0.10.0.
+
+0.1.5: Bundle 0.10.0. No code change: header updated for vszh5_writer 0.0.21.
+Now also run by fsp_batch_convert.py (one process per CSV, several at once;
+each process caps its own BLAS threads at 1 through the batch environment).
 
 0.1.4: Bundle 0.9.0 with vszh5_writer 0.0.18 (render fixes only). FIX: the
 logger version in the document generator line and report.json was the
@@ -33,7 +37,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import numpy as np
 import vszh5_writer as native_writer
-__version__ = "0.1.4"
+__version__ = "0.1.5"
 TRACE_PATTERN = re.compile(r"trace([1-3])_dBm$")
 
 

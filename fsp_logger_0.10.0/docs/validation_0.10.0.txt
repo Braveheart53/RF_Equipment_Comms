@@ -1,0 +1,311 @@
+R&S FSP Logger 0.10.0 - validation log (2026-11-02T14:01:06Z, Linux 6.18.44-fc-v185, offscreen Qt)
+Instrument data: fsp_simulator (synthetic). CSVs for the batch tests: written by fsp_background's
+own CSV writer (synthetic). No physical FSP, no Windows run.
+Filtered from the log: Qt offscreen-platform notices and pyqtgraph-internal warnings.
+
+=== [py312-PyQt5] Python 3.12.3 | numpy 1.26.4 | h5py 3.10.0 | QtPy 2.4.3 -> PyQt5 5.15.14 | pyqtgraph 0.13.3 ===
+test_byte_order_mark_accepted (test_batch_convert.CheckAndDiscoveryTests.test_byte_order_mark_accepted) ... ok
+test_duplicates_and_missing (test_batch_convert.CheckAndDiscoveryTests.test_duplicates_and_missing) ... ok
+test_folder_scan_recursive_and_flat (test_batch_convert.CheckAndDiscoveryTests.test_folder_scan_recursive_and_flat) ... ok
+test_logger_header_recognised (test_batch_convert.CheckAndDiscoveryTests.test_logger_header_recognised) ... ok
+test_other_csvs_rejected (test_batch_convert.CheckAndDiscoveryTests.test_other_csvs_rejected) ... ok
+test_convert_folder_then_skip_existing (test_batch_convert.CommandLineTests.test_convert_folder_then_skip_existing) ... ok
+test_ctrl_c_stops_running_jobs_at_once (test_batch_convert.CommandLineTests.test_ctrl_c_stops_running_jobs_at_once) ... ok
+test_dry_run_and_nothing_found (test_batch_convert.CommandLineTests.test_dry_run_and_nothing_found) ... ok
+test_failed_csv_reported_and_cleaned (test_batch_convert.CommandLineTests.test_failed_csv_reported_and_cleaned) ... ok
+test_blocked_dialog_does_not_start (test_batch_convert.DialogTests.test_blocked_dialog_does_not_start) ... ok
+test_cancel_kills_and_removes_staging (test_batch_convert.DialogTests.test_cancel_kills_and_removes_staging) ... ok
+test_folder_and_single_file_in_one_batch (test_batch_convert.DialogTests.test_folder_and_single_file_in_one_batch) ... ok
+ok
+skip  /tmp/tmptwva2_h2/in/a/notes.csv  (not a logger CSV (needs date,time,timestamp_iso,freq_hz,trace<n>_dBm))
+skip  /tmp/tmptwva2_h2/in/run1_events.csv  (not a logger CSV (needs date,time,timestamp_iso,freq_hz,trace<n>_dBm))
+plan  /tmp/tmptwva2_h2/in/a/b/run2.csv  ->  /tmp/tmptwva2_h2/in/a/b/run2_reports_20261102_090109
+plan  /tmp/tmptwva2_h2/in/c/run1.csv  ->  /tmp/tmptwva2_h2/in/c/run1_reports_20261102_090109
+plan  /tmp/tmptwva2_h2/in/run1.csv  ->  /tmp/tmptwva2_h2/in/run1_reports_20261102_090109
+ok
+test_theme_choice_stored_when_standalone (test_batch_convert.DialogTests.test_theme_choice_stored_when_standalone) ... ok
+test_beside_each_csv (test_batch_convert.PlanningTests.test_beside_each_csv) ... ok
+test_existing_folder_never_reused (test_batch_convert.PlanningTests.test_existing_folder_never_reused) ... ok
+test_one_folder_flat_makes_names_unique (test_batch_convert.PlanningTests.test_one_folder_flat_makes_names_unique) ... ok
+test_one_folder_mirrored (test_batch_convert.PlanningTests.test_one_folder_mirrored) ... ok
+test_options_validated (test_batch_convert.PlanningTests.test_options_validated) ... ok
+test_skip_existing (test_batch_convert.PlanningTests.test_skip_existing) ... ok
+test_cleanup_only_this_jobs_staging (test_batch_convert.ProcessHelperTests.test_cleanup_only_this_jobs_staging) ... ok
+test_command_and_environment (test_batch_convert.ProcessHelperTests.test_command_and_environment) ... ok
+test_parse_output (test_batch_convert.ProcessHelperTests.test_parse_output) ... ok
+test_csv_order_and_immutable_copy (test_merge.OutputTests.test_csv_order_and_immutable_copy) ... ok
+test_invalid_channels (test_merge.OutputTests.test_invalid_channels) ... ok
+test_mailbox (test_merge.OutputTests.test_mailbox) ... ok
+test_queue_terminal_capture (test_merge.OutputTests.test_queue_terminal_capture) ... ok
+test_801_bins (test_merge.PlotTests.test_801_bins) ... ok
+test_page_union_and_raw_series (test_merge.PlotTests.test_page_union_and_raw_series) ... ok
+test_precise_names (test_merge.PlotTests.test_precise_names) ... ok
+test_utc_dates (test_merge.PlotTests.test_utc_dates) ... ok
+test_channels_stay_separate (test_merge.PowerTests.test_channels_stay_separate) ... ok
+test_chunks_and_axis (test_merge.PowerTests.test_chunks_and_axis) ... ok
+test_extreme_levels (test_merge.PowerTests.test_extreme_levels) ... ok
+test_linear_not_log_mean (test_merge.PowerTests.test_linear_not_log_mean) ... ok
+test_reject_invalid (test_merge.PowerTests.test_reject_invalid) ... ok
+test_statistics_use_shared_helper (test_merge.PowerTests.test_statistics_use_shared_helper) ... ok
+test_actual_hdf5 (test_merge.SourceTests.test_actual_hdf5) ... ok
+test_gui_interlocks_and_display_no_averaging (test_merge.SourceTests.test_gui_interlocks_and_display_no_averaging) ... ok
+test_python38_grammar (test_merge.SourceTests.test_python38_grammar) ... ok
+test_about_versions_read_from_modules (test_screen_and_reset.GuiTests.test_about_versions_read_from_modules) ... ok
+test_confirmation_prompt_and_do_not_ask_again (test_screen_and_reset.GuiTests.test_confirmation_prompt_and_do_not_ask_again) ... ok
+ok
+test_idle_reset_runs_in_worker_and_restores (test_screen_and_reset.GuiTests.test_idle_reset_runs_in_worker_and_restores) ... ok
+test_reset_during_recording (test_screen_and_reset.GuiTests.test_reset_during_recording) ... ok
+test_screen_choice_before_connect_is_applied (test_screen_and_reset.GuiTests.test_screen_choice_before_connect_is_applied) ... ok
+test_reset_served_between_captures_and_logged (test_screen_and_reset.RecordingResetTests.test_reset_served_between_captures_and_logged) ... ok
+test_auto_reads_trace_modes_from_detected_screen (test_screen_and_reset.ScreenRoutingTests.test_auto_reads_trace_modes_from_detected_screen) ... ok
+test_auto_redetects_only_when_refreshed (test_screen_and_reset.ScreenRoutingTests.test_auto_redetects_only_when_refreshed) ... ok
+test_choice_applied_before_first_query (test_screen_and_reset.ScreenRoutingTests.test_choice_applied_before_first_query) ... ok
+test_fetch_never_falls_back_to_other_screen (test_screen_and_reset.ScreenRoutingTests.test_fetch_never_falls_back_to_other_screen) ... ok
+test_fetch_template_is_per_screen (test_screen_and_reset.ScreenRoutingTests.test_fetch_template_is_per_screen) ... ok
+test_forced_screen_a_reads_screen_a (test_screen_and_reset.ScreenRoutingTests.test_forced_screen_a_reads_screen_a) ... ok
+test_normalize_mode (test_screen_and_reset.ScreenRoutingTests.test_normalize_mode) ... ok
+test_screen_a_window_form_survives_deviating_unsuffixed_routing (test_screen_and_reset.ScreenRoutingTests.test_screen_a_window_form_survives_deviating_unsuffixed_routing) ... ok
+test_unreadable_modes_raise_instead_of_reporting_none (test_screen_and_reset.ScreenRoutingTests.test_unreadable_modes_raise_instead_of_reporting_none) ... ok
+test_blank_traces_untouched (test_screen_and_reset.TraceResetTests.test_blank_traces_untouched) ... ok
+test_reset_goes_through_clear_write_and_restores_each_mode (test_screen_and_reset.TraceResetTests.test_reset_goes_through_clear_write_and_restores_each_mode) ... ok
+test_reset_raises_when_nothing_readable (test_screen_and_reset.TraceResetTests.test_reset_raises_when_nothing_readable) ... ok
+test_reset_restarts_max_hold (test_screen_and_reset.TraceResetTests.test_reset_restarts_max_hold) ... ok
+test_summary_text (test_screen_and_reset.TraceResetTests.test_summary_text) ... ok
+test_view_trace_refrozen_after_a_fresh_sweep (test_screen_and_reset.TraceResetTests.test_view_trace_refrozen_after_a_fresh_sweep) ... ok
+test_real_render_pdf_and_first_png (test_writer_render.RealVeuszTests.test_real_render_pdf_and_first_png) ... skipped 'set VEUSZ_EXE to a Veusz with h5py for a real render'
+test_dotted_stem_keeps_full_name (test_writer_render.RenderPagesTests.test_dotted_stem_keeps_full_name) ... ok
+test_missing_outputs_are_a_failure (test_writer_render.RenderPagesTests.test_missing_outputs_are_a_failure) ... ok
+test_no_pages_loaded_is_a_failure (test_writer_render.RenderPagesTests.test_no_pages_loaded_is_a_failure) ... ok
+test_first_page_bound_is_not_min (test_writer_render.RenderScriptTests.test_first_page_bound_is_not_min) ... ok
+----------------------------------------------------------------------
+Ran 68 tests in 8.381s
+OK (skipped=1)
+
+=== [py312-PySide6] Python 3.12.3 | numpy 1.26.4 | h5py 3.10.0 | QtPy 2.4.3 -> PySide6 6.7.3 | pyqtgraph 0.13.3 ===
+test_byte_order_mark_accepted (test_batch_convert.CheckAndDiscoveryTests.test_byte_order_mark_accepted) ... ok
+test_duplicates_and_missing (test_batch_convert.CheckAndDiscoveryTests.test_duplicates_and_missing) ... ok
+test_folder_scan_recursive_and_flat (test_batch_convert.CheckAndDiscoveryTests.test_folder_scan_recursive_and_flat) ... ok
+test_logger_header_recognised (test_batch_convert.CheckAndDiscoveryTests.test_logger_header_recognised) ... ok
+test_other_csvs_rejected (test_batch_convert.CheckAndDiscoveryTests.test_other_csvs_rejected) ... ok
+test_convert_folder_then_skip_existing (test_batch_convert.CommandLineTests.test_convert_folder_then_skip_existing) ... ok
+test_ctrl_c_stops_running_jobs_at_once (test_batch_convert.CommandLineTests.test_ctrl_c_stops_running_jobs_at_once) ... ok
+test_dry_run_and_nothing_found (test_batch_convert.CommandLineTests.test_dry_run_and_nothing_found) ... ok
+test_failed_csv_reported_and_cleaned (test_batch_convert.CommandLineTests.test_failed_csv_reported_and_cleaned) ... ok
+test_blocked_dialog_does_not_start (test_batch_convert.DialogTests.test_blocked_dialog_does_not_start) ... ok
+test_cancel_kills_and_removes_staging (test_batch_convert.DialogTests.test_cancel_kills_and_removes_staging) ... ok
+test_folder_and_single_file_in_one_batch (test_batch_convert.DialogTests.test_folder_and_single_file_in_one_batch) ... ok
+ok
+skip  /tmp/tmp21b31tx0/in/a/notes.csv  (not a logger CSV (needs date,time,timestamp_iso,freq_hz,trace<n>_dBm))
+skip  /tmp/tmp21b31tx0/in/run1_events.csv  (not a logger CSV (needs date,time,timestamp_iso,freq_hz,trace<n>_dBm))
+plan  /tmp/tmp21b31tx0/in/a/b/run2.csv  ->  /tmp/tmp21b31tx0/in/a/b/run2_reports_20261102_090120
+plan  /tmp/tmp21b31tx0/in/c/run1.csv  ->  /tmp/tmp21b31tx0/in/c/run1_reports_20261102_090120
+plan  /tmp/tmp21b31tx0/in/run1.csv  ->  /tmp/tmp21b31tx0/in/run1_reports_20261102_090120
+ok
+test_theme_choice_stored_when_standalone (test_batch_convert.DialogTests.test_theme_choice_stored_when_standalone) ... ok
+test_beside_each_csv (test_batch_convert.PlanningTests.test_beside_each_csv) ... ok
+test_existing_folder_never_reused (test_batch_convert.PlanningTests.test_existing_folder_never_reused) ... ok
+test_one_folder_flat_makes_names_unique (test_batch_convert.PlanningTests.test_one_folder_flat_makes_names_unique) ... ok
+test_one_folder_mirrored (test_batch_convert.PlanningTests.test_one_folder_mirrored) ... ok
+test_options_validated (test_batch_convert.PlanningTests.test_options_validated) ... ok
+test_skip_existing (test_batch_convert.PlanningTests.test_skip_existing) ... ok
+test_cleanup_only_this_jobs_staging (test_batch_convert.ProcessHelperTests.test_cleanup_only_this_jobs_staging) ... ok
+test_command_and_environment (test_batch_convert.ProcessHelperTests.test_command_and_environment) ... ok
+test_parse_output (test_batch_convert.ProcessHelperTests.test_parse_output) ... ok
+test_csv_order_and_immutable_copy (test_merge.OutputTests.test_csv_order_and_immutable_copy) ... ok
+test_invalid_channels (test_merge.OutputTests.test_invalid_channels) ... ok
+test_mailbox (test_merge.OutputTests.test_mailbox) ... ok
+test_queue_terminal_capture (test_merge.OutputTests.test_queue_terminal_capture) ... ok
+test_801_bins (test_merge.PlotTests.test_801_bins) ... ok
+test_page_union_and_raw_series (test_merge.PlotTests.test_page_union_and_raw_series) ... ok
+test_precise_names (test_merge.PlotTests.test_precise_names) ... ok
+test_utc_dates (test_merge.PlotTests.test_utc_dates) ... ok
+test_channels_stay_separate (test_merge.PowerTests.test_channels_stay_separate) ... ok
+test_chunks_and_axis (test_merge.PowerTests.test_chunks_and_axis) ... ok
+test_extreme_levels (test_merge.PowerTests.test_extreme_levels) ... ok
+test_linear_not_log_mean (test_merge.PowerTests.test_linear_not_log_mean) ... ok
+test_reject_invalid (test_merge.PowerTests.test_reject_invalid) ... ok
+test_statistics_use_shared_helper (test_merge.PowerTests.test_statistics_use_shared_helper) ... ok
+test_actual_hdf5 (test_merge.SourceTests.test_actual_hdf5) ... ok
+test_gui_interlocks_and_display_no_averaging (test_merge.SourceTests.test_gui_interlocks_and_display_no_averaging) ... ok
+test_python38_grammar (test_merge.SourceTests.test_python38_grammar) ... ok
+test_about_versions_read_from_modules (test_screen_and_reset.GuiTests.test_about_versions_read_from_modules) ... ok
+ok
+ok
+test_idle_reset_runs_in_worker_and_restores (test_screen_and_reset.GuiTests.test_idle_reset_runs_in_worker_and_restores) ... ok
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+  getattr(oldView, signal).disconnect(slot)
+ok
+ok
+test_reset_served_between_captures_and_logged (test_screen_and_reset.RecordingResetTests.test_reset_served_between_captures_and_logged) ... ok
+test_auto_reads_trace_modes_from_detected_screen (test_screen_and_reset.ScreenRoutingTests.test_auto_reads_trace_modes_from_detected_screen) ... ok
+test_auto_redetects_only_when_refreshed (test_screen_and_reset.ScreenRoutingTests.test_auto_redetects_only_when_refreshed) ... ok
+test_choice_applied_before_first_query (test_screen_and_reset.ScreenRoutingTests.test_choice_applied_before_first_query) ... ok
+test_fetch_never_falls_back_to_other_screen (test_screen_and_reset.ScreenRoutingTests.test_fetch_never_falls_back_to_other_screen) ... ok
+test_fetch_template_is_per_screen (test_screen_and_reset.ScreenRoutingTests.test_fetch_template_is_per_screen) ... ok
+test_forced_screen_a_reads_screen_a (test_screen_and_reset.ScreenRoutingTests.test_forced_screen_a_reads_screen_a) ... ok
+test_normalize_mode (test_screen_and_reset.ScreenRoutingTests.test_normalize_mode) ... ok
+test_screen_a_window_form_survives_deviating_unsuffixed_routing (test_screen_and_reset.ScreenRoutingTests.test_screen_a_window_form_survives_deviating_unsuffixed_routing) ... ok
+test_unreadable_modes_raise_instead_of_reporting_none (test_screen_and_reset.ScreenRoutingTests.test_unreadable_modes_raise_instead_of_reporting_none) ... ok
+test_blank_traces_untouched (test_screen_and_reset.TraceResetTests.test_blank_traces_untouched) ... ok
+test_reset_goes_through_clear_write_and_restores_each_mode (test_screen_and_reset.TraceResetTests.test_reset_goes_through_clear_write_and_restores_each_mode) ... ok
+test_reset_raises_when_nothing_readable (test_screen_and_reset.TraceResetTests.test_reset_raises_when_nothing_readable) ... ok
+test_reset_restarts_max_hold (test_screen_and_reset.TraceResetTests.test_reset_restarts_max_hold) ... ok
+test_summary_text (test_screen_and_reset.TraceResetTests.test_summary_text) ... ok
+test_view_trace_refrozen_after_a_fresh_sweep (test_screen_and_reset.TraceResetTests.test_view_trace_refrozen_after_a_fresh_sweep) ... ok
+test_real_render_pdf_and_first_png (test_writer_render.RealVeuszTests.test_real_render_pdf_and_first_png) ... skipped 'set VEUSZ_EXE to a Veusz with h5py for a real render'
+test_dotted_stem_keeps_full_name (test_writer_render.RenderPagesTests.test_dotted_stem_keeps_full_name) ... ok
+test_missing_outputs_are_a_failure (test_writer_render.RenderPagesTests.test_missing_outputs_are_a_failure) ... ok
+test_no_pages_loaded_is_a_failure (test_writer_render.RenderPagesTests.test_no_pages_loaded_is_a_failure) ... ok
+test_first_page_bound_is_not_min (test_writer_render.RenderScriptTests.test_first_page_bound_is_not_min) ... ok
+----------------------------------------------------------------------
+Ran 68 tests in 9.054s
+OK (skipped=1)
+
+=== [py38-PyQt5] Python 3.8.20 | numpy 1.24.4 | h5py 3.10.0 | QtPy 2.4.3 -> PyQt5 5.15.14 | pyqtgraph 0.13.3 ===
+test_byte_order_mark_accepted (test_batch_convert.CheckAndDiscoveryTests) ... ok
+test_duplicates_and_missing (test_batch_convert.CheckAndDiscoveryTests) ... ok
+test_folder_scan_recursive_and_flat (test_batch_convert.CheckAndDiscoveryTests) ... ok
+test_logger_header_recognised (test_batch_convert.CheckAndDiscoveryTests) ... ok
+test_other_csvs_rejected (test_batch_convert.CheckAndDiscoveryTests) ... ok
+test_convert_folder_then_skip_existing (test_batch_convert.CommandLineTests) ... ok
+test_ctrl_c_stops_running_jobs_at_once (test_batch_convert.CommandLineTests) ... ok
+test_dry_run_and_nothing_found (test_batch_convert.CommandLineTests) ... ok
+test_failed_csv_reported_and_cleaned (test_batch_convert.CommandLineTests) ... ok
+test_blocked_dialog_does_not_start (test_batch_convert.DialogTests) ... ok
+test_cancel_kills_and_removes_staging (test_batch_convert.DialogTests) ... ok
+test_folder_and_single_file_in_one_batch (test_batch_convert.DialogTests) ... ok
+ok
+skip  /tmp/tmpnq96mvhm/in/a/notes.csv  (not a logger CSV (needs date,time,timestamp_iso,freq_hz,trace<n>_dBm))
+skip  /tmp/tmpnq96mvhm/in/run1_events.csv  (not a logger CSV (needs date,time,timestamp_iso,freq_hz,trace<n>_dBm))
+plan  /tmp/tmpnq96mvhm/in/a/b/run2.csv  ->  /tmp/tmpnq96mvhm/in/a/b/run2_reports_20261102_090129
+plan  /tmp/tmpnq96mvhm/in/c/run1.csv  ->  /tmp/tmpnq96mvhm/in/c/run1_reports_20261102_090129
+plan  /tmp/tmpnq96mvhm/in/run1.csv  ->  /tmp/tmpnq96mvhm/in/run1_reports_20261102_090129
+ok
+test_theme_choice_stored_when_standalone (test_batch_convert.DialogTests) ... ok
+test_beside_each_csv (test_batch_convert.PlanningTests) ... ok
+test_existing_folder_never_reused (test_batch_convert.PlanningTests) ... ok
+test_one_folder_flat_makes_names_unique (test_batch_convert.PlanningTests) ... ok
+test_one_folder_mirrored (test_batch_convert.PlanningTests) ... ok
+test_options_validated (test_batch_convert.PlanningTests) ... ok
+test_skip_existing (test_batch_convert.PlanningTests) ... ok
+test_cleanup_only_this_jobs_staging (test_batch_convert.ProcessHelperTests) ... ok
+test_command_and_environment (test_batch_convert.ProcessHelperTests) ... ok
+test_parse_output (test_batch_convert.ProcessHelperTests) ... ok
+test_csv_order_and_immutable_copy (test_merge.OutputTests) ... ok
+test_invalid_channels (test_merge.OutputTests) ... ok
+test_mailbox (test_merge.OutputTests) ... ok
+test_queue_terminal_capture (test_merge.OutputTests) ... ok
+test_801_bins (test_merge.PlotTests) ... ok
+test_page_union_and_raw_series (test_merge.PlotTests) ... ok
+test_precise_names (test_merge.PlotTests) ... ok
+test_utc_dates (test_merge.PlotTests) ... ok
+test_channels_stay_separate (test_merge.PowerTests) ... ok
+test_chunks_and_axis (test_merge.PowerTests) ... ok
+test_extreme_levels (test_merge.PowerTests) ... ok
+test_linear_not_log_mean (test_merge.PowerTests) ... ok
+test_reject_invalid (test_merge.PowerTests) ... ok
+test_statistics_use_shared_helper (test_merge.PowerTests) ... ok
+test_actual_hdf5 (test_merge.SourceTests) ... ok
+test_gui_interlocks_and_display_no_averaging (test_merge.SourceTests) ... ok
+test_python38_grammar (test_merge.SourceTests) ... ok
+test_about_versions_read_from_modules (test_screen_and_reset.GuiTests) ... ok
+test_confirmation_prompt_and_do_not_ask_again (test_screen_and_reset.GuiTests) ... ok
+ok
+test_idle_reset_runs_in_worker_and_restores (test_screen_and_reset.GuiTests) ... ok
+test_reset_during_recording (test_screen_and_reset.GuiTests) ... ok
+test_screen_choice_before_connect_is_applied (test_screen_and_reset.GuiTests) ... ok
+test_reset_served_between_captures_and_logged (test_screen_and_reset.RecordingResetTests) ... ok
+test_auto_reads_trace_modes_from_detected_screen (test_screen_and_reset.ScreenRoutingTests) ... ok
+test_auto_redetects_only_when_refreshed (test_screen_and_reset.ScreenRoutingTests) ... ok
+test_choice_applied_before_first_query (test_screen_and_reset.ScreenRoutingTests) ... ok
+test_fetch_never_falls_back_to_other_screen (test_screen_and_reset.ScreenRoutingTests) ... ok
+test_fetch_template_is_per_screen (test_screen_and_reset.ScreenRoutingTests) ... ok
+test_forced_screen_a_reads_screen_a (test_screen_and_reset.ScreenRoutingTests) ... ok
+test_normalize_mode (test_screen_and_reset.ScreenRoutingTests) ... ok
+test_screen_a_window_form_survives_deviating_unsuffixed_routing (test_screen_and_reset.ScreenRoutingTests) ... ok
+test_unreadable_modes_raise_instead_of_reporting_none (test_screen_and_reset.ScreenRoutingTests) ... ok
+test_blank_traces_untouched (test_screen_and_reset.TraceResetTests) ... ok
+test_reset_goes_through_clear_write_and_restores_each_mode (test_screen_and_reset.TraceResetTests) ... ok
+test_reset_raises_when_nothing_readable (test_screen_and_reset.TraceResetTests) ... ok
+test_reset_restarts_max_hold (test_screen_and_reset.TraceResetTests) ... ok
+test_summary_text (test_screen_and_reset.TraceResetTests) ... ok
+test_view_trace_refrozen_after_a_fresh_sweep (test_screen_and_reset.TraceResetTests) ... ok
+test_real_render_pdf_and_first_png (test_writer_render.RealVeuszTests) ... skipped 'set VEUSZ_EXE to a Veusz with h5py for a real render'
+test_dotted_stem_keeps_full_name (test_writer_render.RenderPagesTests) ... ok
+test_missing_outputs_are_a_failure (test_writer_render.RenderPagesTests) ... ok
+test_no_pages_loaded_is_a_failure (test_writer_render.RenderPagesTests) ... ok
+test_first_page_bound_is_not_min (test_writer_render.RenderScriptTests) ... ok
+----------------------------------------------------------------------
+Ran 68 tests in 8.318s
+OK (skipped=1)
+
+=== Real render, Veusz 3.6.2 (Ubuntu package via python3.12, h5py): tests.test_writer_render.RealVeuszTests (writer 0.0.21) ===
+test_real_render_pdf_and_first_png (tests.test_writer_render.RealVeuszTests.test_real_render_pdf_and_first_png) ... ok
+----------------------------------------------------------------------
+Ran 1 test in 0.833s
+OK
+
+=== Batch with rendering, Veusz 3.6.2 (Ubuntu package via python3.12, h5py): fsp_batch_convert.py --cli <3 CSVs in a folder tree> --render --jobs 2 ===
+skip  <scratch>/batchdata/a/other.csv  (not a logger CSV (needs date,time,timestamp_iso,freq_hz,trace<n>_dBm))
+skip  <scratch>/batchdata/run1_events.csv  (not a logger CSV (needs date,time,timestamp_iso,freq_hz,trace<n>_dBm))
+plan  <scratch>/batchdata/a/b/run2.csv  ->  <scratch>/val_render_3.6.2/a/b/run2_reports_20261102_090149
+plan  <scratch>/batchdata/c/run1.csv  ->  <scratch>/val_render_3.6.2/c/run1_reports_20261102_090149
+plan  <scratch>/batchdata/run1.csv  ->  <scratch>/val_render_3.6.2/run1_reports_20261102_090149
+start run2.csv
+start run1.csv
+start run1.csv
+done  run1.csv: 53 pages; PDF + PNG rendered
+done  run2.csv: 53 pages; PDF + PNG rendered
+done  run1.csv: 53 pages; PDF + PNG rendered
+{"converted": 3, "failed": 0, "skipped": 0, "cancelled": 0}
+  PDF a/b/run2_reports_20261102_090149/rendered/fsp_report.pdf | 53 pages | 53 bookmarks
+  PDF c/run1_reports_20261102_090149/rendered/fsp_report.pdf | 53 pages | 53 bookmarks
+  PDF run1_reports_20261102_090149/rendered/fsp_report.pdf | 53 pages | 53 bookmarks
+  PNG files: 159
+
+=== Real render, Veusz 4.2.1 (PyPI source build, PyQt6, h5py): tests.test_writer_render.RealVeuszTests (writer 0.0.21) ===
+test_real_render_pdf_and_first_png (tests.test_writer_render.RealVeuszTests.test_real_render_pdf_and_first_png) ... ok
+----------------------------------------------------------------------
+Ran 1 test in 2.697s
+OK
+
+=== Batch with rendering, Veusz 4.2.1 (PyPI source build, PyQt6, h5py): fsp_batch_convert.py --cli <3 CSVs in a folder tree> --render --jobs 2 ===
+skip  <scratch>/batchdata/a/other.csv  (not a logger CSV (needs date,time,timestamp_iso,freq_hz,trace<n>_dBm))
+skip  <scratch>/batchdata/run1_events.csv  (not a logger CSV (needs date,time,timestamp_iso,freq_hz,trace<n>_dBm))
+plan  <scratch>/batchdata/a/b/run2.csv  ->  <scratch>/val_render_4.2.1/a/b/run2_reports_20261102_090223
+plan  <scratch>/batchdata/c/run1.csv  ->  <scratch>/val_render_4.2.1/c/run1_reports_20261102_090223
+plan  <scratch>/batchdata/run1.csv  ->  <scratch>/val_render_4.2.1/run1_reports_20261102_090223
+start run2.csv
+start run1.csv
+start run1.csv
+done  run2.csv: 53 pages; PDF + PNG rendered
+done  run1.csv: 53 pages; PDF + PNG rendered
+done  run1.csv: 53 pages; PDF + PNG rendered
+{"converted": 3, "failed": 0, "skipped": 0, "cancelled": 0}
+  PDF a/b/run2_reports_20261102_090223/rendered/fsp_report.pdf | 53 pages | 53 bookmarks
+  PDF c/run1_reports_20261102_090223/rendered/fsp_report.pdf | 53 pages | 53 bookmarks
+  PDF run1_reports_20261102_090223/rendered/fsp_report.pdf | 53 pages | 53 bookmarks
+  PNG files: 159
+
+=== Stand-alone launch: python fsp_batch_convert.py --version / --cli --help ===
+FSP Logger Batch Converter 0.0.1 (batch core 0.0.1)
+usage: fsp_batch_convert.py --cli [-h] [--no-recursive]
+                                  [--output-dir OUTPUT_DIR] [--flat]
+                                  [--render] [--veusz-exe VEUSZ_EXE]
+                                  [--jobs JOBS] [--skip-existing]
+                                  [--max-matrix-mib MAX_MATRIX_MIB]
+                                  [--dry-run]
+
+=== Stand-alone window as its own process (python fsp_batch_convert.py <folder>, offscreen) ===
+window process still running after 4 s: True
+(rows listed and theme are checked in-process by test_standalone_launcher)

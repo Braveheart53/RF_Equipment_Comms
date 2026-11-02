@@ -2,6 +2,42 @@
 
 Newest first. Versions follow Semantic Versioning 2.0.0. In 0.9.0 a new feature bumps the MINOR number.
 
+## 0.10.0 — 2026-10-29 (finished 2026-11-02)
+
+Modules: `rs_fsp_logger.py` 0.10.0, `fsp_batch_convert.py` 0.0.1 (new), `fsp_batch_core.py`
+0.0.1 (new), `fsp_gui_theme.py` 0.0.1 (new), `fsp_reports.py` 0.1.5, `vszh5_writer.py` 0.0.21;
+`fsp_background.py` 0.2.0 and `fsp_simulator.py` 0.0.1 unchanged.
+
+### Added
+- **Batch convert CSV files to Veusz plots…**, in the *File* and *Tools* menus (Ctrl+Shift+R). One
+  dialog converts a single CSV, several CSVs or whole folders, optionally with sub-folders.
+  Inputs come from *Add files*, *Add folder*, drag and drop, or the command line, and only logger
+  CSVs are listed. Each CSV gets a new report folder from `fsp_reports.py`, either next to the
+  CSV or under one folder, with the sub-folder structure optionally kept. Conversions run in
+  parallel processes, with *Cancel* and *Skip CSVs that already have a report folder*. Per-file
+  status, a log and *Open report folder* show the results. Optional PDF + PNG.
+- The dialog is also a stand-alone program: `python fsp_batch_convert.py [files/folders]`,
+  `run_batch_converter.bat`, or `--cli` for a run without a window (`--dry-run`,
+  `--skip-existing`, `--render`, `--jobs`, `--flat`, `--no-recursive`). Exit codes are 0, 1 and 2.
+- `fsp_gui_theme.py`: the logger's Dark / Light / System palette and style sheet, with values
+  unchanged, shared with the dialog. The theme setting is stored once for both.
+- `run_fsp_logger.bat`, which activates the mamba environment `fsp-logger` when present.
+- Tests: `tests/test_batch_convert.py` (24 tests); 68 in all.
+
+### Changed
+- `vszh5_writer.py` 0.0.18 → **0.0.21**, the one writer of all projects, byte-identical to SHR
+  Converter 0.0.2. The 0.0.18 render fixes are kept.
+- Interlocks: sampling cannot start while a batch converts, and a batch cannot start while the
+  logger samples, waits or drains. Closing the logger waits for a running batch.
+- `fsp_reports.py` 0.1.5: header only (writer 0.0.21, batch use).
+- 0.9.0 evidence moved to `docs/history_0.9.0/`.
+
+### Fixed during development (not in any release)
+- PySide6 garbage-collected a chained temporary menu wrapper in a test, which only affected the
+  test.
+- In `--cli`, Ctrl+C waited for running conversions to finish. It now kills them at once and
+  removes their staging folders.
+
 ## 0.9.0 — 2026-10-26
 
 Modules: `rs_fsp_logger.py` 0.9.0, `fsp_background.py` 0.2.0, `fsp_reports.py` 0.1.4,

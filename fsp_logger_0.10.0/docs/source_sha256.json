@@ -1,0 +1,54 @@
+{
+  "source": "github.com/Braveheart53/RF_Equipment_Comms, folder fsp_logger_0.9.0, commit b4223e9 (pulled 2026-10-29); identical to the delivered rs_fsp_logger_0.9.0_full.7z",
+  "source_0.9.0_sha256": {
+    "rs_fsp_logger.py": "796540b662b3f0d51c5e425c38cf7c14861412fb136f207fe5d5267c0116d575",
+    "fsp_background.py": "f36ac9e19069fdc73c98ec021f5429312819ac65293a3db9181e3bf8d28878c2",
+    "fsp_reports.py": "6aac614be116a1d08978a90d6bdd54345116be77de2fe2ffa6401fc8b2ed6b05",
+    "vszh5_writer.py": "e6fede1a66bc180cb863fcf63b57cd690aebf571092b1e671591b7e01ec2959c",
+    "fsp_simulator.py": "17518fe2025b7fabd799d6d5433f7943ba90f0999b52547478cbe1569f21bf84",
+    "requirements.txt": "bfdace02ff7b5e6efd8069d37798198e708ac2473ca3e1f5439bde21228c3c21",
+    "README.md": "a4b2b00462b9f0de4b23965d9357c6951a4ca53b43da889db81082632ade550f",
+    "CHANGELOG.md": "849c6802e8e2f926ce32ba5d4301443bf33c2911543b5418436dd25ba081432e",
+    "tests/test_merge.py": "ca36904989d4a46aaeea3586689266f2c1eca2e053c8b132dd73e875555e1861",
+    "tests/test_screen_and_reset.py": "2d113403acd6026c588802d3f44faf8a48eb5b117bd5d1e88913343ff05726b5",
+    "tests/test_writer_render.py": "7d454ef434a0f595bfefd22654e034005ffb4dce2cbdad3dda52e63a0aff7f5e"
+  },
+  "writer_source": "shr_converter_0.0.2/vszh5_writer.py (same commit), copied unchanged",
+  "release_0.10.0_sha256": {
+    "rs_fsp_logger.py": "f4d94e8444650efb735d45f3320221005b40309edbf1a9bdd32dbbae2ba44028",
+    "fsp_batch_convert.py": "f596e0a90f3713d81505f835486e72df58f6408caa926c6b18248ba8501adae3",
+    "fsp_batch_core.py": "94a1d3e47b4d2e9cca9597254b58847eab3efb19a25c7b0527e0ac596d08cc7f",
+    "fsp_gui_theme.py": "59c6e214e230fe19dc78a4c79b619208345c6ddfbd417b7bfbcd98855b9ef678",
+    "fsp_background.py": "f36ac9e19069fdc73c98ec021f5429312819ac65293a3db9181e3bf8d28878c2",
+    "fsp_reports.py": "423c7ad6fd115827f0f71ce747ecf8bb0c3810eef4e7e8e8e51c8b4f4744dfb9",
+    "vszh5_writer.py": "338d8fd5145964118635d704905f76c48a6a01ef33df95b1aa9a74f6ccfec70d",
+    "fsp_simulator.py": "17518fe2025b7fabd799d6d5433f7943ba90f0999b52547478cbe1569f21bf84",
+    "requirements.txt": "bfdace02ff7b5e6efd8069d37798198e708ac2473ca3e1f5439bde21228c3c21",
+    "run_fsp_logger.bat": "d91869819ee15f03ea944f1943812b531fce037b6565b81733040642e3bed879",
+    "run_batch_converter.bat": "4adeaba55106374fe8c0e18aa6dabd128cb897503e314c57103c712b0f61072e",
+    "tests/test_merge.py": "6b7effa9ddc3cb6e5ddf3050c87bd58476b6d8b63e6fb471a0f0217a7a8570c4",
+    "tests/test_screen_and_reset.py": "9304e42e58912acb279e67868ce61218a1038ea35b0eca924fcfc85cb9d0c31c",
+    "tests/test_writer_render.py": "7d454ef434a0f595bfefd22654e034005ffb4dce2cbdad3dda52e63a0aff7f5e",
+    "tests/test_batch_convert.py": "359f4ca7b328a022e8c092fd01f01e6323cb3b246d7fd1d0f3d7ac0824fec1d8"
+  },
+  "new_files": [
+    "fsp_batch_convert.py",
+    "fsp_batch_core.py",
+    "fsp_gui_theme.py",
+    "run_fsp_logger.bat",
+    "run_batch_converter.bat",
+    "tests/test_batch_convert.py",
+    "docs/validation_0.10.0.txt",
+    "docs/patches_0.9.0_to_0.10.0/",
+    "docs/screenshots/batch_converter_0.10.0_*.png"
+  ],
+  "unchanged": [
+    "fsp_background.py",
+    "fsp_simulator.py",
+    "requirements.txt",
+    "tests/test_writer_render.py"
+  ],
+  "moved": {
+    "docs/validation_0.9.0.txt, docs/source_sha256.json, docs/patches_0.8.3_to_0.9.0/": "docs/history_0.9.0/"
+  }
+}
